@@ -304,18 +304,22 @@ class ContourApp {
     }
 
     exportData() {
-        const exportData = {
-            timestamp: new Date().toISOString(),
-            workspace_scale: this.workspaceScale,
-            layment_size_mm: {
-                width: parseInt(document.getElementById('baseRectWidth').value),
-                height: parseInt(document.getElementById('baseRectHeight').value)
-            },
-            contours: this.contourManager.getContoursData(this.baseRectangle)
-        };
-        
-        console.log('Экспортируемые данные:', exportData);
-        this.sendToBackend(exportData);
+    const timestamp = new Date();
+    const exportData = {
+        name: `inlay_${timestamp.toISOString().replace(/[:.]/g, '-')}`,
+        layment_size: {
+            width: this.baseRectangle.height / this.workspaceScale,  // Убираем масштаб
+            height: this.baseRectangle.width / this.workspaceScale   // Убираем масштаб
+        },
+        contours: this.contourManager.getContoursData(this.baseRectangle, this.workspaceScale),
+        export_timestamp: timestamp.toISOString()
+        // workspace_scale больше не включаем - все координаты как при scale=1
+    };
+    
+    console.log('Экспортируемые данные:', exportData);
+    this.sendToBackend(exportData);
+    
+    return exportData;
     }
 
     sendToBackend(data) {
@@ -336,5 +340,6 @@ document.addEventListener('DOMContentLoaded', () => {
     new ContourApp();
 
 });
+
 
 
