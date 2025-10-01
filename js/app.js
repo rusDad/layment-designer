@@ -15,7 +15,7 @@ class ContourApp {
              { name: '602105-13', url: './svg/60210513.svg' },
              { name: '615820-3/8', url: './svg/61582038.svg' },
              { name: '703525-200', url: './svg/703525200.svg' },
-             { name: 'TestCube100mm', url: './svg/TestCube100mm.svg'}
+             { name: 'TestCube100mm', url: './svg/TestCube100mm.svg'} // для проверки работоспособности идеи - сойдет и так
         ];
 
         this.init();
@@ -82,8 +82,8 @@ class ContourApp {
 
     createBaseRectangle() {
         this.baseRectangle = new fabric.Rect({
-            width: 500,
-            height: 300,
+            width: 565,
+            height: 375,
             left: this.laymentOffset,
             top: this.laymentOffset,
             fill: 'transparent',
@@ -336,3 +336,4 @@ document.addEventListener('DOMContentLoaded', () => {
     new ContourApp();
 
 });
+
