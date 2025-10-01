@@ -137,7 +137,7 @@ class ContourApp {
             let value = parseInt(input.value);
             
             if (isNaN(value) || value < 100) {
-                value = isWidth ? 500 : 300;
+                value = isWidth ? 565 : 375;
                 input.value = value;
             }
             
@@ -336,4 +336,5 @@ document.addEventListener('DOMContentLoaded', () => {
     new ContourApp();
 
 });
+
 
