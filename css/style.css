@@ -1,0 +1,161 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+}
+
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.app-header {
+    background-color: #2c3e50;
+    color: white;
+    padding: 1rem;
+    text-align: center;
+}
+
+.main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.contours-panel {
+    width: 300px;
+    min-width: 300px;
+    max-width: 300px;
+    background-color: #ecf0f1;
+    padding: 1rem;
+    border-right: 2px solid #bdc3c7;
+    overflow-y: auto;
+    overflow-x: hidden;
+    flex-shrink: 0;
+    height: 100%;
+}
+
+.contours-panel h2 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.size-controls {
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    background: #fff;
+    border-radius: 4px;
+}
+
+.size-controls label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.size-controls input {
+    width: 80px;
+    padding: 0.25rem;
+    margin-left: 0.5rem;
+}
+
+.tool-buttons {
+    margin: 1rem 0;
+}
+
+.tool-button {
+    width: 100%;
+    padding: 0.5rem;
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin-bottom: 0.5rem;
+}
+
+.tool-button:hover:not(:disabled) {
+    background-color: #c0392b;
+}
+
+.tool-button:disabled {
+    background-color: #95a5a6;
+    cursor: not-allowed;
+}
+
+.export-button {
+    background-color: #27ae60;
+    margin-top: 1rem;
+}
+
+.export-button:hover {
+    background-color: #229954;
+}
+
+
+.workspace {
+    flex: 1;
+    padding: 1rem;
+    background-color: white;
+    min-width: 0;
+    overflow: auto;
+}
+
+.canvas-scroll-container {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    border: 2px dashed #bdc3c7;
+    background-color: #fafafa;
+}
+
+.canvas-container {
+    position: relative;
+}
+
+#workspaceCanvas {
+    display: block;
+}
+
+/* Скрываем скроллбар для эстетики */
+.contours-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.contours-panel::-webkit-scrollbar-thumb {
+    background-color: #bdc3c7;
+    border-radius: 3px;
+}
+
+.contour-item {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background-color: white;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.contour-item:hover {
+    background-color: #3498db;
+    color: white;
+    border-color: #2980b9;
+}
+
+.contour-item:active {
+    transform: translateY(1px);
+}
+
+.contours-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
