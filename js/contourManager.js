@@ -105,21 +105,21 @@ class ContourManager {
         return contour.svgUrl?.split('/').pop()?.replace('.svg', '') || 'unknown';
     }
 
-    getContoursData(layment) {
-        return this.contours.map(contour => {
-            const originalX = contour.originalData.position.x;
-            const originalY = contour.originalData.position.y;
-            
-            return {
-                name: this.getContourName(contour),
-                offset_mm: {
-                    x: originalX,
-                    y: layment.height - (originalY + contour.originalData.height)
-                },
-                rotation_degrees: contour.angle
-            };
-        });
-    }
+    getContoursData(layment, workspaceScale = 1.0) {
+    return this.contours.map(contour => {
+        // Обратное масштабирование координат
+        const originalX = contour.originalData.position.x;
+        const originalY = contour.originalData.position.y;
+        
+        // Поворачиваем систему координат и убираем масштаб
+        return {
+            name: this.getContourName(contour), // Оригинальное имя без суффиксов
+            x: originalY,    // top → X (без масштаба)
+            y: originalX,    // left → Y (без масштаба)
+            angle: contour.angle
+        };
+    });
+}
 
     disableGroupControls() {
         fabric.ActiveSelection.prototype.set({
@@ -173,4 +173,5 @@ class ContourManager {
         this.contours = [];
         this.canvas.renderAll();
     }
+
 }
