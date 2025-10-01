@@ -55,17 +55,24 @@ class ContourApp {
     }
 
     updateCanvasSize(width, height) {
-        const padding = 100;
-        
-        const newWidth = Math.max(width + padding * 2, this.minCanvasSize.width);
-        const newHeight = Math.max(height + padding * 2, this.minCanvasSize.height);
-        
-        this.canvasContainer.style.width = newWidth + 'px';
-        this.canvasContainer.style.height = newHeight + 'px';
-        
-        this.canvas.setWidth(newWidth);
-        this.canvas.setHeight(newHeight);
-        this.canvas.renderAll();
+         const padding = 100;
+    
+    // Учитываем позицию ложемента при расчете
+    const requiredWidth = Math.max(
+        this.baseRectangle.left + width + padding, 
+        this.minCanvasSize.width
+    );
+    const requiredHeight = Math.max(
+        this.baseRectangle.top + height + padding, 
+        this.minCanvasSize.height
+    );
+    
+    this.canvasContainer.style.width = requiredWidth + 'px';
+    this.canvasContainer.style.height = requiredHeight + 'px';
+    
+    this.canvas.setWidth(requiredWidth);
+    this.canvas.setHeight(requiredHeight);
+    this.canvas.renderAll();
     }
 
     initializeServices() {
@@ -273,6 +280,12 @@ class ContourApp {
 
         this.scaleLayment(scaleRatio);
         this.contourManager.scaleAllContours(scaleRatio);
+      
+        this.updateCanvasSize(
+        this.baseRectangle.width, 
+        this.baseRectangle.height
+        );
+        
         this.canvas.renderAll();
     }
 
@@ -321,4 +334,5 @@ class ContourApp {
 // Инициализация приложения
 document.addEventListener('DOMContentLoaded', () => {
     new ContourApp();
+
 });
