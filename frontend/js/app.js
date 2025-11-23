@@ -1,7 +1,7 @@
 class ContourApp {
     constructor() {
         this.canvas = null;
-        this.baseRectangle = null;
+        this.layment = null;                    // ← Единое название
         this.workspaceScale = 1.0;
         this.laymentOffset = 20;
         this.availableContours = [];
@@ -12,7 +12,7 @@ class ContourApp {
     async init() {
         this.initializeCanvas();
         this.initializeServices();
-        this.createBaseRectangle();
+        this.createLayment();
         await this.loadAvailableContours();
         this.setupEventListeners();
     }
@@ -26,7 +26,8 @@ class ContourApp {
             width: w,
             height: h,
             backgroundColor: '#fafafa',
-            selection: true
+            selection: true,
+            preserveObjectStacking: true
         });
 
         window.addEventListener('resize', () => {
@@ -41,23 +42,29 @@ class ContourApp {
         this.contourManager = new ContourManager(this.canvas);
     }
 
-    createBaseRectangle() {
-        this.baseRectangle = new fabric.Rect({
-            width: 565,
-            height: 375,
+    createLayment() {
+        const width = parseInt(document.getElementById('baseRectWidth').value) || 565;
+        const height = parseInt(document.getElementById('baseRectHeight').value) || 375;
+
+        this.layment = new fabric.Rect({
+            width: width,
+            height: height,
             left: this.laymentOffset,
             top: this.laymentOffset,
             fill: 'transparent',
             stroke: '#000',
             strokeWidth: 2,
-            strokeDashArray: [8, 8],
+            strokeDashArray: [10, 5],
             selectable: false,
             evented: false,
-            hasControls: false
+            hasControls: false,
+            hasBorders: false,
+            name: 'layment'
         });
-        this.canvas.add(this.baseRectangle);
-        this.canvas.sendToBack(this.baseRectangle);
-        this.canvas.backgroundItem = this.baseRectangle; // для удобства
+
+        this.canvas.add(this.layment);
+        this.canvas.sendToBack(this.layment);
+        this.canvas.layment = this.layment; // для удобства
     }
 
     async loadAvailableContours() {
@@ -76,13 +83,14 @@ class ContourApp {
                 list.appendChild(div);
             });
         } catch (err) {
-            console.error('Не загрузился manifest.json', err);
+                console.error('Ошибка загрузки manifest.json', err);
+                alert('Не удалось загрузить список артикулов');
         }
     }
 
     async addContour(item) {
-        const centerX = this.baseRectangle.left + this.baseRectangle.width / 2;
-        const centerY = this.baseRectangle.top + this.baseRectangle.height / 2;
+        const centerX = this.layment.left + this.layment.width / 2;
+        const centerY = this.layment.top + this.layment.height / 2;
 
         await this.contourManager.addContour(
             item.svg,
@@ -92,81 +100,81 @@ class ContourApp {
         );
     }
 
+    updateLaymentSize(width, height) {
+        this.layment.set({ width, height });
+        this.canvas.renderAll();
+    }
+
+    updateWorkspaceScale(newScale) {
+        if (newScale < 0.1 || newScale > 10) return;
+
+        const ratio = newScale / this.workspaceScale;
+        this.workspaceScale = newScale;
+
+        this.canvas.getObjects().forEach(obj => {
+            obj.set({
+                left: obj.left * ratio,
+                top: obj.top * ratio,
+                scaleX: obj.scaleX * ratio,
+                scaleY: obj.scaleY * ratio
+            });
+            obj.setCoords();
+        });
+
+        this.canvas.renderAll();
+    }
+
     setupEventListeners() {
+        // Размеры ложемента
+        document.getElementById('baseRectWidth').addEventListener('change', e => {
+            let v = parseInt(e.target.value) || 565;
+            if (v < 200) v = 200;
+            e.target.value = v;
+            this.updateLaymentSize(v, this.layment.height);
+        });
+
+        document.getElementById('baseRectHeight').addEventListener('change', e => {
+            let v = parseInt(e.target.value) || 375;
+            if (v < 200) v = 200;
+            e.target.value = v;
+            this.updateLaymentSize(this.layment.width, v);
+        });
+
+        // Масштаб
+        document.getElementById('workspaceScale').addEventListener('change', e => {
+            const s = parseFloat(e.target.value);
+            if (s >= 0.1 && s <= 10) {
+                this.updateWorkspaceScale(s);
+            } else {
+                e.target.value = this.workspaceScale;
+            }
+        });
+
+        // Кнопки
         document.getElementById('deleteButton').onclick = () => this.deleteSelected();
         document.getElementById('rotateButton').onclick = () => this.rotateSelected();
         document.getElementById('exportButton').onclick = () => this.exportData();
 
-        // Новая кнопка проверки
+        // Кнопка проверки
         const checkBtn = document.createElement('button');
-        checkBtn.id = 'checkButton';
-        checkBtn.className = 'tool-button';
         checkBtn.textContent = 'Проверить раскладку';
+        checkBtn.className = 'tool-button';
         checkBtn.style.background = '#9b59b6';
-        document.querySelector('.tool-buttons').appendChild(checkBtn);
         checkBtn.onclick = () => {
             const ok = this.contourManager.checkCollisionsAndHighlight();
-            alert(ok ? 'Всё отлично! Нет коллизий' : 'Ошибка: есть пересечения или выход за границы!');
+            alert(ok ? 'Раскладка валидна! Можно заказывать' : 'Ошибка: есть пересечения или выход за границы');
         };
+        document.querySelector('.tool-buttons').appendChild(checkBtn);
 
-        // Остальные обработчики (масштаб, размеры) — оставь как было
-        this.setupSizeControls();
-        this.setupScaleControl();
-        this.setupCanvasEvents();
-    }
-
-    setupSizeControls() {
-        const wInp = document.getElementById('baseRectWidth');
-        const hInp = document.getElementById('baseRectHeight');
-
-        const update = () => {
-            let w = parseInt(wInp.value) || 565;
-            let h = parseInt(hInp.value) || 375;
-            if (w < 200) w = 200;
-            if (h < 200) h = 200;
-
-            this.baseRectangle.set({
-                width: w,
-                height: h
-            });
-            this.canvas.renderAll();
-        };
-
-        wInp.onchange = update;
-        hInp.onchange = update;
-    }
-
-    setupScaleControl() {
-        const inp = document.getElementById('workspaceScale');
-        inp.onchange = (e) => {
-            const s = parseFloat(e.target.value);
-            if (s >= 0.1 && s <= 5) {
-                const ratio = s / this.workspaceScale;
-                this.workspaceScale = s;
-
-                this.baseRectangle.scaleX = ratio;
-                this.baseRectangle.scaleY = ratio;
-                this.baseRectangle.left *= ratio;
-                this.baseRectangle.top *= ratio;
-
-                this.contourManager.scaleAllContours(ratio);
-                this.canvas.renderAll();
-            } else {
-                e.target.value = this.workspaceScale;
-            }
-        };
-    }
-
-    setupCanvasEvents() {
         this.canvas.on('selection:created', () => this.updateButtons());
         this.canvas.on('selection:updated', () => this.updateButtons());
         this.canvas.on('selection:cleared', () => this.updateButtons());
     }
 
     updateButtons() {
-        const hasSel = !!this.canvas.getActiveObject();
-        document.getElementById('deleteButton').disabled = !hasSel;
-        document.getElementById('rotateButton').disabled = !hasSel;
+        const has = !!this.canvas.getActiveObject();
+        document.getElementById('deleteButton').disabled = !has;
+        document.getElementById('rotateButton').disabled = !has;
     }
 
     deleteSelected() {
@@ -174,10 +182,11 @@ class ContourApp {
         if (!obj) return;
         if (obj.type === 'activeSelection') {
             obj.forEachObject(o => this.contourManager.removeContour(o));
-            this.canvas.discardActiveObject();
         } else {
             this.contourManager.removeContour(obj);
         }
+        this.canvas.discardActiveObject();
+        this.canvas.renderAll();
         this.updateButtons();
     }
 
@@ -189,45 +198,34 @@ class ContourApp {
     }
 
     exportData() {
-        const ok = this.contourManager.checkCollisionsAndHighlight();
-        if (!ok) {
-            alert('Нельзя экспортировать: есть коллизии или выход за границы!');
+        const valid = this.contourManager.checkCollisionsAndHighlight();
+        if (!valid) {
+            alert('Исправьте ошибки перед заказом!');
             return;
         }
 
-        const widthPx = this.baseRectangle.width * this.baseRectangle.scaleX;
-        const heightPx = this.baseRectangle.height * this.baseRectangle.scaleY;
-
-        const areaM2 = (widthPx * heightPx) / 1e6;
+        const realWidth = Math.round(this.layment.width * this.layment.scaleX);
+        const realHeight = Math.round(this.layment.height * this.layment.scaleY);
+        const areaM2 = (realWidth * realHeight) / 1e6;
         const cuttingM = this.contourManager.getTotalCuttingLength();
 
         const priceMaterial = Math.round(areaM2 * 2800);
         const priceCutting = Math.round(cuttingM * 350);
-        const totalPrice = priceMaterial + priceCutting;
+        const total = priceMaterial + priceCutting;
 
         const data = {
-            layment: {
-                width_mm: Math.round(widthPx),
-                height_mm: Math.round(heightPx)
-            },
-            contours: this.contourManager.getContoursData(this.workspaceScale),
-            price: {
-                material_rub: priceMaterial,
-                cutting_rub: priceCutting,
-                total_rub: totalPrice
-            },
-            stats: {
-                area_m2: +areaM2.toFixed(4),
-                cutting_meters: +cuttingM.toFixed(3)
-            }
+            layment_mm: { width: realWidth, height: realHeight },
+            contours: this.contourManager.getContoursData(),
+            price_rub: { material: priceMaterial, cutting: priceCutting, total },
+            stats: { area_m2: +areaM2.toFixed(4), cutting_meters: +cuttingM.toFixed(3) }
         };
 
-        console.log('Экспорт:', data);
-        alert(`Готово!\n\nРазмер: ${data.layment.width_mm}×${data.layment.height_mm} мм\nПлощадь: ${data.stats.area_m2} м²\nРезка: ${data.stats.cutting_meters} м\n\nИтого: ${totalPrice} ₽`);
+        console.log('Заказ:', data);
+        alert(`Готово к заказу!\n\nРазмер: ${realWidth}×${realHeight} мм\nПлощадь: ${data.stats.area_m2} м²\nРезка: ${data.stats.cutting_meters} м\n\nСтоимость: ${total} ₽`);
 
+        // Здесь будет POST на бэкенд
         // fetch('/api/order', { method: 'POST', body: JSON.stringify(data) })
     }
 }
 
-// Запуск
 document.addEventListener('DOMContentLoaded', () => new ContourApp());
