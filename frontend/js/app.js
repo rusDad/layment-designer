@@ -1,82 +1,43 @@
 class ContourApp {
     constructor() {
         this.canvas = null;
-        this.canvasElement = null;
-        this.canvasContainer = null;
-        this.svgLoader = null;
-        this.contourManager = null;
         this.baseRectangle = null;
-        this.deleteButton = null;
         this.workspaceScale = 1.0;
-        this.laymentOffset = 10;
-        this.minCanvasSize = { width: 800, height: 600 };
-
-        this.availableContours = [
-             { name: '602105-13', url: './svg/60210513.svg' },
-             { name: '615820-3/8', url: './svg/61582038.svg' },
-             { name: '703525-200', url: './svg/703525200.svg' },
-             { name: 'TestCube100mm', url: './svg/TestCube100mm.svg'} // для проверки работоспособности идеи - сойдет и так
-        ];
+        this.laymentOffset = 20;
+        this.availableContours = [];
 
         this.init();
     }
 
-    init() {
+    async init() {
         this.initializeCanvas();
         this.initializeServices();
         this.createBaseRectangle();
-        this.loadAvailableContours();
+        await this.loadAvailableContours();
         this.setupEventListeners();
     }
 
     initializeCanvas() {
-         this.canvasContainer = document.querySelector('.canvas-container');
-    
-         const panelWidth = 300;
-         const workspaceWidth = window.innerWidth - panelWidth - 40;
-         const workspaceHeight = window.innerHeight - 100;
-    
-         this.canvas = new fabric.Canvas('workspaceCanvas', {
-             width: workspaceWidth,
-             height: workspaceHeight,
-             selection: true,
-             backgroundColor: '#fafafa'
-         });
+        const panelWidth = 320;
+        const w = window.innerWidth - panelWidth - 40;
+        const h = window.innerHeight - 120;
 
-         window.addEventListener('resize', () => {
-             const panelWidth = 300;
-             const workspaceWidth = window.innerWidth - panelWidth - 40;
-             const workspaceHeight = window.innerHeight - 100;
-        
-             this.canvas.setWidth(workspaceWidth);
-             this.canvas.setHeight(workspaceHeight);
-             this.canvas.renderAll();
-         });
-    }
+        this.canvas = new fabric.Canvas('workspaceCanvas', {
+            width: w,
+            height: h,
+            backgroundColor: '#fafafa',
+            selection: true
+        });
 
-    updateCanvasSize(width, height) {
-         const padding = 100;
-    
-    // Учитываем позицию ложемента при расчете
-    const requiredWidth = Math.max(
-        this.baseRectangle.left + width + padding, 
-        this.minCanvasSize.width
-    );
-    const requiredHeight = Math.max(
-        this.baseRectangle.top + height + padding, 
-        this.minCanvasSize.height
-    );
-    
-    this.canvasContainer.style.width = requiredWidth + 'px';
-    this.canvasContainer.style.height = requiredHeight + 'px';
-    
-    this.canvas.setWidth(requiredWidth);
-    this.canvas.setHeight(requiredHeight);
-    this.canvas.renderAll();
+        window.addEventListener('resize', () => {
+            const w2 = window.innerWidth - panelWidth - 40;
+            const h2 = window.innerHeight - 120;
+            this.canvas.setDimensions({ width: w2, height: h2 });
+            this.canvas.renderAll();
+        });
     }
 
     initializeServices() {
-        this.svgLoader = new SVGLoader();
         this.contourManager = new ContourManager(this.canvas);
     }
 
@@ -87,259 +48,186 @@ class ContourApp {
             left: this.laymentOffset,
             top: this.laymentOffset,
             fill: 'transparent',
-            stroke: '#080808ff',
+            stroke: '#000',
             strokeWidth: 2,
-            strokeDashArray: [5, 5],
+            strokeDashArray: [8, 8],
             selectable: false,
             evented: false,
-            hasControls: false,
-            hasBorders: false,
-            lockMovementX: true,
-            lockMovementY: true
+            hasControls: false
         });
-        
         this.canvas.add(this.baseRectangle);
         this.canvas.sendToBack(this.baseRectangle);
+        this.canvas.backgroundItem = this.baseRectangle; // для удобства
     }
 
-    loadAvailableContours() {
-         const contoursList = document.getElementById('contoursList');
-         contoursList.innerHTML = '';
+    async loadAvailableContours() {
+        try {
+            const resp = await fetch('/contours/manifest.json');
+            this.availableContours = await resp.json();
 
-         this.availableContours.forEach(contour => {
-             const contourElement = document.createElement('div');
-             contourElement.className = 'contour-item';
-             contourElement.textContent = contour.name;
-             contourElement.dataset.url = contour.url;
-        
-             contourElement.addEventListener('click', () => {
-                 this.addContourToWorkspace(contour.url);
-             });
+            const list = document.getElementById('contoursList');
+            list.innerHTML = '';
 
-             contoursList.appendChild(contourElement);
-         });
+            this.availableContours.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'contour-item';
+                div.textContent = item.name;
+                div.onclick = () => this.addContour(item);
+                list.appendChild(div);
+            });
+        } catch (err) {
+            console.error('Не загрузился manifest.json', err);
+        }
+    }
+
+    async addContour(item) {
+        const centerX = this.baseRectangle.left + this.baseRectangle.width / 2;
+        const centerY = this.baseRectangle.top + this.baseRectangle.height / 2;
+
+        await this.contourManager.addContour(
+            item.svg,
+            { x: centerX, y: centerY },
+            this.workspaceScale,
+            item
+        );
     }
 
     setupEventListeners() {
+        document.getElementById('deleteButton').onclick = () => this.deleteSelected();
+        document.getElementById('rotateButton').onclick = () => this.rotateSelected();
+        document.getElementById('exportButton').onclick = () => this.exportData();
+
+        // Новая кнопка проверки
+        const checkBtn = document.createElement('button');
+        checkBtn.id = 'checkButton';
+        checkBtn.className = 'tool-button';
+        checkBtn.textContent = 'Проверить раскладку';
+        checkBtn.style.background = '#9b59b6';
+        document.querySelector('.tool-buttons').appendChild(checkBtn);
+        checkBtn.onclick = () => {
+            const ok = this.contourManager.checkCollisionsAndHighlight();
+            alert(ok ? 'Всё отлично! Нет коллизий' : 'Ошибка: есть пересечения или выход за границы!');
+        };
+
+        // Остальные обработчики (масштаб, размеры) — оставь как было
         this.setupSizeControls();
         this.setupScaleControl();
-        this.setupDeleteButton();
-        this.setupRotateButton();
-        this.setupExportButton();
-        this.setupCanvasSelectionEvents();
+        this.setupCanvasEvents();
     }
 
     setupSizeControls() {
-        const widthInput = document.getElementById('baseRectWidth');
-        const heightInput = document.getElementById('baseRectHeight');
+        const wInp = document.getElementById('baseRectWidth');
+        const hInp = document.getElementById('baseRectHeight');
 
-        const validateAndUpdate = (input, isWidth) => {
-            let value = parseInt(input.value);
-            
-            if (isNaN(value) || value < 100) {
-                value = isWidth ? 565 : 375;
-                input.value = value;
-            }
-            
-            if (isWidth) {
-                this.updateLaymentSize(value * this.workspaceScale, this.baseRectangle.height);
-            } else {
-                this.updateLaymentSize(this.baseRectangle.width, value * this.workspaceScale);
-            }
+        const update = () => {
+            let w = parseInt(wInp.value) || 565;
+            let h = parseInt(hInp.value) || 375;
+            if (w < 200) w = 200;
+            if (h < 200) h = 200;
+
+            this.baseRectangle.set({
+                width: w,
+                height: h
+            });
+            this.canvas.renderAll();
         };
 
-        widthInput.addEventListener('change', () => validateAndUpdate(widthInput, true));
-        heightInput.addEventListener('change', () => validateAndUpdate(heightInput, false));
+        wInp.onchange = update;
+        hInp.onchange = update;
     }
 
     setupScaleControl() {
-        const scaleInput = document.getElementById('workspaceScale');
-        
-        scaleInput.addEventListener('change', (e) => {
-            const newScale = parseFloat(e.target.value);
-            if (newScale >= 0.1 && newScale <= 10.0) {
-                this.updateWorkspaceScale(newScale);
+        const inp = document.getElementById('workspaceScale');
+        inp.onchange = (e) => {
+            const s = parseFloat(e.target.value);
+            if (s >= 0.1 && s <= 5) {
+                const ratio = s / this.workspaceScale;
+                this.workspaceScale = s;
+
+                this.baseRectangle.scaleX = ratio;
+                this.baseRectangle.scaleY = ratio;
+                this.baseRectangle.left *= ratio;
+                this.baseRectangle.top *= ratio;
+
+                this.contourManager.scaleAllContours(ratio);
+                this.canvas.renderAll();
             } else {
                 e.target.value = this.workspaceScale;
             }
-        });
+        };
     }
 
-    setupDeleteButton() {
-        this.deleteButton = document.getElementById('deleteButton');
-        
-        this.deleteButton.addEventListener('click', () => {
-            this.deleteSelectedContour();
-        });
+    setupCanvasEvents() {
+        this.canvas.on('selection:created', () => this.updateButtons());
+        this.canvas.on('selection:updated', () => this.updateButtons());
+        this.canvas.on('selection:cleared', () => this.updateButtons());
     }
 
-    setupRotateButton() {
-        const rotateButton = document.getElementById('rotateButton');
-        
-        rotateButton.addEventListener('click', () => {
-            this.rotateSelectedContour();
-        });
+    updateButtons() {
+        const hasSel = !!this.canvas.getActiveObject();
+        document.getElementById('deleteButton').disabled = !hasSel;
+        document.getElementById('rotateButton').disabled = !hasSel;
     }
 
-    setupExportButton() {
-        const exportButton = document.getElementById('exportButton');
-        exportButton.addEventListener('click', () => {
-            this.exportData();
-        });
-    }
-
-    setupContoursListbox() {
-        const contoursList = document.getElementById('contoursList');
-        
-        contoursList.addEventListener('change', (e) => {
-            if (e.target.value) {
-                this.addContourToWorkspace(e.target.value);
-                e.target.value = "";
-            }
-        });
-    }
-
-    setupCanvasSelectionEvents() {
-        this.canvas.on('selection:created', () => {
-            this.updateDeleteButtonState();
-            this.updateRotateButtonState();
-        });
-
-        this.canvas.on('selection:cleared', () => {
-            this.updateDeleteButtonState();
-            this.updateRotateButtonState();
-        });
-
-        this.canvas.on('selection:updated', () => {
-            this.updateDeleteButtonState();
-            this.updateRotateButtonState();
-        });
-    }
-
-    updateDeleteButtonState() {
-        const hasSelection = this.canvas.getActiveObject() !== null;
-        this.deleteButton.disabled = !hasSelection;
-    }
-
-    updateRotateButtonState() {
-        const rotateButton = document.getElementById('rotateButton');
-        const hasSelection = this.canvas.getActiveObject() !== null;
-        rotateButton.disabled = !hasSelection;
-    }
-
-    async addContourToWorkspace(svgUrl) {
-        try {
-            const centerX = 50;//this.baseRectangle.width / 2;
-            const centerY = 50;//this.baseRectangle.height / 2;
-            
-            await this.contourManager.addContour(svgUrl, { x: centerX, y: centerY }, this.workspaceScale);
-        } catch (error) {
-            alert('Ошибка при добавлении контура');
-        }
-    }
-
-    deleteSelectedContour() {
-        const activeObject = this.canvas.getActiveObject();
-        if (!activeObject) return;
-
-        if (activeObject.type === 'activeSelection') {
-            activeObject.getObjects().forEach(obj => {
-                this.contourManager.removeContour(obj);
-            });
+    deleteSelected() {
+        const obj = this.canvas.getActiveObject();
+        if (!obj) return;
+        if (obj.type === 'activeSelection') {
+            obj.forEachObject(o => this.contourManager.removeContour(o));
             this.canvas.discardActiveObject();
         } else {
-            this.contourManager.removeContour(activeObject);
+            this.contourManager.removeContour(obj);
         }
-        
-        this.canvas.renderAll();
-        this.updateDeleteButtonState();
-        this.updateRotateButtonState();
+        this.updateButtons();
     }
 
-    rotateSelectedContour() {
-        const activeObject = this.canvas.getActiveObject();
-        if (!activeObject) return;
-        
-        const currentAngle = activeObject.angle;
-        const nextAngle = (currentAngle + 90) % 360;
-        this.contourManager.rotateContour(activeObject, nextAngle);
-    }
-
-    updateLaymentSize(width, height) {
-        this.baseRectangle.set({
-            width: width,// * this.workspaceScale,
-            height: height// * this.workspaceScale
-        });
-        this.updateCanvasSize(width * this.workspaceScale, height * this.workspaceScale);
-    }
-
-    updateWorkspaceScale(newScale) {
-        const oldScale = this.workspaceScale;
-        this.workspaceScale = newScale;
-        const scaleRatio = newScale / oldScale;
-
-        this.scaleLayment(scaleRatio);
-        this.contourManager.scaleAllContours(scaleRatio);
-      
-        this.updateCanvasSize(
-        this.baseRectangle.width, 
-        this.baseRectangle.height
-        );
-        
-        this.canvas.renderAll();
-    }
-
-    scaleLayment(scaleRatio) {
-        const currentWidth = this.baseRectangle.width;
-        const currentHeight = this.baseRectangle.height;
-        const currentLeft = this.baseRectangle.left;
-        const currentTop = this.baseRectangle.top;
-        
-        this.baseRectangle.set({
-            width: currentWidth * scaleRatio,
-            height: currentHeight * scaleRatio,
-            left: currentLeft * scaleRatio,
-            top: currentTop * scaleRatio
-        });
+    rotateSelected() {
+        const obj = this.canvas.getActiveObject();
+        if (!obj) return;
+        const next = (obj.angle + 90) % 360;
+        this.contourManager.rotateContour(obj, next);
     }
 
     exportData() {
-    const timestamp = new Date();
-    const exportData = {
-        name: `inlay_${timestamp.toISOString().replace(/[:.]/g, '-')}`,
-        layment_size: {
-            width: this.baseRectangle.height / this.workspaceScale,  // Убираем масштаб
-            height: this.baseRectangle.width / this.workspaceScale   // Убираем масштаб
-        },
-        contours: this.contourManager.getContoursData(this.baseRectangle, this.workspaceScale),
-        export_timestamp: timestamp.toISOString()
-        // workspace_scale больше не включаем - все координаты как при scale=1
-    };
-    
-    console.log('Экспортируемые данные:', exportData);
-    this.sendToBackend(exportData);
-    
-    return exportData;
-    }
+        const ok = this.contourManager.checkCollisionsAndHighlight();
+        if (!ok) {
+            alert('Нельзя экспортировать: есть коллизии или выход за границы!');
+            return;
+        }
 
-    sendToBackend(data) {
-        const jsonString = JSON.stringify(data, null, 2);
-        alert('Данные для отправки на бэкенд:\n' + jsonString);
-        
-        // Для production:
-        // fetch('/api/export', {
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: jsonString
-        // });
+        const widthPx = this.baseRectangle.width * this.baseRectangle.scaleX;
+        const heightPx = this.baseRectangle.height * this.baseRectangle.scaleY;
+
+        const areaM2 = (widthPx * heightPx) / 1e6;
+        const cuttingM = this.contourManager.getTotalCuttingLength();
+
+        const priceMaterial = Math.round(areaM2 * 2800);
+        const priceCutting = Math.round(cuttingM * 350);
+        const totalPrice = priceMaterial + priceCutting;
+
+        const data = {
+            layment: {
+                width_mm: Math.round(widthPx),
+                height_mm: Math.round(heightPx)
+            },
+            contours: this.contourManager.getContoursData(this.workspaceScale),
+            price: {
+                material_rub: priceMaterial,
+                cutting_rub: priceCutting,
+                total_rub: totalPrice
+            },
+            stats: {
+                area_m2: +areaM2.toFixed(4),
+                cutting_meters: +cuttingM.toFixed(3)
+            }
+        };
+
+        console.log('Экспорт:', data);
+        alert(`Готово!\n\nРазмер: ${data.layment.width_mm}×${data.layment.height_mm} мм\nПлощадь: ${data.stats.area_m2} м²\nРезка: ${data.stats.cutting_meters} м\n\nИтого: ${totalPrice} ₽`);
+
+        // fetch('/api/order', { method: 'POST', body: JSON.stringify(data) })
     }
 }
 
-// Инициализация приложения
-document.addEventListener('DOMContentLoaded', () => {
-    new ContourApp();
-
-});
-
-
-
+// Запуск
+document.addEventListener('DOMContentLoaded', () => new ContourApp());

@@ -3,175 +3,175 @@ class ContourManager {
         this.canvas = canvas;
         this.svgLoader = new SVGLoader();
         this.contours = [];
+        this.metadataMap = new WeakMap(); // объект → метаданные
         this.allowedAngles = [0, 90, 180, 270];
-        
         this.disableGroupControls();
     }
 
-    async addContour(svgUrl, position = { x: 0, y: 0 }, scale = 1.0) {
+    async addContour(svgUrl, position, scale, metadata) {
         try {
-            const contour = await this.svgLoader.createFabricObjectFromSVG(svgUrl);
-            
-            const defaultOptions = {
-                left: position.x * scale,
-                top: position.y * scale,
-                scaleX: scale * 0.0353,
-                scaleY: scale * 0.0353,
-                originX: 'left',
-                originY: 'top',
-                hasControls: false,
+            const group = await this.svgLoader.createFabricObjectFromSVG(svgUrl);
+
+            const scaledFactor = scale * 0.0353;
+
+            group.set({
+                left: position.x,
+                top: position.y,
+                originX: 'center',
+                originY: 'center',
+                scaleX: scaledFactor,
+                scaleY: scaledFactor,
+                hasControls: true,
                 hasBorders: true,
                 lockScalingX: true,
                 lockScalingY: true,
-                lockRotation: true,
+                lockRotation: false,
                 cornerColor: '#3498db',
-                transparentCorners: false
-            };
-
-            contour.set(defaultOptions);
-            
-            // Обработчики вращения с фиксацией углов
-            contour.on('rotating', (e) => {
-                this.snapToAllowedAngle(contour);
+                borderColor: '#3498db',
+                transparentCorners: false,
+                perPixelTargetFind: true
             });
 
-            contour.on('modified', (e) => {
-                this.snapToAllowedAngle(contour);
-            });
+            // Сохраняем метаданные
+            this.metadataMap.set(group, metadata);
 
-            // Сохраняем оригинальные данные для экспорта
-            contour.originalData = {
-                width: contour.width,
-                height: contour.height,
-                position: { x: position.x, y: position.y }
-            };
+            // Фиксация углов при вращении
+            group.on('rotating', () => this.snapToAllowedAngle(group));
+            group.on('modified', () => this.snapToAllowedAngle(group));
 
-            contour.svgUrl = svgUrl;
-
-            this.contours.push(contour);
-            this.canvas.add(contour);
-            this.canvas.setActiveObject(contour);
+            this.contours.push(group);
+            this.canvas.add(group);
+            this.canvas.setActiveObject(group);
             this.canvas.renderAll();
-            
-            return contour;
-        } catch (error) {
-            console.error('Ошибка добавления контура:', error);
+
+            return group;
+        } catch (err) {
+            console.error('Ошибка добавления контура:', err);
+            throw err;
         }
     }
 
-    snapToAllowedAngle(object) {
-        const currentAngle = object.angle % 360;
-        const snappedAngle = this.allowedAngles.reduce((prev, curr) => {
-            return (Math.abs(curr - currentAngle) < Math.abs(prev - currentAngle)) ? curr : prev;
-        });
-        
-        object.angle = snappedAngle;
-        object.setCoords();
+    snapToAllowedAngle(obj) {
+        const angle = obj.angle % 360;
+        const snapped = this.allowedAngles.reduce((a, b) =>
+            Math.abs(b - angle) < Math.abs(a - angle) ? b : a
+        );
+        obj.angle = snapped;
+        obj.setCoords();
+    }
+
+    rotateContour(obj, angle) {
+        if (this.allowedAngles.includes(angle)) {
+            obj.angle = angle;
+            obj.setCoords();
+            this.canvas.renderAll();
+        }
+    }
+
+    removeContour(obj) {
+        const idx = this.contours.indexOf(obj);
+        if (idx > -1) this.contours.splice(idx, 1);
+        this.canvas.remove(obj);
         this.canvas.renderAll();
     }
 
-    rotateContour(contour, angle) {
-        if (this.allowedAngles.includes(angle)) {
-            contour.angle = angle;
-            contour.setCoords();
-            this.canvas.renderAll();
-        }
+    scaleAllContours(ratio) {
+        this.contours.forEach(obj => {
+            obj.scaleX *= ratio;
+            obj.scaleY *= ratio;
+            obj.left *= ratio;
+            obj.top *= ratio;
+            obj.setCoords();
+        });
+        this.canvas.renderAll();
     }
 
-    removeContour(contour) {
-        const index = this.contours.indexOf(contour);
-        if (index > -1) {
-            this.contours.splice(index, 1);
-            this.canvas.remove(contour);
-            this.canvas.renderAll();
+    // Главная функция проверки
+    checkCollisionsAndHighlight() {
+        const problematic = new Set();
+
+        // Сброс подсветки
+        this.contours.forEach(obj => {
+            obj.set({ borderColor: '#3498db', cornerColor: '#3498db' });
+        });
+
+        const layRect = this.canvas.getObjects().find(o => o.selectable === false && o.type === 'rect');
+        if (!layRect) return true;
+
+        const padding = 8;
+
+        for (let i = 0; i < this.contours.length; i++) {
+            const a = this.contours[i];
+            const boxA = a.getBoundingRect(true);
+
+            // За пределы ложемента?
+            if (boxA.left < layRect.left + padding ||
+                boxA.top < layRect.top + padding ||
+                boxA.left + boxA.width > layRect.left + layRect.width - padding ||
+                boxA.top + boxA.height > layRect.top + layRect.height - padding) {
+                problematic.add(a);
+                continue;
+            }
+
+            // Пересечения с другими?
+            for (let j = i + 1; j < this.contours.length; j++) {
+                const b = this.contours[j];
+                const boxB = b.getBoundingRect(true);
+
+                if (this.intersect(boxA, boxB)) {
+                    problematic.add(a);
+                    problematic.add(b);
+                }
+            }
         }
+
+        // Подсвечиваем красным
+        problematic.forEach(obj => {
+            obj.set({ borderColor: 'red', cornerColor: 'red' });
+        });
+
+        this.canvas.renderAll();
+        return problematic.size === 0;
     }
 
-    scaleAllContours(scaleRatio) {
-        this.contours.forEach(contour => {
-            const currentScale = contour.scaleX * scaleRatio;
-            
-            contour.set({
-                scaleX: currentScale,
-                scaleY: currentScale,
-                left: contour.left * scaleRatio,
-                top: contour.top * scaleRatio
-            });
-            contour.setCoords();
+    intersect(a, b) {
+        return a.left < b.left + b.width &&
+               a.left + a.width > b.left &&
+               a.top < b.top + b.height &&
+               a.top + a.height > b.top;
+    }
+
+    getContoursData(workspaceScale) {
+        return this.contours.map(obj => {
+            const meta = this.metadataMap.get(obj);
+            const bbox = obj.getBoundingRect(true);
+
+            return {
+                id: meta.id,
+                name: meta.name,
+                x: Math.round((bbox.left - this.canvas.backgroundItem.left) / workspaceScale),
+                y: Math.round((bbox.top - this.canvas.backgroundItem.top) / workspaceScale),
+                angle: obj.angle,
+                cuttingLengthMeters: meta.cuttingLengthMeters
+            };
         });
     }
 
-    getContourName(contour) {
-        return contour.svgUrl?.split('/').pop()?.replace('.svg', '') || 'unknown';
+    getTotalCuttingLength() {
+        return this.contours.reduce((sum, obj) => {
+            const meta = this.metadataMap.get(obj);
+            return sum + (meta?.cuttingLengthMeters || 0);
+        }, 0);
     }
-
-    getContoursData(layment, workspaceScale = 1.0) {
-    return this.contours.map(contour => {
-        // Обратное масштабирование координат
-        const originalX = contour.originalData.position.x;
-        const originalY = contour.originalData.position.y;
-        
-        // Поворачиваем систему координат и убираем масштаб
-        return {
-            name: this.getContourName(contour), // Оригинальное имя без суффиксов
-            x: originalY,    // top → X (без масштаба)
-            y: originalX,    // left → Y (без масштаба)
-            angle: contour.angle
-        };
-    });
-}
 
     disableGroupControls() {
         fabric.ActiveSelection.prototype.set({
             hasControls: false,
-            hasBorders: true,
-            lockScalingX: true,
-            lockScalingY: true,
-            lockRotation: true,
-            lockSkewingX: true,
-            lockSkewingY: true
-        });
-
-        this.canvas.on('selection:created', (e) => {
-            if (e.target && e.target.type === 'activeSelection') {
-                this.disableSelectionControls(e.target);
-            }
-        });
-
-        this.canvas.on('selection:updated', (e) => {
-            if (e.target && e.target.type === 'activeSelection') {
-                this.disableSelectionControls(e.target);
-            }
-        });
-    }
-
-    disableSelectionControls(selectionGroup) {
-        selectionGroup.set({
-            hasControls: false,
+            lockMovementX: true,
+            lockMovementY: true,
             lockScalingX: true,
             lockScalingY: true,
             lockRotation: true
         });
-        
-        selectionGroup.getObjects().forEach(obj => {
-            obj.set({
-                hasControls: false,
-                lockScalingX: true,
-                lockScalingY: true,
-                lockRotation: true
-            });
-        });
-        
-        selectionGroup.setCoords();
-        this.canvas.renderAll();
     }
-
-    clearAllContours() {
-        this.contours.forEach(contour => {
-            this.canvas.remove(contour);
-        });
-        this.contours = [];
-        this.canvas.renderAll();
-    }
-
 }
