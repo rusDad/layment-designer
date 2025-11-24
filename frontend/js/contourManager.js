@@ -80,8 +80,8 @@ class ContourManager {
     // Сброс цвета у всех контуров
     this.contours.forEach(obj => {
         obj.set({
-            stroke: '#2c3e50',        // обычный цвет контура
-            strokeWidth: 1.5,
+            stroke: '#101214ff',        // обычный цвет контура
+            strokeWidth: 10,
             opacity: 1,
             borderColor: '#3498db',   // цвет рамки выделения (если останется)
             cornerColor: '#3498db'
@@ -123,7 +123,7 @@ class ContourManager {
     problematic.forEach(obj => {
         obj.set({
             stroke: '#e74c3c',       // ярко-красный контур
-            strokeWidth: 12,
+            strokeWidth: 15,
             opacity: 0.85,
             borderColor: '#e74c3c',
             cornerColor: '#c0392b'
