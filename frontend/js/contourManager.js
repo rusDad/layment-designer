@@ -75,41 +75,64 @@ class ContourManager {
     }
 
     checkCollisionsAndHighlight() {
-        const problematic = new Set();
-        this.contours.forEach(c => c.set({ borderColor: '#3498db', cornerColor: '#3498db' }));
+    const problematic = new Set();
 
-        const layment = this.canvas.layment || this.canvas.getObjects().find(o => o.name === 'layment');
-        if (!layment) return true;
+    // Сброс цвета у всех контуров
+    this.contours.forEach(obj => {
+        obj.set({
+            stroke: '#2c3e50',        // обычный цвет контура
+            strokeWidth: 1.5,
+            opacity: 1,
+            borderColor: '#3498db',   // цвет рамки выделения (если останется)
+            cornerColor: '#3498db'
+        });
+    });
 
-        const padding = 8;
+    const layment = this.canvas.layment;
+    if (!layment) return true;
 
-        for (let i = 0; i < this.contours.length; i++) {
-            const a = this.contours[i];
-            const box = a.getBoundingRect(true);
+    const padding = 8;
 
-            // Выход за границы?
-            if (box.left < layment.left + padding ||
-                box.top < layment.top + padding ||
-                box.left + box.width > layment.left + layment.width * layment.scaleX - padding ||
-                box.top + box.height > layment.top + layment.height * layment.scaleY - padding) {
-                problematic.add(a);
-            }
+    for (let i = 0; i < this.contours.length; i++) {
+        const a = this.contours[i];
+        const box = a.getBoundingRect(true);
 
-            // Пересечения
-            for (let j = i + 1; j < this.contours.length; j++) {
-                const b = this.contours[j];
-                const boxB = b.getBoundingRect(true);
-                if (this.intersect(box, boxB)) {
-                    problematic.add(a);
-                    problematic.add(b);
-                }
-            }
+        // 1. Выход за границы ложемента
+        const lWidth = layment.width * layment.scaleX;
+        const lHeight = layment.height * layment.scaleY;
+
+        if (box.left < layment.left + padding ||
+            box.top < layment.top + padding ||
+            box.left + box.width > layment.left + lWidth - padding ||
+            box.top + box.height > layment.top + lHeight - padding) {
+            problematic.add(a);
         }
 
-        problematic.forEach(o => o.set({ borderColor: 'red', cornerColor: 'red' }));
-        this.canvas.renderAll();
-        return problematic.size === 0;
+        // 2. Пересечения с другими контурами
+        for (let j = i + 1; j < this.contours.length; j++) {
+            const b = this.contours[j];
+            const boxB = b.getBoundingRect(true);
+            if (this.intersect(box, boxB)) {
+                problematic.add(a);
+                problematic.add(b);
+            }
+        }
     }
+
+    // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
+    problematic.forEach(obj => {
+        obj.set({
+            stroke: '#e74c3c',       // ярко-красный контур
+            strokeWidth: 3,
+            opacity: 0.85,
+            borderColor: '#e74c3c',
+            cornerColor: '#c0392b'
+        });
+    });
+
+    this.canvas.renderAll();
+    return problematic.size === 0;
+}
 
     intersect(a, b) {
         return a.left < b.left + b.width &&
