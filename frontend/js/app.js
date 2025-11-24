@@ -154,6 +154,8 @@ class ContourApp {
         document.getElementById('deleteButton').onclick = () => this.deleteSelected();
         document.getElementById('rotateButton').onclick = () => this.rotateSelected();
         document.getElementById('exportButton').onclick = () => this.exportData();
+        //Строка состояния
+        this.setupStatusBarUpdates();
 
         // Кнопка проверки
         const checkBtn = document.createElement('button');
@@ -227,5 +229,6 @@ class ContourApp {
         // fetch('/api/order', { method: 'POST', body: JSON.stringify(data) })
     }
 }
+
 
 document.addEventListener('DOMContentLoaded', () => new ContourApp());
