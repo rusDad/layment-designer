@@ -122,6 +122,7 @@ class ContourApp {
         });
 
         this.canvas.renderAll();
+        this.updateStatusBar();
     }
 
     setupEventListeners() {
@@ -179,6 +180,48 @@ class ContourApp {
         document.getElementById('rotateButton').disabled = !has;
     }
 
+    //  подписка на события для статус-бара
+    setupStatusBarUpdates() {
+    this.canvas.on('selection:created', () => this.updateStatusBar());
+    this.canvas.on('selection:updated', () => this.updateStatusBar());
+    this.canvas.on('selection:cleared', () => this.updateStatusBar());
+
+    // Обновление при перемещении и вращении
+    this.canvas.on('object:moving', () => this.updateStatusBar());
+    this.canvas.on('object:rotating', () => this.updateStatusBar());
+    this.canvas.on('object:modified', () => this.updateStatusBar());
+    }
+
+    // обновление строки состояния
+    updateStatusBar() {
+    const statusEl = document.getElementById('status-info');
+    const active = this.canvas.getActiveObject();
+
+    if (!active || active.type === 'activeSelection') {
+        statusEl.textContent = 'Ничего не выделено';
+        return;
+    }
+
+    // Находим оригинальную группу контура в массиве contourManager.contours
+    const contour = this.contourManager.contours.find(c => 
+        c === active || (active.getObjects && active.getObjects().includes(c))
+    );
+
+    if (!contour) {
+        statusEl.textContent = 'Контур не найден';
+        return;
+    }
+
+    const meta = this.contourManager.metadataMap.get(contour);
+    const realX = (contour.left / this.workspaceScale).toFixed(1);
+    const realY = (contour.top / this.workspaceScale).toFixed(1);
+
+    statusEl.innerHTML = `
+        <strong>${meta.name}</strong>
+        X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°
+    `;
+    }
+
     deleteSelected() {
         const obj = this.canvas.getActiveObject();
         if (!obj) return;
@@ -232,3 +275,4 @@ class ContourApp {
 
 
 document.addEventListener('DOMContentLoaded', () => new ContourApp());
+
