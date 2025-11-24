@@ -123,7 +123,7 @@ class ContourManager {
     problematic.forEach(obj => {
         obj.set({
             stroke: '#e74c3c',       // ярко-красный контур
-            strokeWidth: 3,
+            strokeWidth: 12,
             opacity: 0.85,
             borderColor: '#e74c3c',
             cornerColor: '#c0392b'
