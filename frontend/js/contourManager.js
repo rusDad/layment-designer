@@ -5,7 +5,16 @@ class ContourManager {
         this.contours = [];
         this.metadataMap = new WeakMap();
         this.allowedAngles = [0, 90, 180, 270];
-        this.disableGroupControls();
+       // Разрешаем перемещение группы, но запрещаем всё остальное
+        fabric.ActiveSelection.prototype.set({
+         hasControls: false,       // убираем контроллы масштабирования и поворота
+         lockScalingX: true,
+         lockScalingY: true,
+         lockRotation: true,
+         lockMovementX: false,     //  разрешаем двигать по X
+         lockMovementY: false,     //  разрешаем двигать по Y
+         hasBorders: true          // оставляем рамку, чтобы было видно, что группа выделена
+        });
     }
 
     async addContour(svgUrl, position, scale, metadata) {
