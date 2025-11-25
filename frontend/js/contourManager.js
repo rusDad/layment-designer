@@ -29,9 +29,9 @@ class ContourManager {
             borderColor: '#3498db',
             transparentCorners: false
         });
-        
+
         group.setControlsVisibility({
-         tl:false, tr:false, br:false, bl:false,
+         tl:true, tr:false, br:false, bl:false,
          ml:false, mt:false, mr:false, mb:false,
          mtr: true
         });
