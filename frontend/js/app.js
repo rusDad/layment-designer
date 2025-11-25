@@ -106,7 +106,7 @@ class ContourApp {
     }
 
     updateWorkspaceScale(newScale) {
-        if (newScale < 0.1 || newScale > 10) return;
+        if (newScale < 0.5 || newScale > 10) return;
 
         const ratio = newScale / this.workspaceScale;
         this.workspaceScale = newScale;
@@ -129,14 +129,14 @@ class ContourApp {
         // Размеры ложемента
         document.getElementById('baseRectWidth').addEventListener('change', e => {
             let v = parseInt(e.target.value) || 565;
-            if (v < 200) v = 200;
+            if (v < 100) v = 100;
             e.target.value = v;
             this.updateLaymentSize(v, this.layment.height);
         });
 
         document.getElementById('baseRectHeight').addEventListener('change', e => {
             let v = parseInt(e.target.value) || 375;
-            if (v < 200) v = 200;
+            if (v < 100) v = 100;
             e.target.value = v;
             this.updateLaymentSize(this.layment.width, v);
         });
@@ -144,12 +144,27 @@ class ContourApp {
         // Масштаб
         document.getElementById('workspaceScale').addEventListener('change', e => {
             const s = parseFloat(e.target.value);
-            if (s >= 0.1 && s <= 10) {
+            if (s >= 0.5 && s <= 10) {
                 this.updateWorkspaceScale(s);
             } else {
                 e.target.value = this.workspaceScale;
             }
         });
+
+        // Зум колёсиком мыши
+        const scaleInput = document.getElementById('workspaceScale');
+        this.canvas.wrapperEl.addEventListener('wheel', e => {
+         e.preventDefault();
+         const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
+         const delta = e.deltaY > 0 ? -step : step;
+         let val = parseFloat(scaleInput.value) || 1;
+
+         val = Math.max(0.5, Math.min(10, val + delta));
+         val = Math.round(val * 100) / 100;
+
+         scaleInput.value = val;
+         scaleInput.dispatchEvent(new Event('change'));
+        }, { passive: false });
 
         // Кнопки
         document.getElementById('deleteButton').onclick = () => this.deleteSelected();
