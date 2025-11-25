@@ -213,9 +213,10 @@ class ContourApp {
     }
 
     const meta = this.contourManager.metadataMap.get(contour);
-    const realX = (contour.left / this.workspaceScale).toFixed(1);
-    const realY = (contour.top / this.workspaceScale).toFixed(1);
-
+    const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
+    const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1); 
+    const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
+    
     statusEl.innerHTML = `
         <strong>${meta.name}</strong>
         X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°
