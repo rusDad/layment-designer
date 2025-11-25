@@ -2,25 +2,25 @@
   {
     "id": "602105-13",
     "name": "602105-13",
-    "svg": "/svg/60210513.svg",
+    "svg": "/contours/svg/60210513.svg",
     "cuttingLengthMeters": 0.85
   },
   {
     "id": "615820-3/8",
     "name": "615820-3/8",
-    "svg": "/svg/61582038.svg",
+    "svg": "/contours/svg/61582038.svg",
     "cuttingLengthMeters": 1.12
   },
   {
     "id": "703525-200",
     "name": "703525-200",
-    "svg": "/svg/703525200.svg",
+    "svg": "/contours/svg/703525200.svg",
     "cuttingLengthMeters": 1.45
   },
   {
     "id": "test-cube",
     "name": "Test Cube 100mm",
-    "svg": "/svg/TestCube100mm.svg",
+    "svg": "/contours/svg/TestCube100mm.svg",
     "cuttingLengthMeters": 0.4
   }
 ]
