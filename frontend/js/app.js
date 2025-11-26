@@ -265,8 +265,8 @@ class ContourApp {
             return;
         }
 
-        const realWidth = Math.round(this.layment.width / this.workspaceScale);
-        const realHeight = Math.round(this.layment.height / this.workspaceScale);
+        const realWidth = Math.round(this.layment.width );
+        const realHeight = Math.round(this.layment.height);
         const areaM2 = (realWidth * realHeight) / 1e6;
         const cuttingM = this.contourManager.getTotalCuttingLength();
 
