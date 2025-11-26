@@ -180,7 +180,7 @@ class ContourManager {
         }, 0);
     }
 
-    disableGroupControls() {
+    /*disableGroupControls() {
         fabric.ActiveSelection.prototype.set({
             hasControls: false,
             lockMovementX: true,
@@ -189,5 +189,5 @@ class ContourManager {
             lockScalingY: true,
             lockRotation: true
         });
-    }
+    }*/
 }

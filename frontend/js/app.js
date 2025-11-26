@@ -265,14 +265,14 @@ class ContourApp {
             return;
         }
 
-        const realWidth = Math.round(this.layment.width * this.layment.scaleX);
-        const realHeight = Math.round(this.layment.height * this.layment.scaleY);
+        const realWidth = Math.round(this.layment.width);
+        const realHeight = Math.round(this.layment.height);
         const areaM2 = (realWidth * realHeight) / 1e6;
         const cuttingM = this.contourManager.getTotalCuttingLength();
 
-        const priceMaterial = Math.round(areaM2 * 2800);
-        const priceCutting = Math.round(cuttingM * 350);
-        const total = priceMaterial + priceCutting;
+        const priceMaterial = Math.round(areaM2 * 1.25 * 2500);
+        const priceCutting = Math.round(cuttingM * 281);
+        const total = Math.round((priceMaterial + priceCutting) * 2.25);
 
         const data = {
             layment_mm: { width: realWidth, height: realHeight },
