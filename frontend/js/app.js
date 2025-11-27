@@ -1,7 +1,7 @@
 class ContourApp {
     constructor() {
         this.canvas = null;
-        this.layment = null;                    // ← Единое название
+        this.layment = null;                  
         this.workspaceScale = 1.0;
         this.laymentOffset = 20;
         this.availableContours = [];
@@ -152,18 +152,18 @@ class ContourApp {
         });
 
         // Зум колёсиком мыши
-        const scaleInput = document.getElementById('workspaceScale');
+         const scaleInput = document.getElementById('workspaceScale');
         this.canvas.wrapperEl.addEventListener('wheel', e => {
-         e.preventDefault();
-         const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
-         const delta = e.deltaY > 0 ? -step : step;
-         let val = parseFloat(scaleInput.value) || 1;
+           e.preventDefault();
+           const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
+           const delta = e.deltaY > 0 ? -step : step;
+            let val = parseFloat(scaleInput.value) || 1;
 
-         val = Math.max(0.5, Math.min(10, val + delta));
-         val = Math.round(val * 100) / 100;
+            val = Math.max(0.5, Math.min(10, val + delta));
+            val = Math.round(val * 100) / 100;
 
-         scaleInput.value = val;
-         scaleInput.dispatchEvent(new Event('change'));
+           scaleInput.value = val;
+            scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
 
         // Кнопки
@@ -195,44 +195,44 @@ class ContourApp {
         document.getElementById('rotateButton').disabled = !has;
     }
 
-    //  подписка на события для статус-бара
+        //  подписка на события для статус-бара
     setupStatusBarUpdates() {
-    this.canvas.on('selection:created', () => this.updateStatusBar());
-    this.canvas.on('selection:updated', () => this.updateStatusBar());
-    this.canvas.on('selection:cleared', () => this.updateStatusBar());
+        this.canvas.on('selection:created', () => this.updateStatusBar());
+        this.canvas.on('selection:updated', () => this.updateStatusBar());
+        this.canvas.on('selection:cleared', () => this.updateStatusBar());
 
-    // Обновление при перемещении и вращении
-    this.canvas.on('object:moving', () => this.updateStatusBar());
-    this.canvas.on('object:rotating', () => this.updateStatusBar());
-    this.canvas.on('object:modified', () => this.updateStatusBar());
+        // Обновление при перемещении и вращении
+        this.canvas.on('object:moving', () => this.updateStatusBar());
+        this.canvas.on('object:rotating', () => this.updateStatusBar());
+        this.canvas.on('object:modified', () => this.updateStatusBar());
     }
 
     // обновление строки состояния
     updateStatusBar() {
-    const statusEl = document.getElementById('status-info');
-    const active = this.canvas.getActiveObject();
+     const statusEl = document.getElementById('status-info');
+     const active = this.canvas.getActiveObject();
 
-    if (!active || active.type === 'activeSelection') {
+        if (!active || active.type === 'activeSelection') {
         statusEl.textContent = 'Ничего не выделено';
         return;
-    }
+        }
 
-    // Находим оригинальную группу контура в массиве contourManager.contours
-    const contour = this.contourManager.contours.find(c => 
-        c === active || (active.getObjects && active.getObjects().includes(c))
-    );
+       // Находим оригинальную группу контура в массиве contourManager.contours
+       const contour = this.contourManager.contours.find(c => 
+         c === active || (active.getObjects && active.getObjects().includes(c))
+       );
 
-    if (!contour) {
+        if (!contour) {
         statusEl.textContent = 'Контур не найден';
         return;
-    }
+        }
 
-    const meta = this.contourManager.metadataMap.get(contour);
-    const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
-    const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1); 
-    const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
+       const meta = this.contourManager.metadataMap.get(contour);
+       const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
+       const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1); 
+       const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
     
-    statusEl.innerHTML = `
+        statusEl.innerHTML = `
         <strong>${meta.name}</strong>
         X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°
     `;
