@@ -116,6 +116,16 @@ body {
     background-color: #fafafa;
 }
 
+.canvas-scroll-container::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.canvas-scroll-container::-webkit-scrollbar-thumb {
+    background-color: #bdc3c7;
+    border-radius: 5px;
+}
+
 .canvas-container {
     position: relative;
 }

@@ -90,10 +90,10 @@ class ContourManager {
     }
 
     checkCollisionsAndHighlight() {
-    const problematic = new Set();
+      const problematic = new Set();
 
-    // Сброс цвета у всех контуров
-    this.contours.forEach(obj => {
+       // Сброс цвета у всех контуров
+      this.contours.forEach(obj => {
         obj.set({
             stroke: '#101214ff',        // обычный цвет контура
             strokeWidth: 10,
@@ -101,53 +101,53 @@ class ContourManager {
             borderColor: '#3498db',   // цвет рамки выделения (если останется)
             cornerColor: '#3498db'
         });
-    });
+       });
 
-    const layment = this.canvas.layment;
-    if (!layment) return true;
+      const layment = this.canvas.layment;
+      if (!layment) return true;
 
-    const padding = 8;
+      const padding = 8 * layment.scaleX;
 
-    for (let i = 0; i < this.contours.length; i++) {
-        const a = this.contours[i];
-        const box = a.getBoundingRect(true);
+     for (let i = 0; i < this.contours.length; i++) {
+          const a = this.contours[i];
+           const box = a.getBoundingRect(true);
 
-        // 1. Выход за границы ложемента
-        const lWidth = layment.width * layment.scaleX;
-        const lHeight = layment.height * layment.scaleY;
+           // 1. Выход за границы ложемента
+           const lWidth = layment.width * layment.scaleX;
+          const lHeight = layment.height * layment.scaleY;
 
-        if (box.left < layment.left + padding ||
+         if (box.left < layment.left + padding ||
             box.top < layment.top + padding ||
             box.left + box.width > layment.left + lWidth - padding ||
             box.top + box.height > layment.top + lHeight - padding) {
             problematic.add(a);
-        }
+          }
 
-        // 2. Пересечения с другими контурами
-        for (let j = i + 1; j < this.contours.length; j++) {
+          // 2. Пересечения с другими контурами
+          for (let j = i + 1; j < this.contours.length; j++) {
             const b = this.contours[j];
             const boxB = b.getBoundingRect(true);
             if (this.intersect(box, boxB)) {
                 problematic.add(a);
                 problematic.add(b);
             }
+          } 
         }
-    }
 
-    // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
-    problematic.forEach(obj => {
+       // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
+       problematic.forEach(obj => {
         obj.set({
             stroke: '#e74c3c',       // ярко-красный контур
             strokeWidth: 15,
             opacity: 0.85,
             borderColor: '#e74c3c',
             cornerColor: '#c0392b'
+             });
         });
-    });
 
-    this.canvas.renderAll();
-    return problematic.size === 0;
-}
+       this.canvas.renderAll();
+       return problematic.size === 0;
+    }
 
     intersect(a, b) {
         return a.left < b.left + b.width &&
@@ -157,16 +157,17 @@ class ContourManager {
     }
 
     getContoursData() {
-        const layment = this.canvas.layment;
-        return this.contours.map(obj => {
+       const layment = this.canvas.layment;
+       return this.contours.map(obj => {
             const meta = this.metadataMap.get(obj);
-            const box = obj.getBoundingRect(true);
+            const tl = obj.aCoords.tl;
+           
 
             return {
                 id: meta.id,
                 name: meta.name,
-                x: Math.round(box.left - layment.left),
-                y: Math.round(box.top - layment.top),
+                x: Math.round((tl.x - layment.left)/layment.scaleX),
+                y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: obj.angle,
                 cuttingLengthMeters: meta.cuttingLengthMeters
             };

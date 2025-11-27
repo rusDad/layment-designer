@@ -120,6 +120,16 @@ class ContourApp {
             });
             obj.setCoords();
         });
+        // рассчитываем bounding box всех объектов и устанавливаем размер canvas
+        const allObjects = this.canvas.getObjects();
+        if (allObjects.length > 0) {
+          const boundingRect = fabric.util.makeBoundingBoxFromPoints(
+             allObjects.flatMap(obj => Object.values(obj.aCoords))
+            );
+          const newWidth = Math.max(this.canvas.width, boundingRect.left + boundingRect.width + 100); // +100 для запаса
+          const newHeight = Math.max(this.canvas.height, boundingRect.top + boundingRect.height + 100);
+          this.canvas.setDimensions({ width: newWidth, height: newHeight });
+        }
 
         this.canvas.renderAll();
         this.updateStatusBar();
@@ -152,7 +162,7 @@ class ContourApp {
         });
 
         // Зум колёсиком мыши
-         const scaleInput = document.getElementById('workspaceScale');
+        const scaleInput = document.getElementById('workspaceScale');
         this.canvas.wrapperEl.addEventListener('wheel', e => {
            e.preventDefault();
            const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
