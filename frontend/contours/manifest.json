@@ -18,18 +18,6 @@
     "cuttingLengthMeters": 1.45
   },
   {
-    "id": "test-cube",
-    "name": "Test Cube 100mm",
-    "svg": "/contours/svg/Test_cube_100x100.svg",
-    "cuttingLengthMeters": 0.4
-  },
-  {
-    "id": "634135-PH3x150",
-    "name": "634135-PH3x150",
-    "svg": "/contours/svg/634135_PH3x150.svg",
-    "cuttingLengthMeters": 1.1
-  },
-  {
     "id": "AEB-C204",
     "name": "AEB-C204",
     "svg": "/contours/svg/AEB-C204.svg",
