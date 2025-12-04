@@ -1,4 +1,4 @@
-// contourManager.js (full version with pixel hack integrated)
+// contourManager.js
 
 class ContourManager {
     constructor(canvas, app) {  // Added app parameter to access workspaceScale
@@ -130,7 +130,7 @@ class ContourManager {
           for (let j = i + 1; j < this.contours.length; j++) {
             const b = this.contours[j];
             const boxB = b.getBoundingRect(true);
-            if (this.intersect(box, boxB) && this.hasPixelOverlap(a, b)) {  // Added pixel overlap check
+            if (this.intersect(box, boxB) && this.hasPixelOverlap(a, b)) {  // Pixel overlap check
                 problematic.add(a);
                 problematic.add(b);
             }
@@ -159,7 +159,7 @@ class ContourManager {
                a.top + a.height > b.top;
     }
 
-    // New method: Pixel overlap check with normalization to scale=1
+    // Pixel overlap check with normalization to scale=1 and fixed blending
     hasPixelOverlap(a, b) {
         const currentScale = this.app.workspaceScale;  // Access from app
         const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
@@ -167,8 +167,8 @@ class ContourManager {
 
         // Нормализация: factor для приведения к scale=1
         const normalizeFactor = 1 / currentScale;
-        const paddedWidth = Math.ceil((intersectBox.width * normalizeFactor) + 20);
-        const paddedHeight = Math.ceil((intersectBox.height * normalizeFactor) + 20);
+        const paddedWidth = Math.ceil((intersectBox.width * normalizeFactor) + 40);  // Increased padding
+        const paddedHeight = Math.ceil((intersectBox.height * normalizeFactor) + 40);
 
         const tempCanvas = new fabric.StaticCanvas(null, {
             width: paddedWidth,
@@ -179,23 +179,35 @@ class ContourManager {
         // Клоны с нормализованным scale и position
         const cloneA = fabric.util.object.clone(a);
         cloneA.set({
-            fill: 'rgba(255,0,0,0.5)',
             stroke: null,
             scaleX: cloneA.scaleX * normalizeFactor,
             scaleY: cloneA.scaleY * normalizeFactor,
-            left: (cloneA.left - intersectBox.left) * normalizeFactor + 10,
-            top: (cloneA.top - intersectBox.top) * normalizeFactor + 10
+            left: (cloneA.left - intersectBox.left) * normalizeFactor + 20,  // Centered padding
+            top: (cloneA.top - intersectBox.top) * normalizeFactor + 20
         });
 
         const cloneB = fabric.util.object.clone(b);
         cloneB.set({
-            fill: 'rgba(0,255,0,0.5)',
             stroke: null,
             scaleX: cloneB.scaleX * normalizeFactor,
             scaleY: cloneB.scaleY * normalizeFactor,
-            left: (cloneB.left - intersectBox.left) * normalizeFactor + 10,
-            top: (cloneB.top - intersectBox.top) * normalizeFactor + 10
+            left: (cloneB.left - intersectBox.left) * normalizeFactor + 20,
+            top: (cloneB.top - intersectBox.top) * normalizeFactor + 20
         });
+
+        // Рекурсивно устанавливаем fill на все дочерние объекты (paths, etc)
+        const setFillRecursive = (obj, color) => {
+            if (obj.type === 'path' || obj.type === 'polygon' || obj.type === 'polyline' || obj.type === 'circle' || obj.type === 'rect' || obj.type === 'ellipse') {
+                obj.set('fill', color);
+                obj.set('stroke', null);
+            }
+            if (obj.type === 'group') {
+                obj.forEachObject(child => setFillRecursive(child, color));
+            }
+        };
+
+        setFillRecursive(cloneA, 'rgba(0,0,0,0.5)');
+        setFillRecursive(cloneB, 'rgba(0,0,0,0.5)');
 
         tempCanvas.add(cloneA);
         tempCanvas.add(cloneB);
@@ -206,15 +218,15 @@ class ContourManager {
 
         for (let i = 0; i < imageData.length; i += 4) {
             const r = imageData[i], g = imageData[i+1], b = imageData[i+2], a = imageData[i+3];
-            // Порог для смешанного (желтый от red+green): учти blending и антиалиасинг
-            if (r > 80 && r < 180 && g > 80 && g < 180 && b < 50 && a > 128) {
+            // Проверяем темный серый (overlap ~63, with tolerance for antialias)
+            if (Math.abs(r - g) < 10 && Math.abs(r - b) < 10 && r < 100 && a > 128) {
                 return true;
             }
         }
         return false;
     }
 
-    // New helper: Get intersecting bbox
+    // Helper: Get intersecting bbox
     getIntersectBBox(box1, box2) {
         const left = Math.max(box1.left, box2.left);
         const top = Math.max(box1.top, box2.top);
