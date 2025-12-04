@@ -1,3 +1,5 @@
+// app.js (full version with changes to pass app to ContourManager)
+
 class ContourApp {
     constructor() {
         this.canvas = null;
@@ -39,7 +41,7 @@ class ContourApp {
     }
 
     initializeServices() {
-        this.contourManager = new ContourManager(this.canvas);
+        this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
     }
 
     createLayment() {
@@ -301,4 +303,3 @@ class ContourApp {
 
 
 document.addEventListener('DOMContentLoaded', () => new ContourApp());
-
