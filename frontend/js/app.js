@@ -181,7 +181,7 @@ class ContourApp {
         // Кнопки
         document.getElementById('deleteButton').onclick = () => this.deleteSelected();
         document.getElementById('rotateButton').onclick = () => this.rotateSelected();
-        document.getElementById('exportButton').onclick = () => this.exportData();
+        document.getElementById('exportButton').onclick = () => this.performWithScaleOne(() => this.exportData());
         //Строка состояния
         this.setupStatusBarUpdates();
 
@@ -190,16 +190,23 @@ class ContourApp {
         checkBtn.textContent = 'Проверить раскладку';
         checkBtn.className = 'tool-button';
         checkBtn.style.background = '#9b59b6';
-        checkBtn.onclick = () => {
+        checkBtn.onclick = () => this.performWithScaleOne(() => {
             const ok = this.contourManager.checkCollisionsAndHighlight();
-            this.canvas.renderAll();  // Дополнительный renderAll после проверки
             alert(ok ? 'Раскладка валидна! Можно заказывать' : 'Ошибка: есть пересечения или выход за границы');
-        };
+        });
         document.querySelector('.tool-buttons').appendChild(checkBtn);
 
         this.canvas.on('selection:created', () => this.updateButtons());
         this.canvas.on('selection:updated', () => this.updateButtons());
         this.canvas.on('selection:cleared', () => this.updateButtons());
+    }
+
+    // New helper: Perform action with temporary scale=1
+    performWithScaleOne(action) {
+        const oldScale = this.workspaceScale;
+        this.updateWorkspaceScale(1);
+        action();
+        this.updateWorkspaceScale(oldScale);
     }
 
     updateButtons() {

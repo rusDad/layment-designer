@@ -161,16 +161,13 @@ class ContourManager {
                a.top + a.height > b.top;
     }
 
-    // Pixel overlap check with normalization to scale=1 and fixed blending
+    // Pixel overlap check assuming scale=1 during check
     hasPixelOverlap(a, b) {
-        const currentScale = this.app.workspaceScale;  // Access from app
         const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
         if (!intersectBox.width || !intersectBox.height) return false;
 
-        // Нормализация: factor для приведения к scale=1
-        const normalizeFactor = 1 / currentScale;
-        const paddedWidth = Math.ceil((intersectBox.width * normalizeFactor) + 40);  // Increased padding
-        const paddedHeight = Math.ceil((intersectBox.height * normalizeFactor) + 40);
+        const paddedWidth = Math.ceil(intersectBox.width + 40);  // Increased padding
+        const paddedHeight = Math.ceil(intersectBox.height + 40);
 
         const tempCanvas = new fabric.StaticCanvas(null, {
             width: paddedWidth,
@@ -182,19 +179,15 @@ class ContourManager {
         const cloneA = fabric.util.object.clone(a);
         cloneA.set({
             stroke: null,
-            scaleX: cloneA.scaleX * normalizeFactor,
-            scaleY: cloneA.scaleY * normalizeFactor,
-            left: (cloneA.left - intersectBox.left) * normalizeFactor + 20,  // Centered padding
-            top: (cloneA.top - intersectBox.top) * normalizeFactor + 20
+            left: (cloneA.left - intersectBox.left) + 20,  // Centered padding
+            top: (cloneA.top - intersectBox.top) + 20
         });
 
         const cloneB = fabric.util.object.clone(b);
         cloneB.set({
             stroke: null,
-            scaleX: cloneB.scaleX * normalizeFactor,
-            scaleY: cloneB.scaleY * normalizeFactor,
-            left: (cloneB.left - intersectBox.left) * normalizeFactor + 20,
-            top: (cloneB.top - intersectBox.top) * normalizeFactor + 20
+            left: (cloneB.left - intersectBox.left) + 20,
+            top: (cloneB.top - intersectBox.top) + 20
         });
 
         // Рекурсивно устанавливаем fill на все дочерние объекты (paths, etc)
