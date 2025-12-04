@@ -1,4 +1,4 @@
-// app.js (full version with changes to pass app to ContourManager)
+// app.js
 
 class ContourApp {
     constructor() {
@@ -192,6 +192,7 @@ class ContourApp {
         checkBtn.style.background = '#9b59b6';
         checkBtn.onclick = () => {
             const ok = this.contourManager.checkCollisionsAndHighlight();
+            this.canvas.renderAll();  // Дополнительный renderAll после проверки
             alert(ok ? 'Раскладка валидна! Можно заказывать' : 'Ошибка: есть пересечения или выход за границы');
         };
         document.querySelector('.tool-buttons').appendChild(checkBtn);

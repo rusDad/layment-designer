@@ -97,12 +97,13 @@ class ContourManager {
 
        // Сброс цвета у всех контуров
       this.contours.forEach(obj => {
-        obj.set({
+        this.resetPropertiesRecursive(obj, {
             stroke: '#101214ff',        // обычный цвет контура
             strokeWidth: 10,
             opacity: 1,
             borderColor: '#3498db',   // цвет рамки выделения (если останется)
-            cornerColor: '#3498db'
+            cornerColor: '#3498db',
+            fill: null  // Сброс fill
         });
        });
 
@@ -139,12 +140,13 @@ class ContourManager {
 
        // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
        problematic.forEach(obj => {
-        obj.set({
+        this.resetPropertiesRecursive(obj, {
             stroke: '#e74c3c',       // ярко-красный контур
             strokeWidth: 15,
             opacity: 0.85,
             borderColor: '#e74c3c',
-            cornerColor: '#c0392b'
+            cornerColor: '#c0392b',
+            fill: null  // Убедимся, что fill сброшен
              });
         });
 
@@ -224,6 +226,16 @@ class ContourManager {
             }
         }
         return false;
+    }
+
+    // New helper: Reset properties recursively
+    resetPropertiesRecursive(obj, props) {
+        for (const key in props) {
+            obj.set(key, props[key]);
+        }
+        if (obj.type === 'group') {
+            obj.forEachObject(child => this.resetPropertiesRecursive(child, props));
+        }
     }
 
     // Helper: Get intersecting bbox
