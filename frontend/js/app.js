@@ -36,6 +36,7 @@ class ContourApp {
             const w2 = window.innerWidth - panelWidth - 40;
             const h2 = window.innerHeight - 120;
             this.canvas.setDimensions({ width: w2, height: h2 });
+            this.resizeCanvasToFit();
             this.canvas.renderAll();
         });
     }
@@ -100,6 +101,7 @@ class ContourApp {
             this.workspaceScale,
             item
         );
+        this.resizeCanvasToFit();
     }
 
     updateLaymentSize(width, height) {
@@ -122,19 +124,43 @@ class ContourApp {
             });
             obj.setCoords();
         });
-        // рассчитываем bounding box всех объектов и устанавливаем размер canvas
-        const allObjects = this.canvas.getObjects();
-        if (allObjects.length > 0) {
-          const boundingRect = fabric.util.makeBoundingBoxFromPoints(
-             allObjects.flatMap(obj => Object.values(obj.aCoords))
-            );
-          const newWidth = Math.max(this.canvas.width, boundingRect.left + boundingRect.width + 100); // +100 для запаса
-          const newHeight = Math.max(this.canvas.height, boundingRect.top + boundingRect.height + 100);
-          this.canvas.setDimensions({ width: newWidth, height: newHeight });
-        }
+        this.resizeCanvasToFit();
 
         this.canvas.renderAll();
         this.updateStatusBar();
+    }
+
+    resizeCanvasToFit(padding = 100) {
+        const objects = this.canvas.getObjects();
+        if (objects.length === 0) return;
+
+        const points = objects.flatMap(obj => Object.values(obj.aCoords));
+        const box = fabric.util.makeBoundingBoxFromPoints(points);
+
+        const newWidth = box.width + padding * 2;
+        const newHeight = box.height + padding * 2;
+
+        const offsetX = padding - box.left;
+        const offsetY = padding - box.top;
+
+        objects.forEach(obj => {
+            obj.left += offsetX;
+            obj.top += offsetY;
+            obj.setCoords();
+        });
+
+        this.canvas.setDimensions({
+            width: newWidth,
+            height: newHeight
+        });
+
+        const minSize = 800;
+        if (newWidth < minSize || newHeight < minSize) {
+            this.canvas.setDimensions({
+                width: Math.max(newWidth, minSize),
+                height: Math.max(newHeight, minSize)
+            });
+        }
     }
 
     setupEventListeners() {
@@ -268,6 +294,7 @@ class ContourApp {
         }
         this.canvas.discardActiveObject();
         this.canvas.renderAll();
+        this.resizeCanvasToFit();
         this.updateButtons();
     }
 
