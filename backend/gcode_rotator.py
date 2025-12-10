@@ -139,7 +139,7 @@ def generate_rotated_gcode(original_lines, rotation):
 
 # Standalone функция для админки: ротация для контура по id
 def rotate_gcode_for_contour(contour_id):
-    nc_path = f"../contours/nc/{contour_id}.nc"
+    nc_path = f"./contours/nc/{contour_id}.nc"
     if not os.path.exists(nc_path):
         raise ValueError(f".nc file not found for {contour_id}")
     
