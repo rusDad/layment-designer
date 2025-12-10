@@ -1,2 +1,3 @@
 backend/orders/
 backend/contours/nc/*/
+!backend/contours/nc/*.nc

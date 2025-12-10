@@ -8,4 +8,3 @@ if __name__ == "__main__":
     
     contour_id = sys.argv[1]
     rotate_gcode_for_contour(contour_id)
-    # Здесь же обнови manifest.json (добавь код для JSON-обновления)
