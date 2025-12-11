@@ -39,9 +39,9 @@ def transform_point(x, y, rotation):
 def swap_arc_direction(cmd, rotation):
     if rotation % 360 == 180:
         if cmd == 'G2':
-            return 'G3'
-        elif cmd == 'G3':
             return 'G2'
+        elif cmd == 'G3':
+            return 'G3'
         else:
             return cmd
     return cmd
