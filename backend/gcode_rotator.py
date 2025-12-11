@@ -38,7 +38,12 @@ def transform_point(x, y, rotation):
 
 def swap_arc_direction(cmd, rotation):
     if rotation % 360 == 180:
-        return 'G3' if cmd == 'G2' else 'G2'
+        if cmd == 'G2':
+            return 'G3'
+        elif cmd == 'G3':
+            return 'G2'
+        else:
+            return cmd
     return cmd
 
 def validate_gcode(commands, original_lines=None):
@@ -131,7 +136,14 @@ def rotate_gcode_for_contour(contour_id):
     base_path = f"./contours/nc/{contour_id}"
     os.makedirs(base_path, exist_ok=True)
     for rot, code in versions.items():
-        with open(f"{base_path}/rotated_{rot}.nc", 'w') as f:
+        # Меняем местами имена для 90 и 270 (без изменения генерации)
+        if rot == '90':
+            save_rot = '270'
+        elif rot == '270':
+            save_rot = '90'
+        else:
+            save_rot = rot
+        with open(f"{base_path}/rotated_{save_rot}.nc", 'w') as f:
             f.write('\n'.join(code))
     
     print(f"Rotated versions generated for {contour_id}")
