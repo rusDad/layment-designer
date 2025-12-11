@@ -3,7 +3,7 @@ import math
 import os
 
 def parse_gcode(lines):
-    current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0, 'F': None}
+    original_current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0, 'F': None}
     modal_cmd = 'G1'
     output = []
     
@@ -11,23 +11,23 @@ def parse_gcode(lines):
         line = line.strip()
         if not line or line.startswith(';') or line.startswith('('):
             continue
-        # Исправленный regex: захватывает букву и значение отдельно
-        parts = re.findall(r'([GXYZFIJR])([-+]?\d*\.?\d+)', line.upper())
+        # Улучшенный regex: захватывает букву и значение (поддержка экспоненты)
+        parts = re.findall(r'([GXYZFIJR])([-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?)', line.upper())
         if parts and parts[0][0] == 'G':
-            # Исправленное определение cmd: 'G' + значение (нормализуем к int для G01 → G1)
             g_value = float(parts[0][1])
-            cmd = 'G%d' % int(g_value)  # Нормализация, чтобы G01 стал G1, G00 — G0
+            cmd = 'G%d' % int(g_value)  # Нормализация G01 → G1
         else:
             cmd = modal_cmd
         if cmd in ['G0', 'G1', 'G2', 'G3']:
             modal_cmd = cmd
-        # Params: используем p[1] вместо p[1:]
         params = {p[0]: float(p[1]) for p in parts if p[0] != 'G'}
-        if params:
-            new_pos = current_pos.copy()
-            new_pos.update({k: v for k, v in params.items() if k in 'XYZF'})
-            output.append((cmd, params))
-            current_pos = new_pos
+        # Вычисляем полную оригинальную позицию
+        full_orig_pos = original_current_pos.copy()
+        full_orig_pos.update({k: v for k, v in params.items() if k in 'XYZF'})
+        if params or cmd in ['G2', 'G3']:  # Включаем даже если params пустые, но arc
+            output.append((cmd, params, full_orig_pos.copy()))
+        # Обновляем original_current_pos
+        original_current_pos = full_orig_pos
     return output
 
 def transform_point(x, y, rotation):
@@ -37,69 +37,34 @@ def transform_point(x, y, rotation):
     return new_x, new_y
 
 def swap_arc_direction(cmd, rotation):
-    if rotation % 180 != 0 and cmd in ['G2', 'G3']:
+    if rotation % 360 == 180:
         return 'G3' if cmd == 'G2' else 'G2'
     return cmd
 
-#def validate_gcode(commands):
-#    errors = []
-#    min_z = min(c[1].get('Z', 0) for c in commands if 'Z' in c[1])
-#    if min_z < -50:
-#        errors.append(f"Invalid Z depth: {min_z}")
-#    unknown_cmds = set(c[0] for c in commands) - {'G0', 'G1', 'G2', 'G3'}
-#    if unknown_cmds:
-#        errors.append(f"Unknown commands: {unknown_cmds}")
-#    if len(commands) < 5:
-#        errors.append("G-code too short")
-#    return errors == [], errors
 def validate_gcode(commands, original_lines=None):
-    #Проверяет список команд после парсинга.
-    #Если передать original_lines — будет указывать номер строки в исходном файле.
-    
     errors = []
-    
-    # 1. Минимальная глубина Z
     min_z = float('inf')
     min_z_line = None
-    for idx, (cmd, params) in enumerate(commands):
-        z = params.get('Z')
+    for idx, (_, _, full_pos) in enumerate(commands):
+        z = full_pos.get('Z')
         if z is not None and z < min_z:
             min_z = z
-            # Если есть оригинальные строки — найдём реальный номер
-            if original_lines is not None:
-                # Приблизительно: команда примерно соответствует строке idx+1
-                # (можно сделать точнее через маппинг, но для 99% случаев хватит)
-                min_z_line = idx + 1
-            else:
-                min_z_line = idx + 1
-    
+            min_z_line = idx + 1  # Приблизительно
     if min_z < -50:
         line_ref = f" (строка ≈{min_z_line})" if min_z_line else ""
         errors.append(f"Слишком глубокий Z: {min_z:.3f} мм{line_ref}")
 
-    # 2. Неизвестные команды (не G0-G3)
-    unknown_cmds = set()
-    unknown_lines = {}
-    for idx, (cmd, params) in enumerate(commands):
-        if cmd not in {'G0', 'G1', 'G2', 'G3'}:
-            unknown_cmds.add(cmd)
-            if original_lines:
-                unknown_lines.setdefault(cmd, []).append(idx + 1)
-            else:
-                unknown_lines.setdefault(cmd, []).append(idx + 1)
-
+    unknown_cmds = set(c[0] for c in commands) - {'G0', 'G1', 'G2', 'G3'}
     if unknown_cmds:
-        for cmd in unknown_cmds:
-            lines = unknown_lines[cmd]
-            if len(lines) > 5:
-                lines_str = f"строки {lines[0]}-{lines[-1]} (+ещё {len(lines)-2})"
-            else:
-                lines_str = "строки " + ", ".join(map(str, lines))
-            errors.append(f"Неизвестная команда {cmd} — {lines_str}")
+        errors.append(f"Неизвестные команды: {unknown_cmds}")
 
-    # 3. Слишком короткий файл
     if len(commands) < 5:
         errors.append(f"Файл слишком короткий: всего {len(commands)} команд")
+
+    # Дополнительно: если есть I/J — предупредить (ваши файлы на R)
+    has_ij = any('I' in p or 'J' in p for _, p, _ in commands)
+    if has_ij:
+        errors.append("Обнаружены I/J в arcs — они не трансформируются (используйте R-mode)")
 
     return len(errors) == 0, errors
 
@@ -110,37 +75,40 @@ def generate_rotated_gcode(original_lines, rotation):
         error_msg = "\n".join(errors)
         raise ValueError(f"Некорректный G-код:\n{error_msg}")
     
-    current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0, 'F': None}
+    rotated_current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0, 'F': None}
     rotated_lines = []
     
-    for cmd, params in commands:
+    for cmd, params, full_orig in commands:
         new_cmd = swap_arc_direction(cmd, rotation)
         new_params = {}
-        if 'X' in params or 'Y' in params:
-            orig_x = params.get('X', current_pos['X'])
-            orig_y = params.get('Y', current_pos['Y'])
-            new_x, new_y = transform_point(orig_x, orig_y, rotation)
-            if abs(new_x - current_pos['X']) > 0.001:
-                new_params['X'] = round(new_x, 3)
-            if abs(new_y - current_pos['Y']) > 0.001:
-                new_params['Y'] = round(new_y, 3)
+        
+        # Трансформируем полную оригинальную позицию
+        new_x, new_y = transform_point(full_orig['X'], full_orig['Y'], rotation)
+        
+        # Добавляем только если изменилось (delta)
+        if abs(new_x - rotated_current_pos['X']) > 0.001:
+            new_params['X'] = round(new_x, 3) if new_x % 1 != 0 else int(new_x)
+        if abs(new_y - rotated_current_pos['Y']) > 0.001:
+            new_params['Y'] = round(new_y, 3) if new_y % 1 != 0 else int(new_y)
+        
         if 'Z' in params:
-            new_params['Z'] = round(params['Z'], 3)
+            new_params['Z'] = round(params['Z'], 3) if params['Z'] % 1 != 0 else int(params['Z'])
         if 'F' in params:
             new_params['F'] = int(params['F'])
         if 'R' in params:
-            new_params['R'] = round(params['R'], 3)
+            new_params['R'] = round(params['R'], 3) if params['R'] % 1 != 0 else int(params['R'])
         
-        if new_params:
+        if new_params or new_cmd in ['G2', 'G3']:  # Всегда выводим arc, даже если без params
             line = new_cmd
             for k, v in new_params.items():
-                line += f" {k}{v:.3f}" if '.' in str(v) else f" {k}{v}"
+                line += f" {k}{v:.3f}" if isinstance(v, float) else f" {k}{v}"
             rotated_lines.append(line)
         
-        current_pos['X'] = new_params.get('X', current_pos['X'])
-        current_pos['Y'] = new_params.get('Y', current_pos['Y'])
-        current_pos['Z'] = new_params.get('Z', current_pos['Z'])
-        current_pos['F'] = new_params.get('F', current_pos['F'])
+        # Обновляем rotated_current_pos
+        rotated_current_pos['X'] = new_x
+        rotated_current_pos['Y'] = new_y
+        rotated_current_pos['Z'] = full_orig.get('Z', rotated_current_pos['Z'])
+        rotated_current_pos['F'] = full_orig.get('F', rotated_current_pos['F'])
     
     return rotated_lines
 
@@ -154,7 +122,7 @@ def rotate_gcode_for_contour(contour_id):
         lines = f.read().splitlines()
     
     versions = {
-        '0': lines,
+        '0': lines,  # Оригинал без изменений
         '90': generate_rotated_gcode(lines, 90),
         '180': generate_rotated_gcode(lines, 180),
         '270': generate_rotated_gcode(lines, 270)
