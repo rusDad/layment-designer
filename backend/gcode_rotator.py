@@ -11,11 +11,18 @@ def parse_gcode(lines):
         line = line.strip()
         if not line or line.startswith(';') or line.startswith('('):
             continue
-        parts = re.findall(r'([GXYZFIJR])[-+]?\d*\.?\d+', line.upper())
-        cmd = parts[0][0] if parts and parts[0][0] == 'G' else modal_cmd
+        # Исправленный regex: захватывает букву и значение отдельно
+        parts = re.findall(r'([GXYZFIJR])([-+]?\d*\.?\d+)', line.upper())
+        if parts and parts[0][0] == 'G':
+            # Исправленное определение cmd: 'G' + значение (нормализуем к int для G01 → G1)
+            g_value = float(parts[0][1])
+            cmd = 'G%d' % int(g_value)  # Нормализация, чтобы G01 стал G1, G00 — G0
+        else:
+            cmd = modal_cmd
         if cmd in ['G0', 'G1', 'G2', 'G3']:
             modal_cmd = cmd
-        params = {p[0]: float(p[1:]) for p in parts if p[0] != 'G'}
+        # Params: используем p[1] вместо p[1:]
+        params = {p[0]: float(p[1]) for p in parts if p[0] != 'G'}
         if params:
             new_pos = current_pos.copy()
             new_pos.update({k: v for k, v in params.items() if k in 'XYZF'})
