@@ -16,7 +16,7 @@ async def export_layment(order_data: dict):
         
         for contour in order_data['contours']:
             rot = str(contour['angle'])
-            nc_path = f"../contours/nc/{contour['id']}/rotated_{rot}.nc"
+            nc_path = f"./contours/nc/{contour['id']}/rotated_{rot}.nc"
             if not os.path.exists(nc_path):
                 # Автоматическая ротация, если не сгенерировано (fallback)
                 rotate_gcode_for_contour(contour['id'])
@@ -37,8 +37,8 @@ async def export_layment(order_data: dict):
         final_gcode.append('M5')
         final_gcode.append('M30')
         
-        os.makedirs("../orders", exist_ok=True)
-        output_path = '../orders/final_layment.nc'
+        os.makedirs("./orders", exist_ok=True)
+        output_path = './orders/final_layment.nc'
         with open(output_path, 'w') as f:
             f.write('\n'.join(final_gcode))
         

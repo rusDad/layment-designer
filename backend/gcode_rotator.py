@@ -153,7 +153,7 @@ def rotate_gcode_for_contour(contour_id):
         '270': generate_rotated_gcode(lines, 270)
     }
     
-    base_path = f"../contours/nc/{contour_id}"
+    base_path = f"./contours/nc/{contour_id}"
     os.makedirs(base_path, exist_ok=True)
     for rot, code in versions.items():
         with open(f"{base_path}/rotated_{rot}.nc", 'w') as f:
