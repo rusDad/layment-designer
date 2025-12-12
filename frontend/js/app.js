@@ -298,8 +298,8 @@ class ContourApp {
            contours: this.contourManager.getContoursData().map(c => ({
             id: c.id,
             angle: c.angle,
-            x: c.x,
-            y: c.y
+            x: c.y,
+            y: c.x
             }))
         };
 
