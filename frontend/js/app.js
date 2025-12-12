@@ -45,8 +45,8 @@ class ContourApp {
     }
 
     createLayment() {
-        const width = parseInt(document.getElementById('baseRectWidth').value) || 565;
-        const height = parseInt(document.getElementById('baseRectHeight').value) || 375;
+        const width = parseInt(document.getElementById('laymentWidth').value) || 565;
+        const height = parseInt(document.getElementById('laymentHeight').value) || 375;
 
         this.layment = new fabric.Rect({
             width: width,
@@ -139,14 +139,14 @@ class ContourApp {
 
     setupEventListeners() {
         // Размеры ложемента
-        document.getElementById('baseRectWidth').addEventListener('change', e => {
+        document.getElementById('laymentWidth').addEventListener('change', e => {
             let v = parseInt(e.target.value) || 565;
             if (v < 100) v = 100;
             e.target.value = v;
             this.updateLaymentSize(v, this.layment.height);
         });
 
-        document.getElementById('baseRectHeight').addEventListener('change', e => {
+        document.getElementById('laymentHeight').addEventListener('change', e => {
             let v = parseInt(e.target.value) || 375;
             if (v < 100) v = 100;
             e.target.value = v;
