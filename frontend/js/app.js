@@ -288,24 +288,45 @@ class ContourApp {
         const realWidth = Math.round(this.layment.width );
         const realHeight = Math.round(this.layment.height);
         const areaM2 = (realWidth * realHeight) / 1e6;
-        const cuttingM = this.contourManager.getTotalCuttingLength();
+        const cuttingM = 6 * (realWidth + realHeight) + this.contourManager.getTotalCuttingLength();
 
         const priceMaterial = Math.round(areaM2 * 1.25 * 2500);
         const priceCutting = Math.round(cuttingM * 14);
         const total = Math.round((priceMaterial + priceCutting) * 2.25);
 
         const data = {
-            layment_mm: { width: realWidth, height: realHeight },
-            contours: this.contourManager.getContoursData(),
-            price_rub: { material: priceMaterial, cutting: priceCutting, total },
-            stats: { area_m2: +areaM2.toFixed(4), cutting_meters: +cuttingM.toFixed(3) }
+           contours: this.contourManager.getContoursData().map(c => ({
+            id: c.id,
+            angle: c.angle,
+            x: c.x,
+            y: c.y
+            }))
         };
 
         console.log('Заказ:', data);
-        alert(`Готово к заказу!\n\nРазмер: ${realWidth}×${realHeight} мм\nПлощадь: ${data.stats.area_m2} м²\nРезка: ${data.stats.cutting_meters} м\n\nСтоимость: ${total} ₽`);
+       // Отправка на бэкенд
+        fetch('/api/export-layment', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+         })
+       .then(response => {
+        if (!response.ok) {
+            return response.text().then(text => { throw new Error(text) });
+        }
+        return response.text();  // Получаем текстовый ответ (G-code)
+        })
+      .then(gcode => {
+        console.log('Успешно! Бэкенд вернул:', gcode.substring(0, 200) + '...');
+        alert(`Файл успешно создан на сервере!\n\nРазмер: ${realWidth}×${realHeight} мм\nПлощадь: ${areaM2.toFixed(4)} м²\nРезка: ${cuttingM.toFixed(3)} м\n\nСтоимость: ${total} ₽\n\nG-code сохранён в: /orders/final_layment.nc`);
+       })
+     .catch(error => {
+        console.error('Ошибка при создании файла:', error);
+        alert('Ошибка при создании файла: ' + error.message);
+     });
 
-        // Здесь будет POST на бэкенд
-        // fetch('/api/order', { method: 'POST', body: JSON.stringify(data) })
     }
 }
 
