@@ -1,5 +1,4 @@
 // app.js
-import * as Config from './config.js';
 
 class ContourApp {
     constructor() {

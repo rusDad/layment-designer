@@ -1,7 +1,5 @@
 // contourManager.js
 
-import * as Config from './config.js';
-
 class ContourManager {
     constructor(canvas, app) {  // Added app parameter to access workspaceScale
         this.canvas = canvas;
