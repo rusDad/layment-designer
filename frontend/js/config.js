@@ -114,14 +114,14 @@ export const FABRIC_CONFIG = {
 
 // ==================== DOM СЕЛЕКТОРЫ ====================
 export const SELECTORS = {
-    LAYMENT_WIDTH: '#laymentWidth',
-    LAYMENT_HEIGHT: '#laymentHeight',
-    WORKSPACE_SCALE: '#workspaceScale',
-    DELETE_BUTTON: '#deleteButton',
-    ROTATE_BUTTON: '#rotateButton',
-    EXPORT_BUTTON: '#exportButton',
-    CONTOURS_LIST: '#contoursList',
-    STATUS_INFO: '#status-info'
+    LAYMENT_WIDTH: 'laymentWidth',
+    LAYMENT_HEIGHT: 'laymentHeight',
+    WORKSPACE_SCALE: 'workspaceScale',
+    DELETE_BUTTON: 'deleteButton',
+    ROTATE_BUTTON: 'rotateButton',
+    EXPORT_BUTTON: 'exportButton',
+    CONTOURS_LIST: 'contoursList',
+    STATUS_INFO: 'status-info'
 };
 
 // ==================== СООБЩЕНИЯ ====================
