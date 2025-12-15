@@ -117,6 +117,50 @@ def generate_rotated_gcode(original_lines, rotation):
     
     return rotated_lines
 
+# Функция для простого смещения gcode по X Y  
+def offset_gcode(original_lines, offset_x, offset_y):
+    commands = parse_gcode(original_lines)  # Парсим для валидации (можно убрать если не нужно, но оставим)
+    valid, errors = validate_gcode(commands, original_lines)
+    if not valid:
+        error_msg = "\n".join(errors)
+        raise ValueError(f"Некорректный G-код:\n{error_msg}")
+    
+    offset_lines = []
+    
+    for line in original_lines:
+        line = line.strip()
+        if not line or line.startswith(';') or line.startswith('('):
+            offset_lines.append(line)  # Комментарии/пустые — как есть
+            continue
+        
+        # Находим все параметры (GXYZFIJR)
+        parts = re.findall(r'([GXYZFIJR])([-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?)', line.upper())
+        
+        # Строим новую строку
+        new_line = ''
+        cmd_added = False
+        for letter, value in parts:
+            if letter == 'G':
+                new_line = f'G{int(float(value))}'  # Нормализация G01 → G1
+                cmd_added = True
+            else:
+                val = float(value)
+                if letter in ['X', 'Y']:
+                    val += offset_x if letter == 'X' else offset_y
+                
+                # Округление: int если целое, иначе round(3)
+                formatted_val = int(val) if val % 1 == 0 else round(val, 3)
+                new_line += f' {letter}{formatted_val}'
+        
+        # Если нет G в строке, но есть params — используем как есть (модальный)
+        if not cmd_added and parts:
+            new_line = line.split()[0] + new_line  # Но лучше добавить модальный G, если нужно (здесь опционально)
+        
+        if new_line.strip():
+            offset_lines.append(new_line.strip())
+    
+    return offset_lines
+
 # Standalone функция для админки: ротация для контура по id
 def rotate_gcode_for_contour(contour_id):
     nc_path = f"./contours/nc/{contour_id}.nc"

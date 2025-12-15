@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 import os
-from gcode_rotator import rotate_gcode_for_contour  # Импорт для админки, если нужно
+from gcode_rotator import rotate_gcode_for_contour, offset_gcode  # Добавлен импорт offset_gcode
 
 app = FastAPI()
 
@@ -9,9 +9,12 @@ app = FastAPI()
 async def export_layment(order_data: dict):
     try:
         final_gcode = [
-            'G90 G21 G17',
-            'M3 S12000',  # Подкорректируй S
-            'M8'
+            'G0 G17 G90',
+            'G0 G40 G49 G80',  
+            'G21',
+	        'T1',
+	        'S15000 M3',
+	        'G54'
         ]
         
         for contour in order_data['contours']:
@@ -22,19 +25,19 @@ async def export_layment(order_data: dict):
                 rotate_gcode_for_contour(contour['id'])
             
             with open(nc_path, 'r') as f:
-                contour_gcode = f.read().splitlines()
+                contour_lines = f.read().splitlines()
             
+	         # Применяем смещение вместо G92
+            offset_contour_gcode = offset_gcode(contour_lines, contour['x'], contour['y'])
             final_gcode.append('G0 Z20')
             final_gcode.append(f"G0 X{contour['x']} Y{contour['y']}")
-            final_gcode.append('G92 X0 Y0')
-            final_gcode.extend(contour_gcode)
+            final_gcode.extend(offset_contour_gcode)
             final_gcode.append('G0 Z20')
-            final_gcode.append('G92.1')
         
-        final_gcode.append('G28 Z0')
-        final_gcode.append('G28 X0 Y0')
-        final_gcode.append('M9')
+        
+        
         final_gcode.append('M5')
+        final_gcode.append('G49')
         final_gcode.append('M30')
         
         os.makedirs("./orders", exist_ok=True)
