@@ -1,5 +1,7 @@
 // contourManager.js
 
+import * as Config from './config.js';
+
 class ContourManager {
     constructor(canvas, app) {  // Added app parameter to access workspaceScale
         this.canvas = canvas;
@@ -7,23 +9,15 @@ class ContourManager {
         this.svgLoader = new SVGLoader();
         this.contours = [];
         this.metadataMap = new WeakMap();
-        this.allowedAngles = [0, 90, 180, 270];
-        // Разрешаем перемещение группы, но запрещаем всё остальное
-        fabric.ActiveSelection.prototype.set({
-            hasControls: false,       // убираем контроллы масштабирования и поворота
-            lockScalingX: true,
-            lockScalingY: true,
-            lockRotation: true,
-            lockMovementX: false,     //  разрешаем двигать по X
-            lockMovementY: false,     //  разрешаем двигать по Y
-            hasBorders: true          // оставляем рамку, чтобы было видно, что группа выделена
-        });
+        this.allowedAngles = Config.GEOMETRY.ALLOWED_ANGLES;
+        
+        fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);   //Отдельный конфиг для группы 
     }
 
     async addContour(svgUrl, position, scale, metadata) {
         const group = await this.svgLoader.createFabricObjectFromSVG(svgUrl);
 
-        const factor = scale * 0.0353;
+        const factor = scale * Config.CONVERSION.SCALE_FACTOR;
 
         group.set({
             left: position.x,
@@ -37,16 +31,12 @@ class ContourManager {
             lockScalingX: true,
             lockScalingY: true,
             lockRotation: false,
-            cornerColor: '#3498db',
-            borderColor: '#3498db',
+            cornerColor: Config.COLORS.SELECTION.CORNER,
+            borderColor: Config.COLORS.SELECTION.BORDER,
             transparentCorners: false
         });
 
-        group.setControlsVisibility({
-            tl:true, tr:false, br:false, bl:false,
-            ml:false, mt:false, mr:false, mb:false,
-            mtr: true
-        });
+        group.setControlsVisibility(Config.FABRIC_CONFIG.CONTROLS_VISIBILITY);
 
         this.metadataMap.set(group, metadata);
 
@@ -98,11 +88,11 @@ class ContourManager {
        // Сброс цвета у всех контуров
       this.contours.forEach(obj => {
         this.resetPropertiesRecursive(obj, {
-            stroke: '#101214ff',        // обычный цвет контура
-            strokeWidth: 10,
+            stroke: Config.COLORS.CONTOUR.NORMAL,        // обычный цвет контура
+            strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
             opacity: 1,
-            borderColor: '#3498db',   // цвет рамки выделения (если останется)
-            cornerColor: '#3498db',
+            borderColor: Config.COLORS.SELECTION.BORDER,   // цвет рамки выделения (если останется)
+            cornerColor: Config.COLORS.SELECTION.CORNER,
             fill: null  // Сброс fill
         });
        });
@@ -110,7 +100,7 @@ class ContourManager {
       const layment = this.canvas.layment;
       if (!layment) return true;
 
-      const padding = 8 * layment.scaleX;
+      const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
 
      for (let i = 0; i < this.contours.length; i++) {
           const a = this.contours[i];
@@ -141,11 +131,11 @@ class ContourManager {
        // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
        problematic.forEach(obj => {
         this.resetPropertiesRecursive(obj, {
-            stroke: '#e74c3c',       // ярко-красный контур
-            strokeWidth: 15,
+            stroke:  Config.COLORS.CONTOUR.ERROR,                   //ярко-красный контур
+            strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,  //чуть шире для наглядности
             opacity: 0.85,
-            borderColor: '#e74c3c',
-            cornerColor: '#c0392b',
+            borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+            cornerColor: Config.COLORS.SELECTION.ERROR_CORNER,
             fill: null  // Убедимся, что fill сброшен
              });
         });
@@ -166,28 +156,28 @@ class ContourManager {
         const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
         if (!intersectBox.width || !intersectBox.height) return false;
 
-        const paddedWidth = Math.ceil(intersectBox.width + 40);  // Increased padding
-        const paddedHeight = Math.ceil(intersectBox.height + 40);
+        const paddedWidth = Math.ceil(intersectBox.width + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);  // Increased padding
+        const paddedHeight = Math.ceil(intersectBox.height + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);
 
         const tempCanvas = new fabric.StaticCanvas(null, {
             width: paddedWidth,
             height: paddedHeight,
-            backgroundColor: '#ffffff'
+            backgroundColor: Config.CANVAS_OVERLAP.TEMP_BACKGROUND
         });
 
         // Клоны с нормализованным scale и position
         const cloneA = fabric.util.object.clone(a);
         cloneA.set({
             stroke: null,
-            left: (cloneA.left - intersectBox.left) + 20,  // Centered padding
-            top: (cloneA.top - intersectBox.top) + 20
+            left: (cloneA.left - intersectBox.left) + Config.CANVAS_OVERLAP.CENTER_OFFSET,  // Centered padding
+            top: (cloneA.top - intersectBox.top) + Config.CANVAS_OVERLAP.CENTER_OFFSET
         });
 
         const cloneB = fabric.util.object.clone(b);
         cloneB.set({
             stroke: null,
-            left: (cloneB.left - intersectBox.left) + 20,
-            top: (cloneB.top - intersectBox.top) + 20
+            left: (cloneB.left - intersectBox.left) + Config.CANVAS_OVERLAP.CENTER_OFFSET,
+            top: (cloneB.top - intersectBox.top) + Config.CANVAS_OVERLAP.CENTER_OFFSET
         });
 
         // Рекурсивно устанавливаем fill на все дочерние объекты (paths, etc)
@@ -201,8 +191,8 @@ class ContourManager {
             }
         };
 
-        setFillRecursive(cloneA, 'rgba(0,0,0,0.5)');
-        setFillRecursive(cloneB, 'rgba(0,0,0,0.5)');
+        setFillRecursive(cloneA, Config.CANVAS_OVERLAP.OVERLAP_COLOR);
+        setFillRecursive(cloneB, Config.CANVAS_OVERLAP.OVERLAP_COLOR);
 
         tempCanvas.add(cloneA);
         tempCanvas.add(cloneB);
@@ -214,8 +204,12 @@ class ContourManager {
         for (let i = 0; i < imageData.length; i += 4) {
             const r = imageData[i], g = imageData[i+1], b = imageData[i+2], a = imageData[i+3];
             // Проверяем темный серый (overlap ~63, with tolerance for antialias)
-            if (Math.abs(r - g) < 10 && Math.abs(r - b) < 10 && r < 100 && a > 128) {
-                return true;
+             //Math.abs(r - g) < 10 && Math.abs(r - b) < 10 && r < 100 && a > 128
+            if (Math.abs(r - g) < Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.COLOR_DIFF &&             
+                Math.abs(r - b) < Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.COLOR_DIFF && 
+                r < Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.MAX_RGB && 
+                a > Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.MIN_ALPHA) {      
+              return true;
             }
         }
         return false;

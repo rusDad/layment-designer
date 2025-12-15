@@ -1,11 +1,12 @@
 // app.js
+import * as Config from './config.js';
 
 class ContourApp {
     constructor() {
         this.canvas = null;
         this.layment = null;                  
-        this.workspaceScale = 1.0;
-        this.laymentOffset = 20;
+        this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
+        this.laymentOffset = Config.LAYMENT_OFFSET;
         this.availableContours = [];
 
         this.init();
@@ -20,21 +21,22 @@ class ContourApp {
     }
 
     initializeCanvas() {
-        const panelWidth = 320;
-        const w = window.innerWidth - panelWidth - 40;
-        const h = window.innerHeight - 120;
+
+        //const panelWidth = 320;
+        //const w = window.innerWidth - panelWidth - 40;
+        //const h = window.innerHeight - 120;
 
         this.canvas = new fabric.Canvas('workspaceCanvas', {
-            width: w,
-            height: h,
-            backgroundColor: '#fafafa',
+            width: window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING,
+            height: window.innerHeight - Config.UI.HEADER_HEIGHT,
+            backgroundColor:  Config.UI.CANVAS_BACKGROUND,
             selection: true,
             preserveObjectStacking: true
         });
 
         window.addEventListener('resize', () => {
-            const w2 = window.innerWidth - panelWidth - 40;
-            const h2 = window.innerHeight - 120;
+            const w2 = window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING;
+            const h2 = window.innerHeight - Config.UI.HEADER_HEIGHT;
             this.canvas.setDimensions({ width: w2, height: h2 });
             this.canvas.renderAll();
         });
@@ -45,8 +47,8 @@ class ContourApp {
     }
 
     createLayment() {
-        const width = parseInt(document.getElementById('laymentWidth').value) || 565;
-        const height = parseInt(document.getElementById('laymentHeight').value) || 375;
+        const width = parseInt(document.querySelector(Config.SELECTORS.LAYMENT_WIDTH).value) || Config.LAYMENT_DEFAULT_WIDTH;
+        const height = parseInt(document.querySelector(Config.SELECTORS.LAYMENT_HEIGHT).value) || Config.LAYMENT_DEFAULT_HEIGHT;
 
         this.layment = new fabric.Rect({
             width: width,
@@ -54,9 +56,9 @@ class ContourApp {
             left: this.laymentOffset,
             top: this.laymentOffset,
             fill: 'transparent',
-            stroke: '#000',
-            strokeWidth: 2,
-            strokeDashArray: [10, 5],
+            stroke: Config.LAYMENT_STYLE.STROKE,
+            strokeWidth: Config.LAYMENT_STYLE.STROKE_WIDTH,
+            strokeDashArray: Config.LAYMENT_STYLE.STROKE_DASH_ARRAY,
             selectable: false,
             evented: false,
             hasControls: false,
@@ -71,7 +73,7 @@ class ContourApp {
 
     async loadAvailableContours() {
         try {
-            const resp = await fetch('/contours/manifest.json');
+            const resp = await fetch(Config.API.MANIFEST_URL);
             this.availableContours = await resp.json();
 
             const list = document.getElementById('contoursList');
@@ -86,7 +88,7 @@ class ContourApp {
             });
         } catch (err) {
                 console.error('Ошибка загрузки manifest.json', err);
-                alert('Не удалось загрузить список артикулов');
+                alert(Config.MESSAGES.LOADING_ERROR);
         }
     }
 
@@ -108,7 +110,7 @@ class ContourApp {
     }
 
     updateWorkspaceScale(newScale) {
-        if (newScale < 0.5 || newScale > 10) return;
+        if (newScale < Config.WORKSPACE_SCALE.MIN || newScale > Config.WORKSPACE_SCALE.MAX) return;
 
         const ratio = newScale / this.workspaceScale;
         this.workspaceScale = newScale;
@@ -122,6 +124,7 @@ class ContourApp {
             });
             obj.setCoords();
         });
+
         // рассчитываем bounding box всех объектов и устанавливаем размер canvas
         const allObjects = this.canvas.getObjects();
         if (allObjects.length > 0) {
@@ -139,24 +142,24 @@ class ContourApp {
 
     setupEventListeners() {
         // Размеры ложемента
-        document.getElementById('laymentWidth').addEventListener('change', e => {
-            let v = parseInt(e.target.value) || 565;
-            if (v < 100) v = 100;
+        document.querySelector(Config.SELECTORS.LAYMENT_WIDTH).addEventListener('change', e => {
+            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
+            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
             this.updateLaymentSize(v, this.layment.height);
         });
 
-        document.getElementById('laymentHeight').addEventListener('change', e => {
-            let v = parseInt(e.target.value) || 375;
-            if (v < 100) v = 100;
+        document.querySelector(Config.SELECTORS.LAYMENT_HEIGHT).addEventListener('change', e => {
+            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
+            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
             this.updateLaymentSize(this.layment.width, v);
         });
 
         // Масштаб
-        document.getElementById('workspaceScale').addEventListener('change', e => {
+        document.querySelector(Config.SELECTORS.WORKSPACE_SCALE).addEventListener('change', e => {
             const s = parseFloat(e.target.value);
-            if (s >= 0.5 && s <= 10) {
+            if (s >= Config.WORKSPACE_SCALE.MIN && s <= Config.WORKSPACE_SCALE.MAX) {
                 this.updateWorkspaceScale(s);
             } else {
                 e.target.value = this.workspaceScale;
@@ -164,7 +167,7 @@ class ContourApp {
         });
 
         // Зум колёсиком мыши
-        const scaleInput = document.getElementById('workspaceScale');
+        const scaleInput = document.querySelector(Config.SELECTORS.WORKSPACE_SCALE);
         this.canvas.wrapperEl.addEventListener('wheel', e => {
            e.preventDefault();
            const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
@@ -179,9 +182,9 @@ class ContourApp {
         }, { passive: false });
 
         // Кнопки
-        document.getElementById('deleteButton').onclick = () => this.deleteSelected();
-        document.getElementById('rotateButton').onclick = () => this.rotateSelected();
-        document.getElementById('exportButton').onclick = () => this.performWithScaleOne(() => this.exportData());
+        document.querySelector(Config.SELECTORS.DELETE_BUTTON).onclick = () => this.deleteSelected();
+        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).onclick = () => this.rotateSelected();
+        document.querySelector(Config.SELECTORS.EXPORT_BUTTON).onclick = () => this.performWithScaleOne(() => this.exportData());
         //Строка состояния
         this.setupStatusBarUpdates();
 
@@ -201,7 +204,8 @@ class ContourApp {
         this.canvas.on('selection:cleared', () => this.updateButtons());
     }
 
-    // New helper: Perform action with temporary scale=1
+    // Выполнить с временным  scale=1
+
     performWithScaleOne(action) {
         const oldScale = this.workspaceScale;
         this.updateWorkspaceScale(1);
@@ -211,11 +215,11 @@ class ContourApp {
 
     updateButtons() {
         const has = !!this.canvas.getActiveObject();
-        document.getElementById('deleteButton').disabled = !has;
-        document.getElementById('rotateButton').disabled = !has;
+        document.querySelector(Config.SELECTORS.DELETE_BUTTON).disabled = !has;
+        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).disabled = !has;
     }
 
-        //  подписка на события для статус-бара
+    //  подписка на события для статус-бара
     setupStatusBarUpdates() {
         this.canvas.on('selection:created', () => this.updateStatusBar());
         this.canvas.on('selection:updated', () => this.updateStatusBar());
@@ -229,7 +233,7 @@ class ContourApp {
 
     // обновление строки состояния
     updateStatusBar() {
-     const statusEl = document.getElementById('status-info');
+     const statusEl = document.querySelector(Config.SELECTORS.STATUS_INFO);
      const active = this.canvas.getActiveObject();
 
         if (!active || active.type === 'activeSelection') {
@@ -281,31 +285,33 @@ class ContourApp {
     exportData() {
         const valid = this.contourManager.checkCollisionsAndHighlight();
         if (!valid) {
-            alert('Исправьте ошибки перед заказом!');
+            alert(Config.MESSAGES.EXPORT_ERROR);
             return;
         }
 
         const realWidth = Math.round(this.layment.width );
         const realHeight = Math.round(this.layment.height);
-        const areaM2 = (realWidth * realHeight) / 1e6;
-        const cuttingM = 6 * (realWidth + realHeight) + this.contourManager.getTotalCuttingLength();
+        const areaM2 = ((realWidth / 1000) * (realHeight / 1000));
+        const perimeterM = ((realWidth + realHeight) * 2 ) / 1000; 
+        const cuttingM = 3 * perimeterM + this.contourManager.getTotalCuttingLength();
 
-        const priceMaterial = Math.round(areaM2 * 1.25 * 2500);
-        const priceCutting = Math.round(cuttingM * 14);
-        const total = Math.round((priceMaterial + priceCutting) * 2.25);
+        const priceMaterial = Math.round(areaM2 * Config.MATERIAL_TECHNICAL_WASTE_K * Config.MATERIAL_PRICE_PER_M2);
+        const priceCutting = Math.round(cuttingM * Config.CUTTING_PRICE_PER_METER);
+        const total = Math.round((priceMaterial + priceCutting) * Config.RRC_PRICE_MULTIPLIER);
 
         const data = {
            contours: this.contourManager.getContoursData().map(c => ({
             id: c.id,
             angle: c.angle,
-            x: c.y,
-            y: c.x
+            x: c.y ,    //меняем координаты местами 
+            y: c.x      //для смены origin на нижний левый угол , и "поворота" осей на  на 90
             }))
         };
 
         console.log('Заказ:', data);
-       // Отправка на бэкенд
-        fetch('/api/export-layment', {
+
+        // Отправка на бэкенд
+        fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json'

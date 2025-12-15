@@ -14,12 +14,26 @@ export const WORKSPACE_SCALE = {
     STEP_CTRL: 0.05
 };
 
+// ==================== UI ====================
+export const UI = {
+    PANEL_WIDTH: 320,
+    CANVAS_PADDING: 40,
+    HEADER_HEIGHT: 120,
+    CANVAS_BACKGROUND: '#fafafa'
+};
+
+export const LAYMENT_STYLE = {
+    STROKE: '#000',
+    STROKE_WIDTH: 2,
+    STROKE_DASH_ARRAY: [10, 5]
+};
+
 // ==================== ЦЕНЫ И РАСЧЕТЫ ====================
 export const PRICES = {
-    MATERIAL_DENSITY_KG_M2: 1.25,
-    MATERIAL_PRICE_PER_KG: 2500,
+    MATERIAL_TECHNICAL_WASTE_K: 1.25,
+    MATERIAL_PRICE_PER_M2: 2500,
     CUTTING_PRICE_PER_METER: 14,
-    TOTAL_MULTIPLIER: 2.25
+    RRC_PRICE_MULTIPLIER: 2.25
 };
 
 export const CONVERSION = {
@@ -57,16 +71,29 @@ export const COLORS = {
     }
 };
 
+// ==================== Константы PixelOverlap  ДЛЯ ПРОВЕРКИ ПЕРЕСЕЧЕНИЙ ====================
+export const CANVAS_OVERLAP = {
+    TEMP_BACKGROUND: '#ffffff',
+    PIXEL_CHECK_PADDING: 40,
+    CENTER_OFFSET: 20,
+    OVERLAP_COLOR: 'rgba(0,0,0,0.5)',
+    OVERLAP_THRESHOLD: {
+        COLOR_DIFF: 10,      // Максимальная разница между RGB
+        MAX_RGB: 100,        // Максимальное значение RGB для тёмного серого
+        MIN_ALPHA: 128       // Минимальная альфа-прозрачность
+    }
+};
+
 // ==================== FABRIC.JS НАСТРОЙКИ ====================
 export const FABRIC_CONFIG = {
-    GROUP: {
-        hasControls: false,
+    GROUP: {                    //Разрешаем перемещение группы, но запрещаем всё остальное
+        hasControls: false,     //убираем контроллы масштабирования и поворота
         lockScalingX: true,
         lockScalingY: true,
         lockRotation: true,
-        lockMovementX: false,
+        lockMovementX: false,   //разрешаем двигать по X и Y
         lockMovementY: false,
-        hasBorders: true
+        hasBorders: true        //оставляем рамку, чтобы было видно, что группа выделена
     },
     CONTOUR: {
         hasControls: true,
@@ -103,6 +130,4 @@ export const MESSAGES = {
     EXPORT_ERROR: 'Исправьте ошибки перед заказом!',
     COLLISION_ERROR: 'Ошибка: есть пересечения или выход за границы',
     VALID_LAYOUT: 'Раскладка валидна! Можно заказывать',
-    EXPORT_SUCCESS: (width, height, area, cutting, total) => 
-        `Готово к заказу!\n\nРазмер: ${width}×${height} мм\nПлощадь: ${area} м²\nРезка: ${cutting} м\n\nСтоимость: ${total} ₽`
 };
