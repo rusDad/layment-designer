@@ -299,7 +299,7 @@ class ContourApp {
         const total = Math.round((priceMaterial + priceCutting) * Config.RRC_PRICE_MULTIPLIER);
 
         const data = {
-            width: realWidth, height: realHeight,
+            width: realHeight, height: realWidth, //меняем ширину\высоту  местами
             contours: this.contourManager.getContoursData().map(c => ({
             id: c.id,
             angle: c.angle,
