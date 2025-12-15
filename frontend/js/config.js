@@ -102,8 +102,8 @@ window.Config = {
             lockScalingX: true,
             lockScalingY: true,
             lockRotation: false,
-            cornerColor: COLORS.SELECTION.CORNER,
-            borderColor: COLORS.SELECTION.BORDER,
+            cornerColor: '#3498db',
+            borderColor: '#3498db',
             transparentCorners: false
         },
         CONTROLS_VISIBILITY: {
