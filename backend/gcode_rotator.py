@@ -161,6 +161,27 @@ def offset_gcode(original_lines, offset_x, offset_y):
     
     return offset_lines
 
+def generate_rectangle_gcode(x_start, y_start, width, height, z_depth, tool_dia, feed_rate, plunge_feed=500):  
+    r = tool_dia / 2  # Радиус для оффсета (внешний рез)  
+    # Стартовая точка с оффсетом  
+    sx = x_start - r  
+    sy = y_start - r  
+    # Углы прямоугольника с оффсетом  
+    points = [  
+        (sx, sy),                # Нижний левый  
+        (sx, sy + height + 2*r),  # Верхний левый (CCW) 
+        (sx + width + 2*r, sy + height + 2*r),  # Верхний правый  
+        (sx + width + 2*r, sy),            # Нижний правый 
+        (sx, sy)                 # Замыкаем  
+    ]  
+    lines = []  
+    lines.append('G0 Z20')  # Ретракт  
+    lines.append(f'G0 X{sx:.3f} Y{sy:.3f}')  
+    lines.append(f'G1 Z{z_depth:.3f} F{plunge_feed}')  
+    for px, py in points[1:]:  
+        lines.append(f'G1 X{px:.3f} Y{py:.3f} F{feed_rate}')  
+    return lines  
+
 # Standalone функция для админки: ротация для контура по id
 def rotate_gcode_for_contour(contour_id):
     nc_path = f"./contours/nc/{contour_id}.nc"

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 import os
-from gcode_rotator import rotate_gcode_for_contour, offset_gcode  # Добавлен импорт offset_gcode
+from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_rectangle_gcode 
 
 app = FastAPI()
 
@@ -16,7 +16,16 @@ async def export_layment(order_data: dict):
 	        'S15000 M3',
 	        'G54'
         ]
-        
+        width = order_data.get('width', 565)  # Default если не передан  
+        height = order_data.get('height', 375)  
+        # Хардкод параметров (замените на ваши)  
+        z_depth = -30.0  
+        tool_dia = 6.0  
+        feed_rate = 1000  
+        rectangle_gcode = generate_rectangle_gcode(0, 0, width, height, z_depth, tool_dia, feed_rate)  
+        final_gcode.extend(rectangle_gcode)  
+        final_gcode.append('G0 Z20')  
+
         for contour in order_data['contours']:
             rot = str(contour['angle'])
             nc_path = f"./contours/nc/{contour['id']}/rotated_{rot}.nc"
