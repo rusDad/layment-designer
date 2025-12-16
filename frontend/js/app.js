@@ -43,6 +43,7 @@ class ContourApp {
 
     initializeServices() {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
+        this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
     }
 
     createLayment() {
@@ -180,6 +181,18 @@ class ContourApp {
             scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
 
+        document.getElementById('addRectButton').addEventListener('click', () => {
+            const centerX = this.canvas.width / 2;
+            const centerY = this.canvas.height / 2;
+            this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
+        });
+
+        document.getElementById('addCircleButton').addEventListener('click', () => {
+            const centerX = this.canvas.width / 2;
+            const centerY = this.canvas.height / 2;
+            this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
+        });
+
         // Кнопки
         document.querySelector(Config.SELECTORS.DELETE_BUTTON).onclick = () => this.deleteSelected();
         document.querySelector(Config.SELECTORS.ROTATE_BUTTON).onclick = () => this.rotateSelected();
@@ -215,7 +228,7 @@ class ContourApp {
     updateButtons() {
         const has = !!this.canvas.getActiveObject();
         document.querySelector(Config.SELECTORS.DELETE_BUTTON).disabled = !has;
-        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).disabled = !has;
+        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).disabled = !has || !!obj.primitiveType;  // Нет поворота для примитивов
     }
 
     //  подписка на события для статус-бара
@@ -265,9 +278,19 @@ class ContourApp {
         const obj = this.canvas.getActiveObject();
         if (!obj) return;
         if (obj.type === 'activeSelection') {
-            obj.forEachObject(o => this.contourManager.removeContour(o));
+            obj.forEachObject(o => {
+                if (o.primitiveType) {
+                    this.primitiveManager.removePrimitive(o);
+                } else {
+                    this.contourManager.removeContour(o);
+                }
+            });
         } else {
-            this.contourManager.removeContour(obj);
+            if (obj.primitiveType) {
+                this.primitiveManager.removePrimitive(obj);
+            } else {
+                this.contourManager.removeContour(obj);
+            }
         }
         this.canvas.discardActiveObject();
         this.canvas.renderAll();
@@ -276,7 +299,7 @@ class ContourApp {
 
     rotateSelected() {
         const obj = this.canvas.getActiveObject();
-        if (!obj) return;
+        if (!obj || obj.primitiveType) return;  // Нет поворота для примитивов
         const next = (obj.angle + 90) % 360;
         this.contourManager.rotateContour(obj, next);
     }
@@ -305,7 +328,8 @@ class ContourApp {
             angle: c.angle,
             x: c.y ,    //меняем координаты местами 
             y: c.x      //для смены origin на нижний левый угол , и "поворота" осей на  на 90
-            }))
+            })),
+            primitives: this.contourManager.getPrimitivesData()  // Добавляем примитивы
         };
 
         console.log('Заказ:', data);

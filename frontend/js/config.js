@@ -53,7 +53,11 @@ window.Config = {
     // ==================== ГЕОМЕТРИЯ ====================
     GEOMETRY : {
         ALLOWED_ANGLES: [0, 90, 180, 270],
-        LAYMENT_PADDING: 8
+        LAYMENT_PADDING: 8,
+        PRIMITIVES: {
+            RECT: { MIN_WIDTH: 10, MAX_WIDTH: 200, MIN_HEIGHT: 10, MAX_HEIGHT: 200 },
+            CIRCLE: { MIN_RADIUS: 5, MAX_RADIUS: 100 }
+        }
     },
 
     // ==================== ЦВЕТА ====================
@@ -69,6 +73,10 @@ window.Config = {
             CORNER: '#3498db',
             ERROR_BORDER: '#e74c3c',
             ERROR_CORNER: '#c0392b'
+        },
+        PRIMITIVE: {
+            STROKE: '#00ff00',  // Зеленый для примитивов
+            ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
     },
 

@@ -1,7 +1,7 @@
 // contourManager.js
 
 class ContourManager {
-    constructor(canvas, app) {  // Added app parameter to access workspaceScale
+    constructor(canvas, app) {
         this.canvas = canvas;
         this.app = app;  // Reference to ContourApp for workspaceScale
         this.svgLoader = new SVGLoader();
@@ -95,6 +95,18 @@ class ContourManager {
         });
        });
 
+      // Сброс цвета у всех примитивов
+      this.app.primitiveManager.primitives.forEach(obj => {
+        this.resetPropertiesRecursive(obj, {
+            stroke: Config.COLORS.PRIMITIVE.STROKE,
+            strokeWidth: 2,
+            opacity: 1,
+            borderColor: Config.COLORS.SELECTION.BORDER,
+            cornerColor: Config.COLORS.SELECTION.CORNER,
+            fill: 'transparent'
+        });
+      });
+
       const layment = this.canvas.layment;
       if (!layment) return true;
 
@@ -126,17 +138,40 @@ class ContourManager {
           } 
         }
 
+      // Проверка выхода за ложемент для примитивов
+      this.app.primitiveManager.primitives.forEach(obj => {
+        const box = obj.getBoundingRect(true);
+        const lWidth = layment.width * layment.scaleX;
+        const lHeight = layment.height * layment.scaleY;
+
+        if (box.left < layment.left + padding ||
+            box.top < layment.top + padding ||
+            box.left + box.width > layment.left + lWidth - padding ||
+            box.top + box.height > layment.top + lHeight - padding) {
+            problematic.add(obj);
+        }
+      });
+
        // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
        problematic.forEach(obj => {
-        this.resetPropertiesRecursive(obj, {
+        if (obj.primitiveType) {
+            // Для примитивов
+            obj.set({
+                stroke: Config.COLORS.PRIMITIVE.ERROR,
+                strokeWidth: 3,
+                opacity: 0.85
+            });
+        } else {
+            // Для контуров
+            this.resetPropertiesRecursive(obj, {
             stroke:  Config.COLORS.CONTOUR.ERROR,                   //ярко-красный контур
             strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,  //чуть шире для наглядности
             opacity: 0.85,
-            borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
-            cornerColor: Config.COLORS.SELECTION.ERROR_CORNER,
-            fill: null  // Убедимся, что fill сброшен
-             });
-        });
+            borde
+            });
+        }
+        obj.setCoords();
+       });
 
        this.canvas.renderAll();
        return problematic.size === 0;
@@ -250,10 +285,130 @@ class ContourManager {
         });
     }
 
+    getPrimitivesData() {
+        const layment = this.canvas.layment;
+        return this.app.primitiveManager.primitives.map(obj => {
+            const bbox = obj.getBoundingRect(true);
+            const scaleX = obj.scaleX; // Поскольку scaleY = scaleX для circle
+            return {
+                type: obj.primitiveType,
+                x: obj.primitiveType === 'rect' 
+                    ? Math.round((bbox.left - layment.left) / layment.scaleX)
+                    : Math.round((obj.left - layment.left) / layment.scaleX),
+                y: obj.primitiveType === 'rect' 
+                    ? Math.round((bbox.top - layment.top) / layment.scaleX)
+                    : Math.round((obj.top - layment.top) / layment.scaleX),
+                width: obj.primitiveType === 'rect' ? Math.round(obj.width * scaleX) : undefined,
+                height: obj.primitiveType === 'rect' ? Math.round(obj.height * scaleX) : undefined,
+                radius: obj.primitiveType === 'circle' ? Math.round(obj.radius * scaleX) : undefined
+            };
+        });
+    }
+
     getTotalCuttingLength() {
         return this.contours.reduce((s, obj) => {
             const m = this.metadataMap.get(obj);
             return s + (m?.cuttingLengthMeters || 0);
         }, 0);
+    }
+}
+
+class PrimitiveManager {
+    constructor(canvas, app) {
+        this.canvas = canvas;
+        this.app = app;
+        this.primitives = [];
+    }
+
+    addPrimitive(type, position, size) {
+        let obj;
+        if (type === 'rect') {
+            obj = new fabric.Rect({
+                left: position.x,
+                top: position.y,
+                width: size.width,
+                height: size.height,
+                fill: 'transparent',
+                stroke: Config.COLORS.PRIMITIVE.STROKE,
+                strokeWidth: 2,
+                strokeDashArray: [5, 5],
+                originX: 'left',
+                originY: 'top',
+                lockScalingFlip: true,
+                hasRotatingPoint: false,
+                lockRotation: true,
+                cornerColor: Config.COLORS.SELECTION.CORNER,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                transparentCorners: false
+            });
+            obj.primitiveType = 'rect';
+        } else if (type === 'circle') {
+            obj = new fabric.Circle({
+                left: position.x,
+                top: position.y,
+                radius: size.radius,
+                fill: 'transparent',
+                stroke: Config.COLORS.PRIMITIVE.STROKE,
+                strokeWidth: 2,
+                strokeDashArray: [5, 5],
+                originX: 'center',
+                originY: 'center',
+                lockScalingFlip: true,
+                hasRotatingPoint: false,
+                lockRotation: true,
+                cornerColor: Config.COLORS.SELECTION.CORNER,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                transparentCorners: false
+            });
+            obj.primitiveType = 'circle';
+            obj.on('scaling', () => {
+                obj.scaleY = obj.scaleX;
+                obj.setCoords();
+            });
+        }
+
+        if (obj) {
+            obj.on('modified', () => this.validatePrimitive(obj));
+            this.primitives.push(obj);
+            this.canvas.add(obj);
+            this.canvas.setActiveObject(obj);
+            this.canvas.renderAll();
+        }
+    }
+
+    validatePrimitive(obj) {
+        const prevScaleX = obj.scaleX;
+        const prevScaleY = obj.scaleY;
+        let valid = true;
+
+        if (obj.primitiveType === 'rect') {
+            const newWidth = obj.width * obj.scaleX;
+            const newHeight = obj.height * obj.scaleY;
+            const limits = Config.GEOMETRY.PRIMITIVES.RECT;
+            if (newWidth < limits.MIN_WIDTH || newWidth > limits.MAX_WIDTH ||
+                newHeight < limits.MIN_HEIGHT || newHeight > limits.MAX_HEIGHT) {
+                valid = false;
+            }
+        } else if (obj.primitiveType === 'circle') {
+            const newRadius = obj.radius * obj.scaleX;
+            const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
+            if (newRadius < limits.MIN_RADIUS || newRadius > limits.MAX_RADIUS) {
+                valid = false;
+            }
+        }
+
+        if (!valid) {
+            obj.scaleX = prevScaleX;
+            obj.scaleY = prevScaleY;
+            obj.setCoords();
+            this.canvas.renderAll();
+            alert('Размер выходит за пределы допустимого!');
+        }
+    }
+
+    removePrimitive(obj) {
+        this.primitives = this.primitives.filter(p => p !== obj);
+        this.canvas.remove(obj);
+        this.canvas.renderAll();
     }
 }
