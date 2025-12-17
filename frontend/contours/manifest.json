@@ -1,44 +1,106 @@
-[
-  {
-    "id": "602105-13",
-    "name": "602105-13",
-    "svg": "/contours/svg/60210513.svg",
-    "cuttingLengthMeters": 0.85
-  },
-  {
-    "id": "615820-3_8",
-    "name": "615820-3/8",
-    "svg": "/contours/svg/61582038.svg",
-    "cuttingLengthMeters": 1.12
-  },
-  {
-    "id": "703525-200",
-    "name": "703525-200",
-    "svg": "/contours/svg/703525200.svg",
-    "cuttingLengthMeters": 1.45
-  },
-  {
-    "id": "AEB-C204",
-    "name": "AEB-C204",
-    "svg": "/contours/svg/AEB-C204.svg",
-    "cuttingLengthMeters": 0.4
-  },
-  {
-    "id": "N2010",
-    "name": "N2010",
-    "svg": "/contours/svg/N2010.svg",
-    "cuttingLengthMeters": 0.4
-  },
-  {
-    "id": "634135_PH3x150",
-    "name": "634135_PH3x150",
-    "svg": "/contours/svg/634135_PH3x150.svg",
-    "cuttingLengthMeters": 1.1
-  },
-  {
-    "id": "N2012",
-    "name": "N2012",
-    "svg": "/contours/svg/N2012.svg",
-    "cuttingLengthMeters": 0.4
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "602105-13",
+      "article":"602105-13",      
+      "name": "Ключ комбинированный, трещоточный, 13 мм",
+      "brand": "garwin",
+      "category": "treshchotochnye-klyuchi",
+      "svg": "/contours/svg/602105-13.svg",
+      "nc": "/contours/nc/602105-13.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 0.85,
+      "enabled": true
+    },
+    {
+      "id": "615820-3-8",
+      "article":"615820-3/8",
+      "name": "Трещотка, 3/8', 72 зубца",
+      "brand": "garwin",
+      "category": "treschotki",
+      "svg": "/contours/svg/615820-3-8.svg",
+      "nc": "/contours/nc/615820-3-8.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 1.12,
+      "enabled": true
+    },
+    {
+      "id": "703525-200",
+      "article":"703525-200",
+      "name": "Длинногубцы, 200 мм",
+      "brand": "garwin",
+      "category": "dlinnogubtsy",
+      "svg": "/contours/svg/703525-200.svg",
+      "nc": "/contours/nc/703525-200.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 1.45,
+      "enabled": true
+    },
+    {
+      "id": "aeb-c204",
+      "article":"AEB-C204",
+      "name": "Удлинитель 1/4' 100 мм с шаром",
+      "brand": "licota",
+      "category": "udliniteli",
+      "svg": "/contours/svg/aeb-c204.svg",
+      "nc": "/contours/nc/aeb-c204.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 0.4,
+      "enabled": true
+    },
+    {
+      "id": "n2010",
+      "article":"N2010",
+      "name": "Головка, 1/4', 10 мм, торцевая, 6-гранная",
+      "brand": "licota",
+      "category": "torcevye-golovki",
+      "svg": "/contours/svg/n2010.svg",
+      "nc": "/contours/nc/n2010.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 0.4,
+      "enabled": true
+    },
+    {
+      "id": "634135-ph3-150",
+      "article":"634135-PH3*150",
+      "name": "Отвертка усиленная цельнометаллическая PH3, 150 мм",
+      "brand": "garwin",
+      "category": "otvertki",
+      "svg": "/contours/svg/634135-ph3-150.svg",
+      "nc": "/contours/nc/634135-ph3-150.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 1.1,
+      "enabled": true
+    },
+    {
+      "id": "n2012",
+      "article":"N2012",
+      "name": "Головка, 1/4', 12 мм, торцевая, 6-гранная",
+      "brand": "licota",
+      "category": "torcevye-golovki",
+      "svg": "/contours/svg/n2012.svg",
+      "nc": "/contours/nc/n2012.nc",
+      "scaleOverride": 1.0,
+      "cuttingLengthMeters": 0.4,
+      "enabled": true
+    }
+  ],  
+  "categories": {
+      "treshchotochnye-klyuchi": {
+        "label": "Трещоточные ключи"
+      },
+      "torcevye-golovki": {
+        "label": "Торцевые головки"
+      },
+      "dlinnogubtsy": {
+        "label": "Длинногубцы"
+      },
+      "udliniteli": {
+        "label": "Удлинители"
+      },
+       "otvertki":{
+       "label":"Отвертки"
+      }
   }
-]
+}
