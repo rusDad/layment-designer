@@ -230,7 +230,7 @@ class ContourApp {
     updateButtons() {
         const has = !!this.canvas.getActiveObject();
         document.querySelector(Config.SELECTORS.DELETE_BUTTON).disabled = !has;
-        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).disabled = !has || !!obj.primitiveType;  // Нет поворота для примитивов
+        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).disabled = !has; // !!has.primitiveType;  // Нет поворота для примитивов
     }
 
     //  подписка на события для статус-бара
