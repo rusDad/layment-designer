@@ -55,8 +55,8 @@ window.Config = {
         ALLOWED_ANGLES: [0, 90, 180, 270],
         LAYMENT_PADDING: 8,
         PRIMITIVES: {
-            RECT: { MIN_WIDTH: 10, MAX_WIDTH: 200, MIN_HEIGHT: 10, MAX_HEIGHT: 200 },
-            CIRCLE: { MIN_RADIUS: 5, MAX_RADIUS: 100 }
+            RECT: { MIN_WIDTH: 8, MAX_WIDTH: 800, MIN_HEIGHT: 8, MAX_HEIGHT: 400 },
+            CIRCLE: { MIN_RADIUS: 4, MAX_RADIUS: 200 }
         }
     },
 
