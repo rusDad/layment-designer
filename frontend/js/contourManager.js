@@ -15,7 +15,8 @@ class ContourManager {
     async addContour(svgUrl, position, scale, metadata) {
         const group = await this.svgLoader.createFabricObjectFromSVG(svgUrl);
 
-        const factor = scale * Config.CONVERSION.SCALE_FACTOR;
+        const scaleOverride = metadata.scaleOverride ?? 1;
+        const factor = scale * Config.CONVERSION.SCALE_FACTOR * scaleOverride;
 
         group.set({
             left: position.x,
@@ -167,7 +168,8 @@ class ContourManager {
             stroke:  Config.COLORS.CONTOUR.ERROR,                   //ярко-красный контур
             strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,  //чуть шире для наглядности
             opacity: 0.85,
-            borde
+            borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+            cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
             });
         }
         obj.setCoords();
@@ -264,32 +266,35 @@ class ContourManager {
         const top = Math.max(box1.top, box2.top);
         const right = Math.min(box1.left + box1.width, box2.left + box2.width);
         const bottom = Math.min(box1.top + box1.height, box2.top + box2.height);
+
         return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
     }
 
     getContoursData() {
        const layment = this.canvas.layment;
+
        return this.contours.map(obj => {
             const meta = this.metadataMap.get(obj);
             const tl = obj.aCoords.tl;
            
-
             return {
                 id: meta.id,
-                name: meta.name,
+                article: meta.article,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: obj.angle,
-                cuttingLengthMeters: meta.cuttingLengthMeters
+                scaleOverride: meta.scaleOverride ?? 1
             };
         });
     }
 
     getPrimitivesData() {
         const layment = this.canvas.layment;
+
         return this.app.primitiveManager.primitives.map(obj => {
             const bbox = obj.getBoundingRect(true);
-            const scaleX = obj.scaleX; // Поскольку scaleY = scaleX для circle
+            const scaleX = obj.scaleX;  // Поскольку scaleY = scaleX для circle
+            
             return {
                 type: obj.primitiveType,
                 x: obj.primitiveType === 'rect' 
@@ -298,9 +303,15 @@ class ContourManager {
                 y: obj.primitiveType === 'rect' 
                     ? Math.round((bbox.top - layment.top) / layment.scaleX)
                     : Math.round((obj.top - layment.top) / layment.scaleX),
-                width: obj.primitiveType === 'rect' ? Math.round(obj.width * scaleX) : undefined,
-                height: obj.primitiveType === 'rect' ? Math.round(obj.height * scaleX) : undefined,
-                radius: obj.primitiveType === 'circle' ? Math.round(obj.radius * scaleX) : undefined
+                width: obj.primitiveType === 'rect'
+                    ? Math.round(obj.width * scaleX)
+                    : undefined,
+                height: obj.primitiveType === 'rect' 
+                    ? Math.round(obj.height * scaleX) 
+                    : undefined,
+                radius: obj.primitiveType === 'circle' 
+                    ? Math.round(obj.radius * scaleX) 
+                    : undefined
             };
         });
     }
