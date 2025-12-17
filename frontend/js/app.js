@@ -74,7 +74,9 @@ class ContourApp {
     async loadAvailableContours() {
         try {
             const resp = await fetch(Config.API.MANIFEST_URL);
-            this.availableContours = await resp.json();
+
+            const data = await resp.json();
+            this.availableContours = data.items.filter(i => i.enabled);
 
             const list = document.getElementById('contoursList');
             list.innerHTML = '';
@@ -311,52 +313,66 @@ class ContourApp {
             return;
         }
 
-        const realWidth = Math.round(this.layment.width );
+        const realWidth = Math.round(this.layment.width);
         const realHeight = Math.round(this.layment.height);
-        const areaM2 = ((realWidth / 1000) * (realHeight / 1000));
-        const perimeterM = ((realWidth + realHeight) * 2 ) / 1000; 
+
+        //  Расчёт цены (оставляем пока здесь)
+        const areaM2 = (realWidth * realHeight) / 1_000_000;
+        const perimeterM = ((realWidth + realHeight) * 2) / 1000;
         const cuttingM = 3 * perimeterM + this.contourManager.getTotalCuttingLength();
 
-        const priceMaterial = Math.round(areaM2 * Config.MATERIAL_TECHNICAL_WASTE_K * Config.MATERIAL_PRICE_PER_M2);
-        const priceCutting = Math.round(cuttingM * Config.CUTTING_PRICE_PER_METER);
-        const total = Math.round((priceMaterial + priceCutting) * Config.RRC_PRICE_MULTIPLIER);
+        const priceMaterial = Math.round(
+            areaM2 *
+            Config.MATERIAL_TECHNICAL_WASTE_K *
+            Config.MATERIAL_PRICE_PER_M2
+        );
 
+        const priceCutting = Math.round(
+            cuttingM * Config.CUTTING_PRICE_PER_METER
+        );
+
+        const total = Math.round(
+            (priceMaterial + priceCutting) *
+            Config.RRC_PRICE_MULTIPLIER
+        );
+
+        //  КОНТРАКТ
         const data = {
-            width: realHeight, height: realWidth, //меняем ширину\высоту  местами
-            contours: this.contourManager.getContoursData().map(c => ({
-            id: c.id,
-            angle: c.angle,
-            x: c.y ,    //меняем координаты местами 
-            y: c.x      //для смены origin на нижний левый угол , и "поворота" осей на  на 90
-            })),
-            primitives: this.contourManager.getPrimitivesData()  // Добавляем примитивы
+            orderMeta: {
+            width: realWidth,
+            height: realHeight,
+            units: "mm",
+            coordinateSystem: "origin-top-left",
+            pricePreview: {
+                material: priceMaterial,
+                cutting: priceCutting,
+                total
+            }
+            },
+
+            contours: this.contourManager.getContoursData(),
+            primitives: this.contourManager.getPrimitivesData()
         };
 
         console.log('Заказ:', data);
 
-        // Отправка на бэкенд
         fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-         })
-       .then(response => {
-        if (!response.ok) {
-            return response.text().then(text => { throw new Error(text) });
-        }
-        return response.text();  // Получаем текстовый ответ (G-code)
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
         })
-      .then(gcode => {
-        console.log('Успешно! Бэкенд вернул:', gcode.substring(0, 200) + '...');
-        alert(`Файл успешно создан на сервере!\n\nРазмер: ${realWidth}×${realHeight} мм\nПлощадь: ${areaM2.toFixed(4)} м²\nРезка: ${cuttingM.toFixed(3)} м\n\nСтоимость: ${total} ₽\n\nG-code сохранён в: /orders/final_layment.nc`);
-       })
-     .catch(error => {
-        console.error('Ошибка при создании файла:', error);
-        alert('Ошибка при создании файла: ' + error.message);
-     });
-
+            .then(r => r.ok ? r.text() : r.text().then(t => { throw new Error(t); }))
+            .then(gcode => {
+            alert(
+                `Файл создан!\n\n` +
+                `Размер: ${realWidth}×${realHeight} мм\n` +
+                `Стоимость: ${total} ₽`
+            );
+            })
+            .catch(err => {
+            console.error(err);
+            alert('Ошибка при создании файла: ' + err.message);
+            });
     }
 }
 
