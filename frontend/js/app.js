@@ -247,7 +247,7 @@ class ContourApp {
 
     // обновление строки состояния
     updateStatusBar() {
-     const statusEl = document.querySelector(Config.SELECTORS.STATUS_INFO);
+     const statusEl = UIDom.status.info;
      const active = this.canvas.getActiveObject();
 
         if (!active || active.type === 'activeSelection') {
