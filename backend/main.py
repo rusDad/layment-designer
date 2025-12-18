@@ -5,6 +5,15 @@ from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_recta
 
 app = FastAPI()
 
+from fastapi.staticfiles import StaticFiles
+
+app.mount(
+    "/contours",
+    StaticFiles(directory="backend/contours"),
+    name="contours"
+)
+
+
 @app.post("/export-layment")
 async def export_layment(order_data: dict):
     try:

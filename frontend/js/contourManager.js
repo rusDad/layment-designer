@@ -270,6 +270,25 @@ class ContourManager {
         return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
     }
 
+    /**
+     * getContoursData()
+     * Возвращает данные контуров
+     *
+     * ВАЖНО:
+     * В качестве координат используется obj.aCoords.tl —
+     * это опорный угол bounding-box объекта fabric.
+     *
+     * При повороте объекта этот "tl" смещается,
+     * но это сделано намеренно:
+     * origin NC-фрагмента при повороте ведёт себя аналогично.
+     *
+     * Таким образом, координаты контуров и g-code
+     * находятся в одной и той же системе отсчёта,
+     * и backend может применять offset без дополнительных трансформаций.
+     *
+     * Это осознанное проектное решение.
+    */
+
     getContoursData() {
        const layment = this.canvas.layment;
 
