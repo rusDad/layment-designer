@@ -47,7 +47,8 @@ window.Config = {
     API : {
         BASE_URL: '/api',
         EXPORT_Layment: '/export-layment',
-        MANIFEST_URL: '/contours/manifest.json'
+        MANIFEST_URL: '/api/contours/manifest'
+
     },
 
     // ==================== ГЕОМЕТРИЯ ====================
