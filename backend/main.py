@@ -1,12 +1,16 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 import os
 from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_rectangle_gcode 
 
+BASE_DIR = Path(__file__).resolve().parent
+CONTOURS_DIR = BASE_DIR / "contours"
+
 app = FastAPI()
 
-from fastapi.staticfiles import StaticFiles
-
+# СТАТИКА ДЛЯ ДОМЕННЫХ АССЕТОВ
 app.mount(
     "/contours",
     StaticFiles(directory="backend/contours"),
