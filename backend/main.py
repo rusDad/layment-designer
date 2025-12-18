@@ -2,20 +2,26 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import json
 import os
 from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_rectangle_gcode 
 
-BASE_DIR = Path(__file__).resolve().parent
-CONTOURS_DIR = BASE_DIR / "contours"
 
 app = FastAPI()
 
-# СТАТИКА ДЛЯ ДОМЕННЫХ АССЕТОВ
-app.mount(
-    "/contours",
-    StaticFiles(directory="backend/contours"),
-    name="contours"
-)
+BASE_DIR = Path(__file__).resolve().parents[1]
+DOMAIN_DIR = BASE_DIR / "domain" / "contours"
+
+
+@app.get("/api/contours/manifest")
+def get_contours_manifest():
+    manifest_path = DOMAIN_DIR / "manifest.json"
+
+    if not manifest_path.exists():
+        return {"error": "manifest.json not found"}
+
+    with manifest_path.open("r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 @app.post("/export-layment")

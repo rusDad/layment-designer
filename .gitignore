@@ -1,4 +1,5 @@
 backend/orders/
 backend/contours/nc/*/
-!backend/contours/manifest.json
+backend/contours/manifest.json
 frontend/contours
+domain/
