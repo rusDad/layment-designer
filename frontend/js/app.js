@@ -203,15 +203,17 @@ class ContourApp {
         this.setupStatusBarUpdates();
 
         // Кнопка проверки
-        const checkBtn = document.createElement('button');
-        checkBtn.textContent = 'Проверить раскладку';
-        checkBtn.className = 'tool-button';
-        checkBtn.style.background = '#9b59b6';
-        checkBtn.onclick = () => this.performWithScaleOne(() => {
-            const ok = this.contourManager.checkCollisionsAndHighlight();
-            alert(ok ? 'Раскладка валидна! Можно заказывать' : 'Ошибка: есть пересечения или выход за границы');
-        });
-        document.querySelector('.tool-buttons').appendChild(checkBtn);
+        
+UIDom.buttons.check.onclick = () =>
+  this.performWithScaleOne(() => {
+    const ok = this.contourManager.checkCollisionsAndHighlight();
+    alert(
+      ok
+        ? Config.MESSAGES.VALID_LAYOUT
+        : Config.MESSAGES.COLLISION_ERROR
+    );
+  });
+
 
         this.canvas.on('selection:created', () => this.updateButtons());
         this.canvas.on('selection:updated', () => this.updateButtons());
