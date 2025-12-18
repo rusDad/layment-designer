@@ -99,7 +99,7 @@ class ContourApp {
         const centerY = this.layment.top + this.layment.height / 2;
 
         await this.contourManager.addContour(
-            item.svg,
+            `/contours/${item.assets.svg}`,
             { x: centerX, y: centerY },
             this.workspaceScale,
             item
