@@ -47,8 +47,9 @@ class ContourApp {
     }
 
     createLayment() {
-        const width = parseInt(document.querySelector(Config.SELECTORS.LAYMENT_WIDTH).value) || Config.LAYMENT_DEFAULT_WIDTH;
-        const height = parseInt(document.querySelector(Config.SELECTORS.LAYMENT_HEIGHT).value) || Config.LAYMENT_DEFAULT_HEIGHT;
+        const width = parseInt(UIDom.inputs.laymentWidth.value) || Config.LAYMENT_DEFAULT_WIDTH;
+        const height = parseInt(UIDom.inputs.laymentHeight.value) || Config.LAYMENT_DEFAULT_HEIGHT;
+
 
         this.layment = new fabric.Rect({
             width: width,
@@ -144,14 +145,14 @@ class ContourApp {
 
     setupEventListeners() {
         // Размеры ложемента
-        document.querySelector(Config.SELECTORS.LAYMENT_WIDTH).addEventListener('change', e => {
+        UIDom.inputs.laymentWidth.addEventListener('change', e => {
             let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
             if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
             this.updateLaymentSize(v, this.layment.height);
         });
 
-        document.querySelector(Config.SELECTORS.LAYMENT_HEIGHT).addEventListener('change', e => {
+        UIDom.inputs.laymentHeight.addEventListener('change', e => {
             let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
             if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
@@ -159,7 +160,7 @@ class ContourApp {
         });
 
         // Масштаб
-        document.querySelector(Config.SELECTORS.WORKSPACE_SCALE).addEventListener('change', e => {
+        UIDom.inputs.workspaceScale.addEventListener('change', e => {
             const s = parseFloat(e.target.value);
             if (s >= Config.WORKSPACE_SCALE.MIN && s <= Config.WORKSPACE_SCALE.MAX) {
                 this.updateWorkspaceScale(s);
