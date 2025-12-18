@@ -79,7 +79,7 @@ class ContourApp {
             const data = await resp.json();
             this.availableContours = data.items.filter(i => i.enabled);
 
-            const list = document.getElementById('contoursList');
+            const list = UIDom.panels.contoursList;
             list.innerHTML = '';
 
             this.availableContours.forEach(item => {
@@ -170,7 +170,7 @@ class ContourApp {
         });
 
         // Зум колёсиком мыши
-        const scaleInput = document.querySelector(Config.SELECTORS.WORKSPACE_SCALE);
+        const scaleInput = UIDom.inputs.workspaceScale;
         this.canvas.wrapperEl.addEventListener('wheel', e => {
            e.preventDefault();
            const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
@@ -184,36 +184,37 @@ class ContourApp {
             scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
 
-        document.getElementById('addRectButton').addEventListener('click', () => {
+        UIDom.buttons.addRect.addEventListener('click', () => {
             const centerX = this.canvas.width / 2;
             const centerY = this.canvas.height / 2;
             this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
         });
 
-        document.getElementById('addCircleButton').addEventListener('click', () => {
+        UIDom.buttons.addCircle.addEventListener('click', () => {
             const centerX = this.canvas.width / 2;
             const centerY = this.canvas.height / 2;
             this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
         });
 
         // Кнопки
-        document.querySelector(Config.SELECTORS.DELETE_BUTTON).onclick = () => this.deleteSelected();
-        document.querySelector(Config.SELECTORS.ROTATE_BUTTON).onclick = () => this.rotateSelected();
-        document.querySelector(Config.SELECTORS.EXPORT_BUTTON).onclick = () => this.performWithScaleOne(() => this.exportData());
+        UIDom.buttons.delete.onclick = () => this.deleteSelected();
+        UIDom.buttons.rotate.onclick = () => this.rotateSelected();
+        UIDom.buttons.export.onclick = () => this.performWithScaleOne(() => this.exportData());
+
         //Строка состояния
         this.setupStatusBarUpdates();
 
         // Кнопка проверки
-        
-UIDom.buttons.check.onclick = () =>
-  this.performWithScaleOne(() => {
-    const ok = this.contourManager.checkCollisionsAndHighlight();
-    alert(
-      ok
-        ? Config.MESSAGES.VALID_LAYOUT
-        : Config.MESSAGES.COLLISION_ERROR
-    );
-  });
+         
+      UIDom.buttons.check.onclick = () =>
+        this.performWithScaleOne(() => {
+        const ok = this.contourManager.checkCollisionsAndHighlight();
+        alert(
+        ok
+            ? Config.MESSAGES.VALID_LAYOUT
+            : Config.MESSAGES.COLLISION_ERROR
+        );
+        });
 
 
         this.canvas.on('selection:created', () => this.updateButtons());
