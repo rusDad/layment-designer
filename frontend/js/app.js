@@ -428,7 +428,7 @@ class ContourApp {
         const OUTER_CONTOUR_PASSES = 3;
         const areaM2 = (realWidth * realHeight) / 1_000_000;
         const perimeterM = ((realWidth + realHeight) * 2) / 1000;
-        const cuttingM = OUTER_CONTOUR_PASSES * perimeterM + this.contourManager.getTotalCuttingLength();
+        const cuttingM = OUTER_CONTOUR_PASSES * perimeterM + getTotalCuttingLength();
 
         const priceMaterial = Math.round(
             areaM2 *
