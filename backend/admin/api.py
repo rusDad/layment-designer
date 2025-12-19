@@ -76,7 +76,7 @@ def upload_files(
     item_id: str,
     svg: UploadFile = File(...),
     nc: UploadFile = File(...),
-    preview: UploadFile | None = File(None),
+    preview: Optional[UploadFile] = File(None),
     force: bool = Form(False)
 ):
     manifest = load_manifest()
