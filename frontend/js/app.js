@@ -75,8 +75,13 @@ class ContourApp {
     async loadAvailableContours() {
         try {
             const resp = await fetch(Config.API.MANIFEST_URL);
-
             const data = await resp.json();
+
+            this.manifest = data.items.reduce((acc, item) => {
+            acc[item.id] = item;
+            return acc;
+            }, {});
+
             this.availableContours = data.items.filter(i => i.enabled);
 
             const list = UIDom.panels.contoursList;
@@ -411,7 +416,7 @@ class ContourApp {
       return this.contourManager
         .getPlacedContourIds()
         .reduce((sum, id) => {
-            const item = this.manifest[id];
+            const item = this.manifest?.[id];
             return sum + (item?.cuttingLengthMeters || 0);
       }, 0);
     }
