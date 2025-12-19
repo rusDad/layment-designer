@@ -406,6 +406,8 @@ class ContourApp {
     }
 
     getTotalCuttingLength() {
+        console.log('manifest:', this.manifest);
+        console.log('ids:', this.contourManager.getPlacedContourIds());
       return this.contourManager
         .getPlacedContourIds()
         .reduce((sum, id) => {
