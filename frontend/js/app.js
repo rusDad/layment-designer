@@ -186,11 +186,15 @@ class ContourApp {
             });
 
         UIDom.buttons.addRect.addEventListener('click', () => {
-            this.primitiveManager.addRectangle();
+            const centerX = this.layment.width / 2;
+            const centerY = this.layment.height / 2;
+            this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
         });
 
         UIDom.buttons.addCircle.addEventListener('click', () => {
-            this.primitiveManager.addCircle();
+            const centerX = this.layment.width / 2;
+            const centerY = this.layment.height / 2;
+            this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
         });
     }
     bindInputEvents() {
@@ -218,17 +222,19 @@ class ContourApp {
         });
 
         // зум колёсиком
-        UIDom.inputs.workspaceScale.addEventListener('wheel', e => {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.1 : 0.1;
-            let next = this.workspaceScale + delta;
-            next = Math.max(
-            Config.WORKSPACE_SCALE.MIN,
-            Math.min(Config.WORKSPACE_SCALE.MAX, next)
-            );
-            this.updateWorkspaceScale(next);
-            UIDom.inputs.workspaceScale.value = next.toFixed(1);
-        });
+        const scaleInput = UIDom.inputs.workspaceScale;
+        this.canvas.wrapperEl.addEventListener('wheel', e => {
+           e.preventDefault();
+           const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
+           const delta = e.deltaY > 0 ? -step : step;
+            let val = parseFloat(scaleInput.value) || 1;
+
+            val = Math.max(0.5, Math.min(10, val + delta));
+            val = Math.round(val * 100) / 100;
+
+           scaleInput.value = val;
+            scaleInput.dispatchEvent(new Event('change'));
+        }, { passive: false });
     }
 
 
