@@ -90,7 +90,7 @@ class ContourApp {
                 list.appendChild(div);
             });
         } catch (err) {
-                console.error('Ошибка загрузки manifest.json', err);
+                console.error('Ошибка загрузки manifest', err);
                 alert(Config.MESSAGES.LOADING_ERROR);
         }
     }
@@ -144,6 +144,95 @@ class ContourApp {
     }
 
     setupEventListeners() {
+        this.bindCanvasEvents();
+        this.bindUIButtonEvents();
+        this.bindInputEvents();
+    }
+
+    bindCanvasEvents() {
+        this.canvas.on('selection:created', () => {
+            this.updateButtons();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('selection:updated', () => {
+            this.updateButtons();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('selection:cleared', () => {
+            this.updateButtons();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('object:moving', () => {
+            this.updateStatusBar();
+        });
+    }    
+    bindUIButtonEvents() {
+        UIDom.buttons.delete.onclick = () => this.deleteSelected();
+        UIDom.buttons.rotate.onclick = () => this.rotateSelected();
+
+        UIDom.buttons.export.onclick = () => this.performWithScaleOne(() => this.exportData());
+
+        UIDom.buttons.check.onclick =
+            () => this.performWithScaleOne(() => {
+              const ok = this.contourManager.checkCollisionsAndHighlight();
+              alert(
+                ok
+                ? Config.MESSAGES.VALID_LAYOUT
+                : Config.MESSAGES.COLLISION_ERROR
+              );
+            });
+
+        UIDom.buttons.addRect.addEventListener('click', () => {
+            this.primitiveManager.addRectangle();
+        });
+
+        UIDom.buttons.addCircle.addEventListener('click', () => {
+            this.primitiveManager.addCircle();
+        });
+    }
+    bindInputEvents() {
+        UIDom.inputs.laymentWidth.addEventListener('change', e => {
+            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
+            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
+            e.target.value = v;
+            this.updateLaymentSize(v, this.layment.height);
+        });
+
+        UIDom.inputs.laymentHeight.addEventListener('change', e => {
+            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
+            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
+            e.target.value = v;
+            this.updateLaymentSize(this.layment.width, v);
+        });
+
+        UIDom.inputs.workspaceScale.addEventListener('change', e => {
+            const s = parseFloat(e.target.value);
+            if (s >= Config.WORKSPACE_SCALE.MIN && s <= Config.WORKSPACE_SCALE.MAX) {
+            this.updateWorkspaceScale(s);
+            } else {
+            e.target.value = this.workspaceScale;
+            }
+        });
+
+        // зум колёсиком
+        UIDom.inputs.workspaceScale.addEventListener('wheel', e => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            let next = this.workspaceScale + delta;
+            next = Math.max(
+            Config.WORKSPACE_SCALE.MIN,
+            Math.min(Config.WORKSPACE_SCALE.MAX, next)
+            );
+            this.updateWorkspaceScale(next);
+            UIDom.inputs.workspaceScale.value = next.toFixed(1);
+        });
+    }
+
+
+        /*
         // Размеры ложемента
         UIDom.inputs.laymentWidth.addEventListener('change', e => {
             let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
@@ -206,7 +295,7 @@ class ContourApp {
 
         // Кнопка проверки
          
-      UIDom.buttons.check.onclick = () =>
+        UIDom.buttons.check.onclick = () =>
         this.performWithScaleOne(() => {
         const ok = this.contourManager.checkCollisionsAndHighlight();
         alert(
@@ -221,6 +310,7 @@ class ContourApp {
         this.canvas.on('selection:updated', () => this.updateButtons());
         this.canvas.on('selection:cleared', () => this.updateButtons());
     }
+        */
 
     // Выполнить с временным  scale=1
 
@@ -276,8 +366,7 @@ class ContourApp {
     
         statusEl.innerHTML = `
         <strong>${meta.name}</strong>
-        X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°
-    `;
+        X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°`;
     }
 
     deleteSelected() {
@@ -310,6 +399,15 @@ class ContourApp {
         this.contourManager.rotateContour(obj, next);
     }
 
+    getTotalCuttingLength() {
+      return this.contourManager
+        .getPlacedContourIds()
+        .reduce((sum, id) => {
+            const item = this.manifest[id];
+            return sum + (item?.cuttingLengthMeters || 0);
+      }, 0);
+    }
+
     exportData() {
         const valid = this.contourManager.checkCollisionsAndHighlight();
         if (!valid) {
@@ -321,9 +419,10 @@ class ContourApp {
         const realHeight = Math.round(this.layment.height);
 
         //  Расчёт цены (оставляем пока здесь)
+        const OUTER_CONTOUR_PASSES = 3;
         const areaM2 = (realWidth * realHeight) / 1_000_000;
         const perimeterM = ((realWidth + realHeight) * 2) / 1000;
-        const cuttingM = 3 * perimeterM + this.contourManager.getTotalCuttingLength();
+        const cuttingM = OUTER_CONTOUR_PASSES * perimeterM + this.contourManager.getTotalCuttingLength();
 
         const priceMaterial = Math.round(
             areaM2 *

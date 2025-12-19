@@ -122,18 +122,7 @@ window.Config = {
         }
     },
 
-    // ==================== DOM СЕЛЕКТОРЫ ====================
-    SELECTORS : {
-        LAYMENT_WIDTH: '#laymentWidth',
-        LAYMENT_HEIGHT: '#laymentHeight',
-        WORKSPACE_SCALE: '#workspaceScale',
-        DELETE_BUTTON: '#deleteButton',
-        ROTATE_BUTTON: '#rotateButton',
-        EXPORT_BUTTON: '#exportButton',
-        CONTOURS_LIST: '#contoursList',
-        STATUS_INFO: '#status-info'
-    },
-
+    
     // ==================== СООБЩЕНИЯ ====================
     MESSAGES : {
         LOADING_ERROR: 'Не удалось загрузить список артикулов',

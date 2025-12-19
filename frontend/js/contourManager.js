@@ -1,4 +1,13 @@
 // contourManager.js
+// ContourManager отвечает ТОЛЬКО за:
+// - управление инструментальными контурами
+// - проверку их взаимных пересечений
+// - проверку выхода за границы ложемента
+//
+// Он НЕ знает про:
+// - DOM
+// - UI
+// - масштаб canvas
 
 class ContourManager {
     constructor(canvas, app) {
@@ -94,7 +103,7 @@ class ContourManager {
             cornerColor: Config.COLORS.SELECTION.CORNER,
             fill: null  // Сброс fill
         });
-       });
+      });
 
       // Сброс цвета у всех примитивов
       this.app.primitiveManager.primitives.forEach(obj => {
@@ -113,7 +122,7 @@ class ContourManager {
 
       const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
 
-     for (let i = 0; i < this.contours.length; i++) {
+      for (let i = 0; i < this.contours.length; i++) {
           const a = this.contours[i];
            const box = a.getBoundingRect(true);
 
@@ -137,7 +146,7 @@ class ContourManager {
                 problematic.add(b);
             }
           } 
-        }
+       }
 
       // Проверка выхода за ложемент для примитивов
       this.app.primitiveManager.primitives.forEach(obj => {
@@ -335,12 +344,10 @@ class ContourManager {
         });
     }
 
-    getTotalCuttingLength() {
-        return this.contours.reduce((s, obj) => {
-            const m = this.metadataMap.get(obj);
-            return s + (m?.cuttingLengthMeters || 0);
-        }, 0);
+    getPlacedContourIds() {
+         return this.contours.map(obj => obj.contourId);
     }
+    
 }
 
 class PrimitiveManager {
