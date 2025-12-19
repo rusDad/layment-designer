@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin — Каталог инструментов</title>
+  <link rel="stylesheet" href="./admin.css">
+</head>
+<body>
+
+<h1>Добавление артикула</h1>
+
+<label>
+  Article:
+  <input type="text" id="articleInput">
+</label>
+
+<button id="previewIdBtn">Сгенерировать ID</button>
+
+<label>
+  ID:
+  <input type="text" id="idPreview" readonly>
+</label>
+
+<label>
+  <input type="checkbox" id="confirmId">
+  Подтверждаю, что ID корректен
+</label>
+
+<div id="errorBox"></div>
+
+<script src="./admin.js"></script>
+</body>
+</html>

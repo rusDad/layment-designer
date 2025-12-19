@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from admin.api import admin_app
 from pathlib import Path
 import json
 import os
@@ -76,3 +77,5 @@ async def export_layment(order_data: dict):
         return FileResponse(output_path, filename='final_layment.nc')
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+app.mount("/admin", admin_app)    
