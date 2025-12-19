@@ -4,22 +4,11 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import re
 from admin.manifest_service import load_manifest, save_manifest_atomic
-from admin.api import generate_id
+from admin.id_utils import generate_id
+
 
 admin_app = FastAPI()
 
-
-def generate_id(article: str) -> str:
-    result = article.lower()
-    result = result.replace(",", ".")
-    result = re.sub(r"[^a-z0-9.-]", "-", result)
-    result = re.sub(r"-{2,}", "-", result)
-    result = result.strip("-")
-
-    if not result:
-        raise ValueError("invalid article")
-
-    return result
 
 
 class PreviewIdRequest(BaseModel):
