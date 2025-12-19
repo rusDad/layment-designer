@@ -25,6 +25,51 @@
   <input type="checkbox" id="confirmId">
   Подтверждаю, что ID корректен
 </label>
+<hr />
+
+<h2>Загрузка файлов для артикула</h2>
+
+<form id="uploadForm">
+  <label>
+    ID артикула
+    <input type="text" id="uploadItemId" required />
+  </label>
+
+  <br /><br />
+
+  <label>
+    SVG (обязательно)
+    <input type="file" id="uploadSvg" accept=".svg" required />
+  </label>
+
+  <br />
+
+  <label>
+    NC (обязательно)
+    <input type="file" id="uploadNc" accept=".nc" required />
+  </label>
+
+  <br />
+
+  <label>
+    Preview (опционально)
+    <input type="file" id="uploadPreview" accept="image/*" />
+  </label>
+
+  <br /><br />
+
+  <label>
+    <input type="checkbox" id="uploadForce" />
+    Разрешить перезапись файлов
+  </label>
+
+  <br /><br />
+
+  <button type="submit">Загрузить файлы</button>
+</form>
+
+<pre id="uploadResult"></pre>
+
 
 <div id="errorBox"></div>
 
