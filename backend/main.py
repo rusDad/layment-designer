@@ -10,6 +10,8 @@ from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_recta
 
 app = FastAPI()
 
+app.mount("/admin", admin_app)
+
 BASE_DIR = Path(__file__).resolve().parents[1]
 DOMAIN_DIR = BASE_DIR / "domain" / "contours"
 
@@ -77,5 +79,3 @@ async def export_layment(order_data: dict):
         return FileResponse(output_path, filename='final_layment.nc')
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-    
-app.mount("/admin", admin_app)    
