@@ -1,10 +1,17 @@
 # admin/api.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import Optional
 import re
 from admin.manifest_service import load_manifest, save_manifest_atomic
 from admin.id_utils import generate_id
+from admin.file_service import save_file, DIRS
+from admin.file_validation import (
+    validate_svg,
+    validate_nc,
+    validate_preview
+)
+
 
 
 admin_app = FastAPI()
@@ -63,3 +70,63 @@ def create_item(data: CreateItemRequest):
     save_manifest_atomic(manifest)
 
     return {"id": item_id}
+
+@admin_app.post("/api/items/{item_id}/files")
+def upload_files(
+    item_id: str,
+    svg: UploadFile = File(...),
+    nc: UploadFile = File(...),
+    preview: UploadFile | None = File(None),
+    force: bool = Form(False)
+):
+    manifest = load_manifest()
+
+    item = next(
+        (i for i in manifest["items"] if i["id"] == item_id),
+        None
+    )
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    validate_svg(svg)
+    validate_nc(nc)
+    if preview:
+        validate_preview(preview)
+
+    svg_path = save_file(
+        svg,
+        DIRS["svg"],
+        f"{item_id}.svg",
+        force
+    )
+
+    nc_path = save_file(
+        nc,
+        DIRS["nc"],
+        f"{item_id}.nc",
+        force
+    )
+
+    preview_path = None
+    if preview:
+        ext = preview.filename.split(".")[-1].lower()
+        preview_path = save_file(
+            preview,
+            DIRS["preview"],
+            f"{item_id}.{ext}",
+            force
+        )
+
+    item["assets"] = {
+        "svg": f"/contours/svg/{item_id}.svg",
+        "nc": f"/contours/nc/{item_id}.nc",
+        "preview": (
+            f"/contours/preview/{preview_path.name}"
+            if preview_path else None
+        )
+    }
+
+    manifest["version"] += 1
+    save_manifest_atomic(manifest)
+
+    return {"status": "ok"}
