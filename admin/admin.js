@@ -1,76 +1,34 @@
-const articleInput = document.getElementById('articleInput');
-const idPreview = document.getElementById('idPreview');
-const previewBtn = document.getElementById('previewIdBtn');
-const confirmCheckbox = document.getElementById('confirmId');
-const errorBox = document.getElementById('errorBox');
-const uploadForm = document.getElementById('uploadForm');
-const uploadResult = document.getElementById('uploadResult');
+const article = document.getElementById('article');
+const name = document.getElementById('name');
+const brand = document.getElementById('brand');
+const category = document.getElementById('category');
+const scaleOverride = document.getElementById('scaleOverride');
+const cuttingLengthMeters = document.getElementById('cuttingLengthMeters');
+const enabled = document.getElementById('enabled');
 
-uploadForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+const svg = document.getElementById('svg');
+const nc = document.getElementById('nc');
+const preview = document.getElementById('preview');
+const force = document.getElementById('force');
 
-  const itemId = document.getElementById('uploadItemId').value.trim();
-  const svg = document.getElementById('uploadSvg').files[0];
-  const nc = document.getElementById('uploadNc').files[0];
-  const preview = document.getElementById('uploadPreview').files[0];
-  const force = document.getElementById('uploadForce').checked;
+const itemId = document.getElementById('itemId');
 
-  if (!itemId || !svg || !nc) {
-    alert('ID, SVG и NC обязательны');
-    return;
-  }
+const createBtn = document.getElementById('createItemBtn');
+const uploadBtn = document.getElementById('uploadFilesBtn');
 
-  const formData = new FormData();
-  formData.append('svg', svg);
-  formData.append('nc', nc);
-  if (preview) formData.append('preview', preview);
-  if (force) formData.append('force', 'true');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
 
-  uploadResult.textContent = 'Загрузка…';
+let currentItemId = null;
 
-  try {
-    const res = await fetch(`/admin/api/items/${itemId}/files`, {
-      method: 'POST',
-      body: formData
-    });
+/* -------------------------
+   1. Создание / обновление артикула
+------------------------- */
 
-    const text = await res.text();
-
-    if (!res.ok) {
-      uploadResult.textContent = `Ошибка ${res.status}:\n${text}`;
-      return;
-    }
-
-    uploadResult.textContent = `OK:\n${text}`;
-  } catch (err) {
-    uploadResult.textContent = `Ошибка запроса:\n${err}`;
-  }
-});
-
-const articleInput = document.getElementById('article');
-const itemIdInput = document.getElementById('itemId');
-
-articleInput.addEventListener('blur', async () => {
-  const article = articleInput.value.trim();
-  if (!article) return;
-
-  const res = await fetch('/admin/api/preview-id', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ article })
-  });
-
-  if (!res.ok) return;
-
-  const data = await res.json();
-  itemIdInput.value = data.id;
-});
-
-const form = document.getElementById('itemForm');
-const result = document.getElementById('result');
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
+createBtn.addEventListener('click', async () => {
+  statusEl.textContent = 'Создание артикула…';
+  resultEl.textContent = '';
+  uploadBtn.disabled = true;
 
   const payload = {
     article: article.value.trim(),
@@ -82,130 +40,90 @@ form.addEventListener('submit', async (e) => {
     enabled: enabled.checked
   };
 
-  result.textContent = 'Сохранение metadata…';
+  try {
+    const res = await fetch('/admin/api/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
 
-  const metaRes = await fetch('/admin/api/items', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+    const text = await res.text();
 
-  if (!metaRes.ok) {
-    result.textContent = await metaRes.text();
+    if (!res.ok) {
+      statusEl.textContent = 'Ошибка создания артикула';
+      resultEl.textContent = text;
+      return;
+    }
+
+    const data = JSON.parse(text);
+
+    currentItemId = data.id;
+    itemId.value = currentItemId;
+
+    article.disabled = true;
+    uploadBtn.disabled = false;
+
+    statusEl.textContent = `Артикул готов: ${currentItemId}`;
+    resultEl.textContent = JSON.stringify(data, null, 2);
+
+  } catch (err) {
+    statusEl.textContent = 'Ошибка запроса';
+    resultEl.textContent = err.toString();
+  }
+});
+
+/* -------------------------
+   2. Загрузка файлов
+------------------------- */
+
+uploadBtn.addEventListener('click', async () => {
+  if (!currentItemId) {
+    alert('Сначала создайте артикул');
     return;
   }
 
-  const { id } = await metaRes.json();
-
-  // ---- файлы ----
-
-  const svgFile = svg.files[0];
-  const ncFile = nc.files[0];
-  const previewFile = preview.files[0];
-
-  if (!svgFile && !ncFile && !previewFile) {
-    result.textContent += '\nMetadata сохранены';
+  if (!svg.files[0] || !nc.files[0]) {
+    alert('SVG и NC обязательны');
     return;
   }
+
+  statusEl.textContent = 'Загрузка файлов…';
+  resultEl.textContent = '';
 
   const fd = new FormData();
-  if (svgFile) fd.append('svg', svgFile);
-  if (ncFile) fd.append('nc', ncFile);
-  if (previewFile) fd.append('preview', previewFile);
-  if (force.checked) fd.append('force', 'true');
+  fd.append('svg', svg.files[0]);
+  fd.append('nc', nc.files[0]);
 
-  result.textContent += '\nЗагрузка файлов…';
-
-  const fileRes = await fetch(`/admin/api/items/${id}/files`, {
-    method: 'POST',
-    body: fd
-  });
-
-  const text = await fileRes.text();
-
-  if (!fileRes.ok) {
-    result.textContent += `\nОшибка файлов:\n${text}`;
-    return;
+  if (preview.files[0]) {
+    fd.append('preview', preview.files[0]);
   }
 
-  result.textContent += `\nOK:\n${text}`;
-});
-
-const itemSelect = document.getElementById('itemSelect');
-
-async function loadItems() {
-  const res = await fetch('/admin/api/items');
-  if (!res.ok) return;
-
-  const data = await res.json();
-
-  data.items.forEach(item => {
-    const opt = document.createElement('option');
-    opt.value = item.id;
-    opt.textContent = `${item.article} — ${item.name}`;
-    opt.dataset.item = JSON.stringify(item);
-    itemSelect.appendChild(opt);
-  });
-}
-
-loadItems();
-
-function updateAssetStatus(item) {
-  svgStatus.textContent = item.assets?.svg ? '✔ загружен' : '— нет';
-  ncStatus.textContent = item.assets?.nc ? '✔ загружен' : '— нет';
-  previewStatus.textContent = item.assets?.preview ? '✔ загружен' : '— нет';
-}
-
-itemSelect.addEventListener('change', () => {
-  const opt = itemSelect.selectedOptions[0];
-  if (!opt || !opt.dataset.item) return;
-  updateAssetStatus(item);
-
-  const item = JSON.parse(opt.dataset.item);
-
-  article.value = item.article;
-  itemId.value = item.id;
-  name.value = item.name;
-  enabled.checked = item.enabled;
-
-  article.disabled = true; // id уже зафиксирован
-});
-
-function resetAssetStatus() {
-  svgStatus.textContent = '';
-  ncStatus.textContent = '';
-  previewStatus.textContent = '';
-}
-
-
-previewBtn.addEventListener('click', async () => {
-  const article = articleInput.value.trim();
-
-  errorBox.textContent = '';
-  idPreview.value = '';
-  confirmCheckbox.checked = false;
-
-  if (!article) {
-    errorBox.textContent = 'Article обязателен';
-    return;
+  if (force.checked) {
+    fd.append('force', 'true');
   }
 
   try {
-    const resp = await fetch('/admin/api/preview-id', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ article })
-    });
+    const res = await fetch(
+      `/admin/api/items/${currentItemId}/files`,
+      {
+        method: 'POST',
+        body: fd
+      }
+    );
 
-    if (!resp.ok) {
-      const err = await resp.json();
-      throw new Error(err.detail || 'Ошибка генерации id');
+    const text = await res.text();
+
+    if (!res.ok) {
+      statusEl.textContent = 'Ошибка загрузки файлов';
+      resultEl.textContent = text;
+      return;
     }
 
-    const data = await resp.json();
-    idPreview.value = data.id;
+    statusEl.textContent = 'Файлы загружены успешно';
+    resultEl.textContent = text;
 
-  } catch (e) {
-    errorBox.textContent = e.message;
+  } catch (err) {
+    statusEl.textContent = 'Ошибка запроса';
+    resultEl.textContent = err.toString();
   }
 });

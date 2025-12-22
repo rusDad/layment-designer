@@ -1,182 +1,121 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Admin — Каталог инструментов</title>
-  <link rel="stylesheet" href="./admin.css">
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 720px;
+      margin: 40px auto;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 6px;
+      margin-top: 4px;
+    }
+    button {
+      margin-top: 16px;
+    }
+    pre {
+      background: #f4f4f4;
+      padding: 10px;
+      overflow: auto;
+    }
+    .section {
+      border: 1px solid #ccc;
+      padding: 16px;
+      margin-top: 24px;
+    }
+  </style>
 </head>
 <body>
 
-<h1>Добавление артикула</h1>
+<h1>Admin — Каталог инструментов</h1>
 
-<label>
-  Article:
-  <input type="text" id="articleInput">
-</label>
+<div class="section">
+  <h2>1. Метаданные артикула</h2>
 
-<button id="previewIdBtn">Сгенерировать ID</button>
-
-<label>
-  ID:
-  <input type="text" id="idPreview" readonly>
-</label>
-
-<label>
-  <input type="checkbox" id="confirmId">
-  Подтверждаю, что ID корректен
-</label>
-<hr />
-
-<h2>Загрузка файлов для артикула</h2>
-
-<form id="uploadForm">
   <label>
-    ID артикула
-    <input type="text" id="uploadItemId" required />
+    Article
+    <input id="article" />
   </label>
 
-  <br /><br />
+  <label>
+    Name
+    <input id="name" />
+  </label>
+
+  <label>
+    Brand
+    <input id="brand" />
+  </label>
+
+  <label>
+    Category
+    <input id="category" />
+  </label>
+
+  <label>
+    Scale override
+    <input id="scaleOverride" type="number" step="0.01" value="1.0" />
+  </label>
+
+  <label>
+    Cutting length (meters)
+    <input id="cuttingLengthMeters" type="number" step="0.01" value="0" />
+  </label>
+
+  <label>
+    <input id="enabled" type="checkbox" checked />
+    Enabled
+  </label>
+
+  <button id="createItemBtn">
+    Создать / обновить артикул
+  </button>
+</div>
+
+<div class="section">
+  <h2>2. Файлы (только для существующего id)</h2>
+
+  <label>
+    ID артикула
+    <input id="itemId" disabled />
+  </label>
 
   <label>
     SVG (обязательно)
-    <input type="file" id="uploadSvg" accept=".svg" required />
+    <input id="svg" type="file" accept=".svg" />
   </label>
-
-  <br />
 
   <label>
     NC (обязательно)
-    <input type="file" id="uploadNc" accept=".nc" required />
+    <input id="nc" type="file" accept=".nc,.txt" />
   </label>
-
-  <br />
 
   <label>
     Preview (опционально)
-    <input type="file" id="uploadPreview" accept="image/*" />
+    <input id="preview" type="file" accept="image/*" />
   </label>
 
-  <br /><br />
-
   <label>
-    <input type="checkbox" id="uploadForce" />
+    <input id="force" type="checkbox" />
     Разрешить перезапись файлов
   </label>
 
-  <br /><br />
+  <button id="uploadFilesBtn" disabled>
+    Загрузить файлы
+  </button>
+</div>
 
-  <button type="submit">Загрузить файлы</button>
-</form>
-
-<h2>Артикул</h2>
-
-<form id="itemForm">
-  <fieldset>
-    <legend>Основные данные</legend>
-
-    <label>
-      Article
-      <input type="text" id="article" required />
-    </label>
-
-    <label>
-      ID (генерируется)
-      <input type="text" id="itemId" disabled />
-    </label>
-
-    <label>
-      Name
-      <input type="text" id="name" required />
-    </label>
-
-    <label>
-      Brand
-      <input type="text" id="brand" required />
-    </label>
-
-    <label>
-      Category
-      <input type="text" id="category" required />
-    </label>
-
-    <label>
-      Scale override
-      <input type="number" id="scaleOverride" step="0.01" value="1.0" />
-    </label>
-
-    <label>
-      Cutting length (m)
-      <input type="number" id="cuttingLengthMeters" step="0.01" min="0" />
-    </label>
-
-    <label>
-      <input type="checkbox" id="enabled" checked />
-      Enabled
-    </label>
-  </fieldset>
-
-  <fieldset>
-    <legend>Файлы</legend>
-
-    <label>
-      SVG
-      <input type="file" id="svg" accept=".svg" />
-    </label>
-
-    <label>
-      NC
-      <input type="file" id="nc" accept=".nc" />
-    </label>
-
-    <label>
-      Preview
-      <input type="file" id="preview" accept="image/*" />
-    </label>
-
-    <label>
-      <input type="checkbox" id="force" />
-      Разрешить перезапись файлов
-    </label>
-  </fieldset>
-
-  <button type="submit">Сохранить</button>
-</form>
-
-<label>
-  Выбор артикула
-  <select id="itemSelect">
-    <option value="">— новый артикул —</option>
-  </select>
-</label>
-
-
-<label>
-  SVG
-  <input type="file" id="svg" accept=".svg" />
-  <span id="svgStatus"></span>
-</label>
-
-<label>
-  NC
-  <input type="file" id="nc" accept=".nc" />
-  <span id="ncStatus"></span>
-</label>
-
-<label>
-  Preview
-  <input type="file" id="preview" accept="image/*" />
-  <span id="previewStatus"></span>
-</label>
-
-
+<p id="status"></p>
 <pre id="result"></pre>
 
-
-<pre id="uploadResult"></pre>
-
-
-<div id="errorBox"></div>
-
-<script src="./admin.js"></script>
+<script src="admin.js"></script>
 </body>
 </html>
