@@ -57,8 +57,6 @@ def create_item(data: CreateItemRequest):
         "name": data.name,
         "brand": data.brand,
         "category": data.category,
-        "svg": None,
-        "nc": None,
         "scaleOverride": data.scaleOverride,
         "cuttingLengthMeters": data.cuttingLengthMeters,
         "enabled": data.enabled
@@ -118,10 +116,10 @@ def upload_files(
         )
 
     item["assets"] = {
-        "svg": f"/contours/svg/{item_id}.svg",
-        "nc": f"/contours/nc/{item_id}.nc",
+        "svg": f"/svg/{item_id}.svg",
+        "nc": f"/nc/{item_id}.nc",
         "preview": (
-            f"/contours/preview/{preview_path.name}"
+            f"/preview/{preview_path.name}"
             if preview_path else None
         )
     }
