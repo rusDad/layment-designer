@@ -130,3 +130,20 @@ def upload_files(
     save_manifest_atomic(manifest)
 
     return {"status": "ok"}
+
+@admin_app.get("/api/items")
+def list_items():
+    manifest = load_manifest()
+    return {
+        "version": manifest.get("version"),
+        "items": [
+            {
+                "id": i["id"],
+                "article": i["article"],
+                "name": i["name"],
+                "enabled": i.get("enabled", True),
+                "assets": i.get("assets")
+            }
+            for i in manifest["items"]
+        ]
+    }

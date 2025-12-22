@@ -68,6 +68,110 @@
   <button type="submit">Загрузить файлы</button>
 </form>
 
+<h2>Артикул</h2>
+
+<form id="itemForm">
+  <fieldset>
+    <legend>Основные данные</legend>
+
+    <label>
+      Article
+      <input type="text" id="article" required />
+    </label>
+
+    <label>
+      ID (генерируется)
+      <input type="text" id="itemId" disabled />
+    </label>
+
+    <label>
+      Name
+      <input type="text" id="name" required />
+    </label>
+
+    <label>
+      Brand
+      <input type="text" id="brand" required />
+    </label>
+
+    <label>
+      Category
+      <input type="text" id="category" required />
+    </label>
+
+    <label>
+      Scale override
+      <input type="number" id="scaleOverride" step="0.01" value="1.0" />
+    </label>
+
+    <label>
+      Cutting length (m)
+      <input type="number" id="cuttingLengthMeters" step="0.01" min="0" />
+    </label>
+
+    <label>
+      <input type="checkbox" id="enabled" checked />
+      Enabled
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Файлы</legend>
+
+    <label>
+      SVG
+      <input type="file" id="svg" accept=".svg" />
+    </label>
+
+    <label>
+      NC
+      <input type="file" id="nc" accept=".nc" />
+    </label>
+
+    <label>
+      Preview
+      <input type="file" id="preview" accept="image/*" />
+    </label>
+
+    <label>
+      <input type="checkbox" id="force" />
+      Разрешить перезапись файлов
+    </label>
+  </fieldset>
+
+  <button type="submit">Сохранить</button>
+</form>
+
+<label>
+  Выбор артикула
+  <select id="itemSelect">
+    <option value="">— новый артикул —</option>
+  </select>
+</label>
+
+
+<label>
+  SVG
+  <input type="file" id="svg" accept=".svg" />
+  <span id="svgStatus"></span>
+</label>
+
+<label>
+  NC
+  <input type="file" id="nc" accept=".nc" />
+  <span id="ncStatus"></span>
+</label>
+
+<label>
+  Preview
+  <input type="file" id="preview" accept="image/*" />
+  <span id="previewStatus"></span>
+</label>
+
+
+<pre id="result"></pre>
+
+
 <pre id="uploadResult"></pre>
 
 
