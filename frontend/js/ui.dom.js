@@ -18,8 +18,17 @@ window.UIDom = {
   },
 
   panels: {
-    contoursList: document.getElementById('contoursList'),
+    catalogList: document.getElementById('catalogList'),
     toolButtons: document.querySelector('.tool-buttons'),
+  },
+
+  catalog: {
+    nav: document.getElementById('catalogNav'),
+    breadcrumbAll: document.getElementById('catalogBreadcrumbAll'),
+    breadcrumbSeparator: document.getElementById('catalogBreadcrumbSeparator'),
+    breadcrumbCurrent: document.getElementById('catalogBreadcrumbCurrent'),
+    categorySelect: document.getElementById('categorySelect'),
+    searchInput: document.getElementById('catalogSearch'),
   },
 
   status: {

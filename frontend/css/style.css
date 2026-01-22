@@ -144,31 +144,155 @@ body {
     border-radius: 3px;
 }
 
-.contour-item {
-    padding: 0.75rem;
+.catalog-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin-bottom: 0.5rem;
-    background-color: white;
+}
+
+.catalog-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 13px;
+    color: #2c3e50;
+}
+
+.breadcrumb-link {
+    background: none;
+    border: none;
+    color: #2980b9;
+    cursor: pointer;
+    padding: 0;
+    font-size: 13px;
+}
+
+.breadcrumb-link:hover {
+    text-decoration: underline;
+}
+
+.breadcrumb-separator {
+    color: #7f8c8d;
+}
+
+.breadcrumb-current {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.catalog-select {
+    flex: 0 0 140px;
+    padding: 0.3rem 0.4rem;
     border: 1px solid #bdc3c7;
     border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 14px;
+    background: white;
+    font-size: 13px;
 }
 
-.contour-item:hover {
-    background-color: #3498db;
-    color: white;
-    border-color: #2980b9;
+.catalog-search {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-bottom: 0.5rem;
 }
 
-.contour-item:active {
-    transform: translateY(1px);
-}
-
-.contours-list {
+.catalog-list {
     max-height: 400px;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
 
+.catalog-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem;
+    background: white;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.catalog-row:hover {
+    background-color: #ecf6ff;
+    border-color: #3498db;
+}
+
+.catalog-folder-icon {
+    font-size: 18px;
+}
+
+.catalog-folder-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.catalog-item-preview,
+.catalog-preview-placeholder {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+    border: 1px solid #bdc3c7;
+    background: #f8f9fb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #7f8c8d;
+    flex-shrink: 0;
+}
+
+.catalog-item-preview {
+    object-fit: contain;
+    background: white;
+}
+
+.catalog-item-meta {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.catalog-item-article {
+    font-size: 12px;
+    color: #7f8c8d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.catalog-item-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2c3e50;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.catalog-add-button {
+    background: #2ecc71;
+    border: none;
+    color: white;
+    border-radius: 4px;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+.catalog-add-button:hover {
+    background: #27ae60;
 }
 
 /* === СТРОКА СОСТОЯНИЯ === */
