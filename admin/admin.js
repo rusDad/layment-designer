@@ -18,8 +18,114 @@ const uploadBtn = document.getElementById('uploadFilesBtn');
 
 const statusEl = document.getElementById('status');
 const resultEl = document.getElementById('result');
+const itemsList = document.getElementById('itemsList');
+const itemsStatus = document.getElementById('itemsStatus');
 
 let currentItemId = null;
+let itemsCache = [];
+
+const fileLabels = {
+  svg: 'SVG',
+  nc: 'NC',
+  preview: 'Preview'
+};
+
+const renderFileStatus = (files = {}) => Object.entries(fileLabels)
+  .map(([key, label]) => {
+    const exists = Boolean(files[key]);
+    const span = document.createElement('span');
+    span.className = exists ? 'file-ok' : 'file-missing';
+    span.textContent = `${label}: ${exists ? '✓' : '—'}`;
+    return span;
+  });
+
+const fillItemForm = (item) => {
+  article.value = item.article || '';
+  name.value = item.name || '';
+  brand.value = item.brand || '';
+  category.value = item.category || '';
+  scaleOverride.value = item.scaleOverride ?? 1.0;
+  cuttingLengthMeters.value = item.cuttingLengthMeters ?? 0;
+  enabled.checked = item.enabled !== false;
+
+  currentItemId = item.id;
+  itemId.value = item.id;
+
+  article.disabled = true;
+  uploadBtn.disabled = false;
+};
+
+const renderItems = (items) => {
+  itemsList.innerHTML = '';
+
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.textContent = 'Артикулы не найдены';
+    itemsList.appendChild(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'item-card';
+    card.addEventListener('click', () => fillItemForm(item));
+
+    const meta = document.createElement('div');
+    meta.className = 'item-meta';
+
+    const title = document.createElement('div');
+    title.className = 'item-title';
+    title.textContent = `${item.name || 'Без названия'} · ${item.article}`;
+    meta.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'item-subtitle';
+    subtitle.textContent = `id: ${item.id} · enabled: ${item.enabled ? 'yes' : 'no'}`;
+    meta.appendChild(subtitle);
+
+    const files = document.createElement('div');
+    files.className = 'item-files';
+    renderFileStatus(item.files).forEach((node) => files.appendChild(node));
+    meta.appendChild(files);
+
+    card.appendChild(meta);
+
+    if (item.previewUrl) {
+      const previewWrap = document.createElement('div');
+      previewWrap.className = 'item-preview';
+      const img = document.createElement('img');
+      img.src = item.previewUrl;
+      img.alt = `Preview ${item.article}`;
+      previewWrap.appendChild(img);
+      card.appendChild(previewWrap);
+    }
+
+    itemsList.appendChild(card);
+  });
+};
+
+const loadItems = async () => {
+  itemsStatus.textContent = 'Загрузка списка…';
+  try {
+    const res = await fetch('/admin/api/items');
+    const text = await res.text();
+
+    if (!res.ok) {
+      itemsStatus.textContent = 'Ошибка загрузки списка';
+      resultEl.textContent = text;
+      return;
+    }
+
+    const data = JSON.parse(text);
+    itemsCache = data.items || [];
+    renderItems(itemsCache);
+    itemsStatus.textContent = `Найдено: ${itemsCache.length}`;
+  } catch (err) {
+    itemsStatus.textContent = 'Ошибка загрузки списка';
+    resultEl.textContent = err.toString();
+  }
+};
 
 /* -------------------------
    1. Создание / обновление артикула
@@ -65,6 +171,7 @@ createBtn.addEventListener('click', async () => {
 
     statusEl.textContent = `Артикул готов: ${currentItemId}`;
     resultEl.textContent = JSON.stringify(data, null, 2);
+    await loadItems();
 
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса';
@@ -121,9 +228,12 @@ uploadBtn.addEventListener('click', async () => {
 
     statusEl.textContent = 'Файлы загружены успешно';
     resultEl.textContent = text;
+    await loadItems();
 
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса';
     resultEl.textContent = err.toString();
   }
 });
+
+loadItems();
