@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from admin_api.api import router as admin_router
 from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH, contour_rotated_nc_path
 from pydantic import BaseModel
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Dict
 import json
 from gcode_rotator import offset_gcode, generate_rectangle_gcode 
 
@@ -22,7 +22,7 @@ class OrderMeta(BaseModel):
     height: float
     units: str
     coordinateSystem: Optional[str] = None
-    pricePreview: Optional[dict[str, Any]] = None
+    pricePreview: Optional[Dict[str, Any]] = None
 
 
 class ContourPlacement(BaseModel):
@@ -36,7 +36,7 @@ class ContourPlacement(BaseModel):
 class ExportRequest(BaseModel):
     orderMeta: OrderMeta
     contours: List[ContourPlacement]
-    primitives: Optional[List[dict[str, Any]]] = None
+    primitives: Optional[List[Dict[str, Any]]] = None
 
 
 @public_router.get("/contours/manifest")
