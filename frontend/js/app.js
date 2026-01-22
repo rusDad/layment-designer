@@ -10,6 +10,7 @@ class ContourApp {
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.availableContours = [];
         this.availableCategories = [];
+        this.categoryLabels = {};
         this.currentCategory = null;
         this.catalogQuery = '';
         this.autosaveTimer = null;
@@ -101,9 +102,10 @@ class ContourApp {
             const data = await resp.json();
 
             this.manifest = data.items.reduce((acc, item) => {
-            acc[item.id] = item;
-            return acc;
+                acc[item.id] = item;
+                return acc;
             }, {});
+            this.categoryLabels = data.categories || {};
 
             this.availableContours = data.items.filter(i => i.enabled);
             this.availableCategories = this.buildCategories(this.availableContours);
@@ -409,7 +411,11 @@ class ContourApp {
 
     getCategoryLabel(item) {
         const raw = (item.category || '').trim();
-        return raw ? raw : 'Без категории';
+        if (!raw) {
+            return 'Без категории';
+        }
+        const label = this.categoryLabels?.[raw]?.label;
+        return label ? label.trim() || raw : raw;
     }
 
     setCurrentCategory(category) {
