@@ -40,8 +40,22 @@
                 </div>
                 
                 <h2>Доступные контуры</h2>
-                 <div class="contours-list" id="contoursList">
-                <!-- Контуры будут добавляться динамически -->
+                <div class="catalog-nav" id="catalogNav">
+                    <div class="catalog-breadcrumb">
+                        <button type="button" class="breadcrumb-link" id="catalogBreadcrumbAll">Все</button>
+                        <span class="breadcrumb-separator" id="catalogBreadcrumbSeparator">/</span>
+                        <span class="breadcrumb-current" id="catalogBreadcrumbCurrent"></span>
+                    </div>
+                    <select id="categorySelect" class="catalog-select"></select>
+                </div>
+                <input
+                    type="search"
+                    id="catalogSearch"
+                    class="catalog-search"
+                    placeholder="Поиск по каталогу"
+                >
+                <div class="catalog-list" id="catalogList">
+                    <!-- Каталог будет добавляться динамически -->
                 </div>
                 <!-- СТРОКА СОСТОЯНИЯ -->
             <div class="status-bar">

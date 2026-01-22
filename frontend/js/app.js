@@ -7,6 +7,9 @@ class ContourApp {
         this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.availableContours = [];
+        this.availableCategories = [];
+        this.currentCategory = null;
+        this.catalogQuery = '';
 
         this.init();
     }
@@ -83,17 +86,10 @@ class ContourApp {
             }, {});
 
             this.availableContours = data.items.filter(i => i.enabled);
-
-            const list = UIDom.panels.contoursList;
-            list.innerHTML = '';
-
-            this.availableContours.forEach(item => {
-                const div = document.createElement('div');
-                div.className = 'contour-item';
-                div.textContent = item.name;
-                div.onclick = () => this.addContour(item);
-                list.appendChild(div);
-            });
+            this.availableCategories = this.buildCategories(this.availableContours);
+            this.ensureValidCategory();
+            this.renderCatalogNav();
+            this.renderCatalogList();
         } catch (err) {
                 console.error('Ошибка загрузки manifest', err);
                 alert(Config.MESSAGES.LOADING_ERROR);
@@ -152,6 +148,7 @@ class ContourApp {
         this.bindCanvasEvents();
         this.bindUIButtonEvents();
         this.bindInputEvents();
+        this.bindCatalogEvents();
     }
 
     bindCanvasEvents() {
@@ -237,9 +234,25 @@ class ContourApp {
             val = Math.max(0.5, Math.min(10, val + delta));
             val = Math.round(val * 100) / 100;
 
-           scaleInput.value = val;
+            scaleInput.value = val;
             scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
+    }
+
+    bindCatalogEvents() {
+        UIDom.catalog.breadcrumbAll.addEventListener('click', () => {
+            this.setCurrentCategory(null);
+        });
+
+        UIDom.catalog.categorySelect.addEventListener('change', event => {
+            const value = event.target.value;
+            this.setCurrentCategory(value || null);
+        });
+
+        UIDom.catalog.searchInput.addEventListener('input', event => {
+            this.catalogQuery = event.target.value || '';
+            this.renderCatalogList();
+        });
     }
 
 
@@ -348,6 +361,197 @@ class ContourApp {
         this.canvas.on('object:moving', () => this.updateStatusBar());
         this.canvas.on('object:rotating', () => this.updateStatusBar());
         this.canvas.on('object:modified', () => this.updateStatusBar());
+    }
+
+    buildCategories(items) {
+        const categories = new Map();
+        items.forEach(item => {
+            const label = this.getCategoryLabel(item);
+            if (!categories.has(label)) {
+                categories.set(label, label);
+            }
+        });
+        return Array.from(categories.keys()).sort((a, b) => a.localeCompare(b, 'ru'));
+    }
+
+    getCategoryLabel(item) {
+        const raw = (item.category || '').trim();
+        return raw ? raw : 'Без категории';
+    }
+
+    setCurrentCategory(category) {
+        this.currentCategory = category;
+        this.renderCatalogNav();
+        this.renderCatalogList();
+    }
+
+    ensureValidCategory() {
+        if (this.currentCategory && !this.availableCategories.includes(this.currentCategory)) {
+            this.currentCategory = null;
+        }
+    }
+
+    renderCatalogNav() {
+        const hasCategory = !!this.currentCategory;
+        UIDom.catalog.breadcrumbSeparator.style.display = hasCategory ? 'inline' : 'none';
+        UIDom.catalog.breadcrumbCurrent.style.display = hasCategory ? 'inline' : 'none';
+        UIDom.catalog.breadcrumbCurrent.textContent = hasCategory ? this.currentCategory : '';
+
+        UIDom.catalog.categorySelect.innerHTML = '';
+        const allOption = document.createElement('option');
+        allOption.value = '';
+        allOption.textContent = 'Все категории';
+        UIDom.catalog.categorySelect.appendChild(allOption);
+
+        this.availableCategories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category;
+            option.textContent = category;
+            UIDom.catalog.categorySelect.appendChild(option);
+        });
+
+        UIDom.catalog.categorySelect.value = this.currentCategory || '';
+    }
+
+    renderCatalogList() {
+        const list = UIDom.panels.catalogList;
+        list.innerHTML = '';
+
+        if (!this.availableContours.length) {
+            return;
+        }
+
+        if (!this.currentCategory) {
+            const categories = this.filterCategories(this.availableCategories);
+            this.renderFolderRows(list, categories);
+            return;
+        }
+
+        const items = this.availableContours
+            .filter(item => this.getCategoryLabel(item) === this.currentCategory)
+            .filter(item => this.matchesItemQuery(item));
+        this.renderItemRows(list, items);
+    }
+
+    filterCategories(categories) {
+        const query = this.catalogQuery.trim().toLowerCase();
+        if (!query) {
+            return categories;
+        }
+        return categories.filter(category => category.toLowerCase().includes(query));
+    }
+
+    matchesItemQuery(item) {
+        const query = this.catalogQuery.trim().toLowerCase();
+        if (!query) {
+            return true;
+        }
+        const fields = [
+            item.name,
+            item.article,
+            item.brand
+        ]
+            .filter(Boolean)
+            .map(value => value.toLowerCase());
+        return fields.some(value => value.includes(query));
+    }
+
+    renderFolderRows(list, categories) {
+        if (!categories.length) {
+            const empty = document.createElement('div');
+            empty.className = 'catalog-row';
+            empty.textContent = 'Категории не найдены';
+            list.appendChild(empty);
+            return;
+        }
+
+        categories.forEach(category => {
+            const row = document.createElement('div');
+            row.className = 'catalog-row';
+            row.addEventListener('click', () => this.setCurrentCategory(category));
+
+            const icon = document.createElement('span');
+            icon.className = 'catalog-folder-icon';
+            icon.textContent = '📁';
+
+            const name = document.createElement('span');
+            name.className = 'catalog-folder-name';
+            name.textContent = category;
+
+            row.appendChild(icon);
+            row.appendChild(name);
+            list.appendChild(row);
+        });
+    }
+
+    renderItemRows(list, items) {
+        if (!items.length) {
+            const empty = document.createElement('div');
+            empty.className = 'catalog-row';
+            empty.textContent = 'Контуры не найдены';
+            list.appendChild(empty);
+            return;
+        }
+
+        items.forEach(item => {
+            const row = document.createElement('div');
+            row.className = 'catalog-row';
+            row.addEventListener('click', () => this.addContour(item));
+
+            const previewWrapper = this.createPreviewElement(item);
+
+            const meta = document.createElement('div');
+            meta.className = 'catalog-item-meta';
+
+            const article = document.createElement('div');
+            article.className = 'catalog-item-article';
+            article.textContent = item.article || '';
+
+            const name = document.createElement('div');
+            name.className = 'catalog-item-name';
+            name.textContent = item.name || '';
+
+            meta.appendChild(article);
+            meta.appendChild(name);
+
+            const addButton = document.createElement('button');
+            addButton.type = 'button';
+            addButton.className = 'catalog-add-button';
+            addButton.textContent = '+';
+            addButton.addEventListener('click', event => {
+                event.stopPropagation();
+                this.addContour(item);
+            });
+
+            row.appendChild(previewWrapper);
+            row.appendChild(meta);
+            row.appendChild(addButton);
+            list.appendChild(row);
+        });
+    }
+
+    createPreviewElement(item) {
+        const previewAsset = item.assets?.preview;
+        if (previewAsset) {
+            const img = document.createElement('img');
+            img.className = 'catalog-item-preview';
+            img.alt = item.name || '';
+            img.loading = 'lazy';
+            img.src = `/contours/${previewAsset}`;
+            img.onerror = () => {
+                const placeholder = this.createPreviewPlaceholder();
+                img.replaceWith(placeholder);
+            };
+            return img;
+        }
+        return this.createPreviewPlaceholder();
+    }
+
+    createPreviewPlaceholder() {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'catalog-preview-placeholder';
+        placeholder.textContent = 'Нет превью';
+        return placeholder;
     }
 
     // обновление строки состояния
