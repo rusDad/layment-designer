@@ -22,6 +22,7 @@ class OrderMeta(BaseModel):
     units: str
     coordinateSystem: Optional[str] = None
     pricePreview: Optional[Dict[str, Any]] = None
+    workspaceSnapshot: Optional[Dict[str, Any]] = None
 
 
 class ContourPlacement(BaseModel):
