@@ -1,20 +1,17 @@
 # admin/api.py
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import Optional
-import re
-from admin.manifest_service import load_manifest, save_manifest_atomic
-from admin.id_utils import generate_id
-from admin.file_service import save_file, DIRS
-from admin.file_validation import (
+from admin_api.manifest_service import load_manifest, save_manifest_atomic
+from admin_api.id_utils import generate_id
+from admin_api.file_service import save_file, DIRS
+from admin_api.file_validation import (
     validate_svg,
     validate_nc,
     validate_preview
 )
 
-
-
-admin_app = FastAPI()
+router = APIRouter()
 
 
 
@@ -22,7 +19,7 @@ class PreviewIdRequest(BaseModel):
     article: str
 
 
-@admin_app.post("/api/preview-id")
+@router.post("/preview-id")
 def preview_id(data: PreviewIdRequest):
     try:
         return {"id": generate_id(data.article)}
@@ -38,7 +35,7 @@ class CreateItemRequest(BaseModel):
     cuttingLengthMeters: float
     enabled: bool = True
 
-@admin_app.post("/api/items")
+@router.post("/items")
 def create_item(data: CreateItemRequest):
     item_id = generate_id(data.article)
 
@@ -69,7 +66,7 @@ def create_item(data: CreateItemRequest):
 
     return {"id": item_id}
 
-@admin_app.post("/api/items/{item_id}/files")
+@router.post("/items/{item_id}/files")
 def upload_files(
     item_id: str,
     svg: UploadFile = File(...),
@@ -116,10 +113,10 @@ def upload_files(
         )
 
     item["assets"] = {
-        "svg": f"/svg/{item_id}.svg",
-        "nc": f"/nc/{item_id}.nc",
+        "svg": f"svg/{item_id}.svg",
+        "nc": f"nc/{item_id}.nc",
         "preview": (
-            f"/preview/{preview_path.name}"
+            f"preview/{preview_path.name}"
             if preview_path else None
         )
     }
@@ -129,7 +126,7 @@ def upload_files(
 
     return {"status": "ok"}
 
-@admin_app.get("/api/items")
+@router.get("/items")
 def list_items():
     manifest = load_manifest()
     return {

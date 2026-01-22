@@ -1,34 +1,55 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from admin.api import admin_app
-from pathlib import Path
+from admin_api.api import router as admin_router
+from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH, contour_rotated_nc_path
+from pydantic import BaseModel
+from typing import Any, List, Optional
 import json
-import os
 from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_rectangle_gcode 
 
 
 app = FastAPI()
 
-app.mount("/admin", admin_app)
+public_router = APIRouter()
 
-BASE_DIR = Path(__file__).resolve().parents[1]
-DOMAIN_DIR = BASE_DIR / "domain" / "contours"
+app.include_router(public_router, prefix="/api")
+app.include_router(admin_router, prefix="/admin/api")
 
 
-@app.get("/api/contours/manifest")
+class OrderMeta(BaseModel):
+    width: float
+    height: float
+    units: str
+    coordinateSystem: Optional[str] = None
+    pricePreview: Optional[dict[str, Any]] = None
+
+
+class ContourPlacement(BaseModel):
+    id: str
+    x: float
+    y: float
+    angle: float
+    scaleOverride: Optional[float] = None
+
+
+class ExportRequest(BaseModel):
+    orderMeta: OrderMeta
+    contours: List[ContourPlacement]
+    primitives: Optional[List[dict[str, Any]]] = None
+
+
+@public_router.get("/contours/manifest")
 def get_contours_manifest():
-    manifest_path = DOMAIN_DIR / "manifest.json"
-
-    if not manifest_path.exists():
+    if not MANIFEST_PATH.exists():
         return {"error": "manifest.json not found"}
 
-    with manifest_path.open("r", encoding="utf-8") as f:
+    with MANIFEST_PATH.open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
-@app.post("/export-layment")
-async def export_layment(order_data: dict):
+@public_router.post("/export-layment")
+async def export_layment(order_data: ExportRequest):
     try:
         final_gcode = [
             'G0 G17 G90',
@@ -38,8 +59,8 @@ async def export_layment(order_data: dict):
 	        'S15000 M3',
 	        'G54'
         ]
-        width = order_data.get('width', 565)  # Default если не передан  
-        height = order_data.get('height', 375)  
+        width = order_data.orderMeta.width
+        height = order_data.orderMeta.height
         # Хардкод параметров   
         z_depth = -30.0  
         tool_dia = 6.0  
@@ -48,20 +69,21 @@ async def export_layment(order_data: dict):
         final_gcode.extend(rectangle_gcode)  
         final_gcode.append('G0 Z20')  
 
-        for contour in order_data['contours']:
-            rot = str(contour['angle'])
-            nc_path = f"./contours/nc/{contour['id']}/rotated_{rot}.nc"
-            if not os.path.exists(nc_path):
+        for contour in order_data.contours:
+            rot_value = int(contour.angle) if float(contour.angle).is_integer() else contour.angle
+            rot = str(rot_value)
+            nc_path = contour_rotated_nc_path(contour.id, rot)
+            if not nc_path.exists():
                 # Автоматическая ротация, если не сгенерировано (fallback)
-                rotate_gcode_for_contour(contour['id'])
+                rotate_gcode_for_contour(contour.id)
             
-            with open(nc_path, 'r') as f:
+            with nc_path.open('r') as f:
                 contour_lines = f.read().splitlines()
             
 	         # Применяем смещение вместо G92
-            offset_contour_gcode = offset_gcode(contour_lines, contour['x'], contour['y'])
+            offset_contour_gcode = offset_gcode(contour_lines, contour.x, contour.y)
             final_gcode.append('G0 Z20')
-            final_gcode.append(f"G0 X{contour['x']} Y{contour['y']}")
+            final_gcode.append(f"G0 X{contour.x} Y{contour.y}")
             final_gcode.extend(offset_contour_gcode)
             final_gcode.append('G0 Z20')
         
@@ -71,11 +93,16 @@ async def export_layment(order_data: dict):
         final_gcode.append('G49')
         final_gcode.append('M30')
         
-        os.makedirs("./orders", exist_ok=True)
-        output_path = './orders/final_layment.nc'
-        with open(output_path, 'w') as f:
+        orders_dir = BASE_DIR / "orders"
+        orders_dir.mkdir(parents=True, exist_ok=True)
+        output_path = orders_dir / "final_layment.nc"
+        with output_path.open('w') as f:
             f.write('\n'.join(final_gcode))
         
         return FileResponse(output_path, filename='final_layment.nc')
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+app.mount("/contours", StaticFiles(directory=str(CONTOURS_DIR)), name="contours")
+app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "admin"), html=True), name="admin")
