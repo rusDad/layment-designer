@@ -1,10 +1,7 @@
-from pathlib import Path
 import json
 import tempfile
 import shutil
-
-BASE_DIR = Path(__file__).resolve().parents[2]
-MANIFEST_PATH = BASE_DIR / "domain" / "contours" / "manifest.json"
+from domain_store import MANIFEST_PATH
 
 
 def load_manifest():

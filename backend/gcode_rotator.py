@@ -1,6 +1,6 @@
 import re
 import math
-import os
+from domain_store import contour_nc_path, CONTOURS_DIR
 
 def parse_gcode(lines):
     original_current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0, 'F': None}
@@ -184,11 +184,11 @@ def generate_rectangle_gcode(x_start, y_start, width, height, z_depth, tool_dia,
 
 # Standalone функция для админки: ротация для контура по id
 def rotate_gcode_for_contour(contour_id):
-    nc_path = f"./contours/nc/{contour_id}.nc"
-    if not os.path.exists(nc_path):
+    nc_path = contour_nc_path(contour_id)
+    if not nc_path.exists():
         raise ValueError(f".nc file not found for {contour_id}")
     
-    with open(nc_path, 'r') as f:
+    with nc_path.open('r') as f:
         lines = f.read().splitlines()
     
     versions = {
@@ -198,8 +198,8 @@ def rotate_gcode_for_contour(contour_id):
         '270': generate_rotated_gcode(lines, 270)
     }
     
-    base_path = f"./contours/nc/{contour_id}"
-    os.makedirs(base_path, exist_ok=True)
+    base_path = CONTOURS_DIR / "nc" / contour_id
+    base_path.mkdir(parents=True, exist_ok=True)
     for rot, code in versions.items():
         # Меняем местами имена для 90 и 270 (без изменения генерации)
         if rot == '90':
@@ -208,7 +208,8 @@ def rotate_gcode_for_contour(contour_id):
             save_rot = '90'
         else:
             save_rot = rot
-        with open(f"{base_path}/rotated_{save_rot}.nc", 'w') as f:
+        target_path = base_path / f"rotated_{save_rot}.nc"
+        with target_path.open('w') as f:
             f.write('\n'.join(code))
     
     print(f"Rotated versions generated for {contour_id}")

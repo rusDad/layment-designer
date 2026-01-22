@@ -91,3 +91,52 @@ Direct access to `manifest.json` via `/contours/manifest.json` is запрещё
 - no implicit coordinate transformations
 - all domain data must be FS-safe
 - MVP without technical debt
+
+---
+
+## Smoke Test (manual)
+
+Assumes FastAPI is running locally on `http://localhost:8000`.
+
+1) Manifest and static SVG:
+
+```bash
+curl -s http://localhost:8000/api/contours/manifest
+curl -I http://localhost:8000/contours/svg/<id>.svg
+```
+
+2) Public export:
+
+```bash
+curl -X POST http://localhost:8000/api/export-layment \
+  -H "Content-Type: application/json" \
+  -o /tmp/final_layment.nc \
+  -d '{
+    "orderMeta": { "width": 565, "height": 375, "units": "mm", "coordinateSystem": "origin-top-left" },
+    "contours": [ { "id": "<id>", "x": 10, "y": 10, "angle": 0, "scaleOverride": 1 } ],
+    "primitives": []
+  }'
+```
+
+3) Admin: create item + upload files + manifest assets format:
+
+```bash
+curl -X POST http://localhost:8000/admin/api/items \
+  -H "Content-Type: application/json" \
+  -d '{
+    "article": "ART-001",
+    "name": "Demo tool",
+    "brand": "Demo",
+    "category": "demo",
+    "scaleOverride": 1,
+    "cuttingLengthMeters": 0.5,
+    "enabled": true
+  }'
+
+curl -X POST "http://localhost:8000/admin/api/items/<id>/files" \
+  -F "svg=@domain/contours/svg/<id>.svg" \
+  -F "nc=@domain/contours/nc/<id>.nc" \
+  -F "preview=@domain/contours/preview/<id>.png"
+
+curl -s http://localhost:8000/api/contours/manifest | grep -n "\"assets\""
+```
