@@ -814,7 +814,8 @@ class ContourApp {
                 material: priceMaterial,
                 cutting: priceCutting,
                 total
-            }
+            },
+            workspaceSnapshot: this.buildWorkspaceSnapshot()
             },
 
             contours: this.contourManager.getContoursData(),
