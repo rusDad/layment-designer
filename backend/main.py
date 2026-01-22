@@ -6,7 +6,7 @@ from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH, contour_rotated_
 from pydantic import BaseModel
 from typing import Any, List, Optional
 import json
-from gcode_rotator import rotate_gcode_for_contour, offset_gcode, generate_rectangle_gcode 
+from gcode_rotator import offset_gcode, generate_rectangle_gcode 
 
 
 app = FastAPI()
@@ -74,8 +74,13 @@ async def export_layment(order_data: ExportRequest):
             rot = str(rot_value)
             nc_path = contour_rotated_nc_path(contour.id, rot)
             if not nc_path.exists():
-                # Автоматическая ротация, если не сгенерировано (fallback)
-                rotate_gcode_for_contour(contour.id)
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Rotated contour is not prepared for the requested angle. "
+                        "Please upload the contour in admin to generate rotated NC files."
+                    ),
+                )
             
             with nc_path.open('r') as f:
                 contour_lines = f.read().splitlines()
@@ -100,6 +105,8 @@ async def export_layment(order_data: ExportRequest):
             f.write('\n'.join(final_gcode))
         
         return FileResponse(output_path, filename='final_layment.nc')
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
