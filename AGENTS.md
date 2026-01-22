@@ -12,6 +12,11 @@ Web-конструктор раскладки инструментов в габ
   - `svg/<id>.svg`, `nc/<id>.nc`, `preview/<id>.<ext>`
 - Координаты для контура на фронте: использовать `obj.aCoords.tl` (top-left bbox) — это осознанная семантика.
 - Все проверки/экспорт на фронте выполняются при scale=1 (паттерн `performWithScaleOne()`).
+- Manifest нельзя получать как статик (/contours/manifest.json закрыт nginx).Использовать только GET /api/contours/manifest.
+
+“prod routing: /api/*, /admin/api/*, /contours/*”
+“на проде есть systemd unit layment-backend.service и nginx site layment-designer”
+(детали ExecStart/alias — в DEPLOYMENT.md) 
 
 ## URL-неймспейсы (канон)
 - Public API: `/api/*`
