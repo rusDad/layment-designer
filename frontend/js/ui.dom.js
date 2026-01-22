@@ -13,6 +13,8 @@ window.UIDom = {
     rotate: document.getElementById('rotateButton'),
     addRect: document.getElementById('addRectButton'),
     addCircle: document.getElementById('addCircleButton'),
+    saveWorkspace: document.getElementById('saveWorkspaceButton'),
+    loadWorkspace: document.getElementById('loadWorkspaceButton'),
     export: document.getElementById('exportButton'),
     check: document.getElementById('checkLayoutButton'),
   },
