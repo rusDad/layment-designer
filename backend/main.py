@@ -40,7 +40,7 @@ async def export_layment(order_data: dict):
         ]
         width = order_data.get('width', 565)  # Default если не передан  
         height = order_data.get('height', 375)  
-        # Хардкод параметров (замените на ваши)  
+        # Хардкод параметров   
         z_depth = -30.0  
         tool_dia = 6.0  
         feed_rate = 1000  
