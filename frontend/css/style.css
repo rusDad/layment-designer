@@ -18,8 +18,40 @@ body {
 .app-header {
     background-color: rgb(0, 120, 100);
     color: white;
-    padding: 1rem;
-    text-align: center;
+    padding: 0.4rem 0.8rem;
+    flex-shrink: 0;
+}
+
+.project-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.project-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.project-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.project-actions .tool-button {
+    width: auto;
+    margin-bottom: 0;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.check-button {
+    background: #9b59b6;
 }
 
 .main-content {
@@ -27,28 +59,39 @@ body {
     flex: 1;
     overflow: hidden;
     min-width: 0;
+    min-height: 0;
 }
 
-.contours-panel {
-    width: 300px;
-    min-width: 300px;
-    max-width: 300px;
+.catalog-panel,
+.tool-panel {
+    width: 320px;
+    min-width: 320px;
+    max-width: 340px;
     background-color: #ecf0f1;
     padding: 1rem;
     border-right: 2px solid #bdc3c7;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     flex-shrink: 0;
     height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    min-height: 0;
 }
 
-.contours-panel h2 {
-    margin-bottom: 1rem;
+.tool-panel {
+    border-right: none;
+    border-left: 2px solid #bdc3c7;
+}
+
+.catalog-panel h2,
+.tool-panel h2 {
+    margin-bottom: 0.25rem;
     color: #2c3e50;
+    font-size: 1rem;
 }
 
 .size-controls {
-    margin-bottom: 1rem;
     padding: 0.5rem;
     background: #fff;
     border-radius: 4px;
@@ -66,7 +109,9 @@ body {
 }
 
 .tool-buttons {
-    margin: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 }
 
 .tool-button {
@@ -78,7 +123,6 @@ body {
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.2s;
-    margin-bottom: 0.5rem;
 }
 
 .tool-button:hover:not(:disabled) {
@@ -92,7 +136,6 @@ body {
 
 .export-button {
     background-color: #27ae60;
-    margin-top: 1rem;
 }
 
 .export-button:hover {
@@ -102,10 +145,12 @@ body {
 
 .workspace {
     flex: 1;
-    padding: 1rem;
+    padding: 0.75rem;
     background-color: white;
     min-width: 0;
-    overflow: auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
 }
 
 .canvas-scroll-container {
@@ -128,6 +173,8 @@ body {
 
 .canvas-container {
     position: relative;
+    min-width: 100%;
+    min-height: 100%;
 }
 
 #workspaceCanvas {
@@ -135,11 +182,13 @@ body {
 }
 
 /* Скрываем скроллбар для эстетики */
-.contours-panel::-webkit-scrollbar {
+.catalog-panel::-webkit-scrollbar,
+.tool-panel::-webkit-scrollbar {
     width: 6px;
 }
 
-.contours-panel::-webkit-scrollbar-thumb {
+.catalog-panel::-webkit-scrollbar-thumb,
+.tool-panel::-webkit-scrollbar-thumb {
     background-color: #bdc3c7;
     border-radius: 3px;
 }
@@ -201,11 +250,12 @@ body {
 }
 
 .catalog-list {
-    max-height: 400px;
+    flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    min-height: 0;
 }
 
 .catalog-row {
