@@ -13,8 +13,7 @@ app = FastAPI()
 
 public_router = APIRouter()
 
-app.include_router(public_router, prefix="/api")
-app.include_router(admin_router, prefix="/admin/api")
+
 
 
 class OrderMeta(BaseModel):
@@ -110,6 +109,8 @@ async def export_layment(order_data: ExportRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+app.include_router(public_router, prefix="/api")
+app.include_router(admin_router, prefix="/admin/api")
 
 app.mount("/contours", StaticFiles(directory=str(CONTOURS_DIR)), name="contours")
 app.mount("/admin", StaticFiles(directory=str(BASE_DIR / "admin"), html=True), name="admin")
