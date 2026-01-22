@@ -10,6 +10,8 @@ from admin_api.file_validation import (
     validate_nc,
     validate_preview
 )
+from domain_store import CONTOURS_DIR
+from pathlib import Path
 
 router = APIRouter()
 
@@ -136,6 +138,7 @@ def upload_files(
 @router.get("/items")
 def list_items():
     manifest = load_manifest()
+    preview_dir = CONTOURS_DIR / "preview"
     return {
         "version": manifest.get("version"),
         "items": [
@@ -144,8 +147,55 @@ def list_items():
                 "article": i["article"],
                 "name": i["name"],
                 "enabled": i.get("enabled", True),
-                "assets": i.get("assets")
+                "assets": i.get("assets"),
+                "files": _item_files_status(i, preview_dir),
+                "previewUrl": _item_preview_url(i, preview_dir)
             }
             for i in manifest["items"]
         ]
     }
+
+
+def _item_files_status(item: dict, preview_dir: Path) -> dict:
+    item_id = item["id"]
+    assets = item.get("assets") or {}
+    svg_exists = (CONTOURS_DIR / "svg" / f"{item_id}.svg").exists()
+    nc_exists = (CONTOURS_DIR / "nc" / f"{item_id}.nc").exists()
+    preview_exists = _preview_file_path(item_id, assets, preview_dir) is not None
+    return {
+        "svg": svg_exists,
+        "nc": nc_exists,
+        "preview": preview_exists
+    }
+
+
+def _item_preview_url(item: dict, preview_dir: Path) -> Optional[str]:
+    assets = item.get("assets") or {}
+    preview_path = _preview_file_path(item["id"], assets, preview_dir)
+    if not preview_path:
+        return None
+    relative = _preview_relative_path(preview_path, assets)
+    return f"/contours/{relative}"
+
+
+def _preview_file_path(item_id: str, assets: dict, preview_dir: Path) -> Optional[Path]:
+    preview_asset = assets.get("preview")
+    if preview_asset:
+        normalized = preview_asset.lstrip("/")
+        preview_path = CONTOURS_DIR / normalized
+        if preview_path.exists():
+            return preview_path
+    for candidate in sorted(preview_dir.glob(f"{item_id}.*")):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _preview_relative_path(preview_path: Path, assets: dict) -> str:
+    preview_asset = assets.get("preview")
+    if preview_asset:
+        normalized = preview_asset.lstrip("/")
+        expected = CONTOURS_DIR / normalized
+        if preview_path == expected:
+            return normalized
+    return preview_path.relative_to(CONTOURS_DIR).as_posix()
