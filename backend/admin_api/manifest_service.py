@@ -1,6 +1,7 @@
 import json
 import tempfile
 import shutil
+from pathlib import Path
 from domain_store import MANIFEST_PATH
 
 
