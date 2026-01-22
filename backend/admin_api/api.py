@@ -41,30 +41,37 @@ def create_item(data: CreateItemRequest):
 
     manifest = load_manifest()
 
-    # Проверка уникальности id
-    if any(item["id"] == item_id for item in manifest["items"]):
-        raise HTTPException(
-            status_code=400,
-            detail=f"id '{item_id}' already exists"
-        )
+    existing_item = next(
+        (item for item in manifest["items"] if item["id"] == item_id),
+        None
+    )
 
-    new_item = {
-        "id": item_id,
-        "article": data.article,
-        "name": data.name,
-        "brand": data.brand,
-        "category": data.category,
-        "scaleOverride": data.scaleOverride,
-        "cuttingLengthMeters": data.cuttingLengthMeters,
-        "enabled": data.enabled
-    }
+    if existing_item:
+        existing_item["name"] = data.name
+        existing_item["brand"] = data.brand
+        existing_item["category"] = data.category
+        existing_item["scaleOverride"] = data.scaleOverride
+        existing_item["cuttingLengthMeters"] = data.cuttingLengthMeters
+        existing_item["enabled"] = data.enabled
+        mode = "updated"
+    else:
+        new_item = {
+            "id": item_id,
+            "article": data.article,
+            "name": data.name,
+            "brand": data.brand,
+            "category": data.category,
+            "scaleOverride": data.scaleOverride,
+            "cuttingLengthMeters": data.cuttingLengthMeters,
+            "enabled": data.enabled
+        }
+        manifest["items"].append(new_item)
+        mode = "created"
 
-    manifest["items"].append(new_item)
     manifest["version"] = manifest.get("version", 1) + 1
-
     save_manifest_atomic(manifest)
 
-    return {"id": item_id}
+    return {"id": item_id, "mode": mode}
 
 @router.post("/items/{item_id}/files")
 def upload_files(
