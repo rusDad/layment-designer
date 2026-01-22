@@ -28,25 +28,40 @@ class ContourApp {
     }
 
     initializeCanvas() {
+        const container = document.querySelector('.canvas-scroll-container');
+        const getCanvasSize = () => {
+            if (!container) {
+                return {
+                    width: window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING,
+                    height: window.innerHeight - Config.UI.HEADER_HEIGHT
+                };
+            }
+            const rect = container.getBoundingClientRect();
+            return {
+                width: Math.max(0, Math.floor(rect.width)),
+                height: Math.max(0, Math.floor(rect.height))
+            };
+        };
 
-        //const panelWidth = 320;
-        //const w = window.innerWidth - panelWidth - 40;
-        //const h = window.innerHeight - 120;
-
+        const initialSize = getCanvasSize();
         this.canvas = new fabric.Canvas('workspaceCanvas', {
-            width: window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING,
-            height: window.innerHeight - Config.UI.HEADER_HEIGHT,
-            backgroundColor:  Config.UI.CANVAS_BACKGROUND,
+            width: initialSize.width,
+            height: initialSize.height,
+            backgroundColor: Config.UI.CANVAS_BACKGROUND,
             selection: true,
             preserveObjectStacking: true
         });
 
-        window.addEventListener('resize', () => {
-            const w2 = window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING;
-            const h2 = window.innerHeight - Config.UI.HEADER_HEIGHT;
-            this.canvas.setDimensions({ width: w2, height: h2 });
-            this.canvas.renderAll();
-        });
+        const resizeCanvas = () => {
+            const size = getCanvasSize();
+            if (size.width > 0 && size.height > 0) {
+                this.canvas.setDimensions({ width: size.width, height: size.height });
+                this.canvas.renderAll();
+            }
+        };
+
+        window.addEventListener('resize', resizeCanvas);
+        requestAnimationFrame(resizeCanvas);
     }
 
     initializeServices() {

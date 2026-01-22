@@ -11,36 +11,19 @@
 <body>
     <div class="app-container">
         <header class="app-header">
-            <h1>Конструктор ложемента</h1>
-        </header>
-        
-        <div class="main-content">
-            <div class="contours-panel">
-                <h2>Габариты ложемента</h2>
-                <div class="size-controls">
-                    <label>Ширина: <input type="number" id="laymentWidth" value="565"></label>
-                    <label>Высота: <input type="number" id="laymentHeight" value="375"></label>
-                    <label>Масштаб: <input type="number" id="workspaceScale" value="1.0" step="0.1" min="0.1" max="10.0"></label>
-                </div>
-                
-                <div class="tool-buttons">
-                    <button id="deleteButton" class="tool-button" disabled>Удалить выделенное</button>
-                    <button id="rotateButton" class="tool-button" disabled>Повернуть на 90°</button>
-                    <button id="addRectButton" class="tool-button">Добавить прямоугольник</button>
-                    <button id="addCircleButton" class="tool-button">Добавить круг</button>
+            <div class="project-bar">
+                <h1 class="project-title">Конструктор ложемента</h1>
+                <div class="project-actions">
                     <button id="saveWorkspaceButton" class="tool-button">Save</button>
                     <button id="loadWorkspaceButton" class="tool-button">Load</button>
                     <button id="exportButton" class="tool-button export-button">Завершить</button>
-                    <button
-  id="checkLayoutButton"
-  class="tool-button"
-  style="background:#9b59b6"
->
-  Проверить раскладку
-</button>
-
+                    <button id="checkLayoutButton" class="tool-button check-button">Проверить раскладку</button>
                 </div>
-                
+            </div>
+        </header>
+        
+        <div class="main-content">
+            <aside class="catalog-panel">
                 <h2>Доступные контуры</h2>
                 <div class="catalog-nav" id="catalogNav">
                     <div class="catalog-breadcrumb">
@@ -59,12 +42,8 @@
                 <div class="catalog-list" id="catalogList">
                     <!-- Каталог будет добавляться динамически -->
                 </div>
-                <!-- СТРОКА СОСТОЯНИЯ -->
-            <div class="status-bar">
-                <span id="status-info">Выделите контур для просмотра информации</span>
-            </div>
-            </div>
-            
+            </aside>
+
             <main class="workspace">
                 <div class="canvas-scroll-container">
                     <div class="canvas-container">
@@ -72,8 +51,28 @@
                     </div>
                 </div>
             </main>
-            
+
+            <aside class="tool-panel">
+                <h2>Габариты ложемента</h2>
+                <div class="size-controls">
+                    <label>Ширина: <input type="number" id="laymentWidth" value="565"></label>
+                    <label>Высота: <input type="number" id="laymentHeight" value="375"></label>
+                    <label>Масштаб: <input type="number" id="workspaceScale" value="1.0" step="0.1" min="0.1" max="10.0"></label>
+                </div>
+
+                <h2>Инструменты</h2>
+                <div class="tool-buttons">
+                    <button id="deleteButton" class="tool-button" disabled>Удалить выделенное</button>
+                    <button id="rotateButton" class="tool-button" disabled>Повернуть на 90°</button>
+                    <button id="addRectButton" class="tool-button">Добавить прямоугольник</button>
+                    <button id="addCircleButton" class="tool-button">Добавить круг</button>
+                </div>
+            </aside>
         </div>
+
+        <footer class="status-bar">
+            <span id="status-info">Выделите контур для просмотра информации</span>
+        </footer>
     </div>
     <script src="./js/config.js"></script>
     <script src="./js/svgLoader.js"></script>
