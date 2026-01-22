@@ -35,7 +35,8 @@ domain/contours/
 
 Rules:
 - domain data is read-only at runtime
-- frontend never accesses domain files directly
+- Frontend не получает manifest и метаданные из /contours/ напрямую. Manifest — только GET /api/contours/manifest
+- Frontend может загружать ассеты (svg/preview) по публичным URL /contours/....
 - backend reads domain files directly from filesystem
 
 ---
@@ -96,19 +97,19 @@ Direct access to `manifest.json` via `/contours/manifest.json` is запрещё
 
 ## Smoke Test (manual)
 
-Assumes FastAPI is running locally on `http://localhost:8000`.
+Assumes FastAPI is running locally on `http://localhost:8001`.
 
 1) Manifest and static SVG:
 
 ```bash
-curl -s http://localhost:8000/api/contours/manifest
-curl -I http://localhost:8000/contours/svg/<id>.svg
+curl -s http://localhost:8001/api/contours/manifest
+curl -I http://localhost:8001/contours/svg/<id>.svg
 ```
 
 2) Public export:
 
 ```bash
-curl -X POST http://localhost:8000/api/export-layment \
+curl -X POST http://localhost:8001/api/export-layment \
   -H "Content-Type: application/json" \
   -o /tmp/final_layment.nc \
   -d '{
@@ -121,7 +122,7 @@ curl -X POST http://localhost:8000/api/export-layment \
 3) Admin: create item + upload files + manifest assets format:
 
 ```bash
-curl -X POST http://localhost:8000/admin/api/items \
+curl -X POST http://localhost:8001/admin/api/items \
   -H "Content-Type: application/json" \
   -d '{
     "article": "ART-001",
@@ -133,10 +134,10 @@ curl -X POST http://localhost:8000/admin/api/items \
     "enabled": true
   }'
 
-curl -X POST "http://localhost:8000/admin/api/items/<id>/files" \
+curl -X POST "http://localhost:8001/admin/api/items/<id>/files" \
   -F "svg=@domain/contours/svg/<id>.svg" \
   -F "nc=@domain/contours/nc/<id>.nc" \
   -F "preview=@domain/contours/preview/<id>.png"
 
-curl -s http://localhost:8000/api/contours/manifest | grep -n "\"assets\""
+curl -s http://localhost:8001/api/contours/manifest | grep -n "\"assets\""
 ```
