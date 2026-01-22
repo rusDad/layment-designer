@@ -79,6 +79,13 @@ class ContourManager {
         this.canvas.renderAll();
     }
 
+    clearContours() {
+        this.contours.forEach(obj => this.canvas.remove(obj));
+        this.contours = [];
+        this.metadataMap = new WeakMap();
+        this.canvas.renderAll();
+    }
+
     scaleAllContours(ratio) {
         this.contours.forEach(obj => {
             obj.scaleX *= ratio;
@@ -448,6 +455,12 @@ class PrimitiveManager {
     removePrimitive(obj) {
         this.primitives = this.primitives.filter(p => p !== obj);
         this.canvas.remove(obj);
+        this.canvas.renderAll();
+    }
+
+    clearPrimitives() {
+        this.primitives.forEach(obj => this.canvas.remove(obj));
+        this.primitives = [];
         this.canvas.renderAll();
     }
 }

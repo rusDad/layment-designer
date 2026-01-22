@@ -1,5 +1,7 @@
 // app.js
 
+const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v1';
+
 class ContourApp {
     constructor() {
         this.canvas = null;
@@ -10,6 +12,8 @@ class ContourApp {
         this.availableCategories = [];
         this.currentCategory = null;
         this.catalogQuery = '';
+        this.autosaveTimer = null;
+        this.isRestoringWorkspace = false;
 
         this.init();
     }
@@ -20,6 +24,7 @@ class ContourApp {
         this.createLayment();
         await this.loadAvailableContours();
         this.setupEventListeners();
+        await this.loadWorkspaceFromStorage();
     }
 
     initializeCanvas() {
@@ -106,11 +111,13 @@ class ContourApp {
             this.workspaceScale,
             item
         );
+        this.scheduleWorkspaceSave();
     }
 
     updateLaymentSize(width, height) {
         this.layment.set({ width, height });
         this.canvas.renderAll();
+        this.scheduleWorkspaceSave();
     }
 
     updateWorkspaceScale(newScale) {
@@ -170,10 +177,18 @@ class ContourApp {
         this.canvas.on('object:moving', () => {
             this.updateStatusBar();
         });
+
+        this.canvas.on('object:modified', event => {
+            if (this.shouldAutosaveForObject(event.target)) {
+                this.scheduleWorkspaceSave();
+            }
+        });
     }    
     bindUIButtonEvents() {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
+        UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace();
+        UIDom.buttons.loadWorkspace.onclick = () => this.loadWorkspaceFromStorage();
 
         UIDom.buttons.export.onclick = () => this.performWithScaleOne(() => this.exportData());
 
@@ -191,12 +206,14 @@ class ContourApp {
             const centerX = this.layment.width / 2;
             const centerY = this.layment.height / 2;
             this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
+            this.scheduleWorkspaceSave();
         });
 
         UIDom.buttons.addCircle.addEventListener('click', () => {
             const centerX = this.layment.width / 2;
             const centerY = this.layment.height / 2;
             this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
+            this.scheduleWorkspaceSave();
         });
     }
     bindInputEvents() {
@@ -338,11 +355,12 @@ class ContourApp {
 
     // Выполнить с временным  scale=1
 
-    performWithScaleOne(action) {
+    async performWithScaleOne(action) {
         const oldScale = this.workspaceScale;
         this.updateWorkspaceScale(1);
-        action();
+        const result = await action();
         this.updateWorkspaceScale(oldScale);
+        return result;
     }
 
     updateButtons() {
@@ -605,6 +623,7 @@ class ContourApp {
         this.canvas.discardActiveObject();
         this.canvas.renderAll();
         this.updateButtons();
+        this.scheduleWorkspaceSave();
     }
 
     rotateSelected() {
@@ -612,6 +631,137 @@ class ContourApp {
         if (!obj || obj.primitiveType) return;  // Нет поворота для примитивов
         const next = (obj.angle + 90) % 360;
         this.contourManager.rotateContour(obj, next);
+        this.scheduleWorkspaceSave();
+    }
+
+    shouldAutosaveForObject(obj) {
+        if (!obj || this.isRestoringWorkspace) {
+            return false;
+        }
+        return obj !== this.layment;
+    }
+
+    scheduleWorkspaceSave() {
+        if (this.isRestoringWorkspace) {
+            return;
+        }
+        if (this.autosaveTimer) {
+            clearTimeout(this.autosaveTimer);
+        }
+        this.autosaveTimer = setTimeout(() => {
+            this.saveWorkspace();
+        }, 400);
+    }
+
+    buildWorkspaceSnapshot() {
+        const layment = this.canvas.layment;
+        return {
+            schemaVersion: 1,
+            savedAt: new Date().toISOString(),
+            layment: {
+                width: Math.round(layment.width),
+                height: Math.round(layment.height),
+                offset: layment.left
+            },
+            workspaceScale: 1,
+            contours: this.contourManager.getContoursData(),
+            primitives: this.contourManager.getPrimitivesData()
+        };
+    }
+
+    async saveWorkspace() {
+        try {
+            await this.performWithScaleOne(() => {
+                const payload = this.buildWorkspaceSnapshot();
+                localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(payload));
+            });
+        } catch (err) {
+            console.error('Ошибка сохранения workspace', err);
+        }
+    }
+
+    async loadWorkspaceFromStorage() {
+        const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+        if (!raw) {
+            return;
+        }
+
+        let data;
+        try {
+            data = JSON.parse(raw);
+        } catch (err) {
+            console.error('Ошибка чтения workspace', err);
+            return;
+        }
+
+        if (data.schemaVersion !== 1) {
+            console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
+            return;
+        }
+
+        await this.loadWorkspace(data);
+    }
+
+    async loadWorkspace(data) {
+        this.isRestoringWorkspace = true;
+        await this.performWithScaleOne(async () => {
+            this.canvas.discardActiveObject();
+            this.contourManager.clearContours();
+            this.primitiveManager.clearPrimitives();
+
+            const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
+            const width = data.layment?.width || Config.LAYMENT_DEFAULT_WIDTH;
+            const height = data.layment?.height || Config.LAYMENT_DEFAULT_HEIGHT;
+            this.laymentOffset = offset;
+
+            UIDom.inputs.laymentWidth.value = width;
+            UIDom.inputs.laymentHeight.value = height;
+            this.updateLaymentSize(width, height);
+            this.layment.set({ left: offset, top: offset });
+            this.layment.setCoords();
+
+            for (const contour of data.contours || []) {
+                const meta = this.manifest?.[contour.id];
+                if (!meta) {
+                    console.warn('Контур не найден в manifest', contour.id);
+                    continue;
+                }
+                const metadata = { ...meta, scaleOverride: contour.scaleOverride ?? meta.scaleOverride };
+                await this.contourManager.addContour(
+                    `/contours/${metadata.assets.svg}`,
+                    { x: this.layment.left, y: this.layment.top },
+                    this.workspaceScale,
+                    metadata
+                );
+                const added = this.contourManager.contours[this.contourManager.contours.length - 1];
+                added.angle = contour.angle || 0;
+                added.setCoords();
+                const targetX = this.layment.left + contour.x;
+                const targetY = this.layment.top + contour.y;
+                const tl = added.aCoords.tl;
+                added.set({
+                    left: added.left + (targetX - tl.x),
+                    top: added.top + (targetY - tl.y)
+                });
+                added.setCoords();
+            }
+
+            for (const primitive of data.primitives || []) {
+                const x = this.layment.left + primitive.x;
+                const y = this.layment.top + primitive.y;
+                if (primitive.type === 'rect') {
+                    this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height });
+                } else if (primitive.type === 'circle') {
+                    this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius });
+                }
+            }
+
+            this.canvas.renderAll();
+            this.updateButtons();
+            this.updateStatusBar();
+        });
+        this.isRestoringWorkspace = false;
+        UIDom.inputs.workspaceScale.value = this.workspaceScale;
     }
 
     getTotalCuttingLength() {
