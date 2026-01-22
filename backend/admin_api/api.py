@@ -10,8 +10,10 @@ from admin_api.file_validation import (
     validate_nc,
     validate_preview
 )
+from gcode_rotator import rotate_gcode_for_contour
 from domain_store import CONTOURS_DIR
 from pathlib import Path
+import shutil
 
 router = APIRouter()
 
@@ -121,6 +123,17 @@ def upload_files(
             force
         )
 
+    try:
+        rotate_gcode_for_contour(item_id)
+    except Exception as exc:
+        svg_path.unlink(missing_ok=True)
+        nc_path.unlink(missing_ok=True)
+        if preview_path:
+            preview_path.unlink(missing_ok=True)
+        rotated_dir = CONTOURS_DIR / "nc" / item_id
+        shutil.rmtree(rotated_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(exc))
+
     item["assets"] = {
         "svg": f"svg/{item_id}.svg",
         "nc": f"nc/{item_id}.nc",
@@ -130,7 +143,7 @@ def upload_files(
         )
     }
 
-    manifest["version"] += 1
+    manifest["version"] = manifest.get("version", 1) + 1
     save_manifest_atomic(manifest)
 
     return {"status": "ok"}
