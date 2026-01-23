@@ -32,6 +32,7 @@ class ContourManager {
             top: position.y,
             originX: 'center',
             originY: 'center',
+            fill: '#208820',
             scaleX: factor,
             scaleY: factor,
             hasControls: true,

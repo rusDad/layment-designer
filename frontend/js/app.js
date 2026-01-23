@@ -80,7 +80,7 @@ class ContourApp {
             height: height,
             left: this.laymentOffset,
             top: this.laymentOffset,
-            fill: 'transparent',
+            fill: '#464746',
             stroke: Config.LAYMENT_STYLE.STROKE,
             strokeWidth: Config.LAYMENT_STYLE.STROKE_WIDTH,
             strokeDashArray: Config.LAYMENT_STYLE.STROKE_DASH_ARRAY,
