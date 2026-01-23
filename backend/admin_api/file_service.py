@@ -9,6 +9,12 @@ DIRS = {
     "preview": CONTOURS_DIR / "preview",
 }
 
+def save_upload_file(file: UploadFile, target_path: Path) -> Path:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    with target_path.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+    return target_path
+
 
 def save_file(
     file: UploadFile,
