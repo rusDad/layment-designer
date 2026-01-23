@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from admin_api.manifest_service import load_manifest, save_manifest_atomic
 from admin_api.id_utils import generate_id
-from admin_api.file_service import save_file, DIRS
+from admin_api.file_service import save_upload_file, DIRS
 from admin_api.file_validation import (
     validate_svg,
     validate_nc,
@@ -13,9 +13,14 @@ from admin_api.file_validation import (
 from gcode_rotator import rotate_gcode_for_contour
 from domain_store import CONTOURS_DIR
 from pathlib import Path
+from datetime import datetime, timezone
+import logging
+import os
 import shutil
+import uuid
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 
@@ -99,47 +104,114 @@ def upload_files(
     if preview:
         validate_preview(preview)
 
-    svg_path = save_file(
-        svg,
-        DIRS["svg"],
-        f"{item_id}.svg",
-        force
-    )
-
-    nc_path = save_file(
-        nc,
-        DIRS["nc"],
-        f"{item_id}.nc",
-        force
-    )
-
-    preview_path = None
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    staging_token = f"{timestamp}_{uuid.uuid4().hex[:8]}"
+    staging_root = CONTOURS_DIR / ".staging" / f"{item_id}_{staging_token}"
+    staging_svg = staging_root / "svg" / f"{item_id}.svg"
+    staging_nc = staging_root / "nc" / f"{item_id}.nc"
+    staging_preview = None
+    preview_ext = None
     if preview:
-        ext = preview.filename.split(".")[-1].lower()
-        preview_path = save_file(
-            preview,
-            DIRS["preview"],
-            f"{item_id}.{ext}",
-            force
-        )
+        preview_ext = preview.filename.split(".")[-1].lower()
+        staging_preview = staging_root / "preview" / f"{item_id}.{preview_ext}"
 
+    staging_root.mkdir(parents=True, exist_ok=True)
+    (staging_root / "nc" / item_id).mkdir(parents=True, exist_ok=True)
+
+    logger.info("Uploading files to staging %s", staging_root)
+    save_upload_file(svg, staging_svg)
+    save_upload_file(nc, staging_nc)
+    if preview and staging_preview:
+        save_upload_file(preview, staging_preview)
+
+    svg_final = DIRS["svg"] / f"{item_id}.svg"
+    nc_final = DIRS["nc"] / f"{item_id}.nc"
+    preview_final = (
+        (DIRS["preview"] / f"{item_id}.{preview_ext}")
+        if preview_ext else None
+    )
+
+    if not force:
+        conflict_path = None
+        if svg_final.exists():
+            conflict_path = svg_final
+        elif nc_final.exists():
+            conflict_path = nc_final
+        elif preview_final and preview_final.exists():
+            conflict_path = preview_final
+
+        if conflict_path:
+            shutil.rmtree(staging_root, ignore_errors=True)
+            raise HTTPException(
+                status_code=409,
+                detail=f"File {conflict_path.name} already exists"
+            )
+
+    backup_dir = staging_root / "backup"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backups = {}
+    new_files = []
+
+    def backup_and_replace(staging_path: Path, final_path: Path):
+        if final_path.exists():
+            backup_path = backup_dir / f"{final_path.name}.bak_{staging_token}"
+            os.replace(final_path, backup_path)
+            backups[final_path] = backup_path
+            logger.info("Backed up %s to %s", final_path, backup_path)
+        else:
+            new_files.append(final_path)
+        os.replace(staging_path, final_path)
+        logger.info("Replaced %s from staging", final_path)
+
+    rotated_dir = CONTOURS_DIR / "nc" / item_id
+    rotated_backup = None
+    rotated_existed = rotated_dir.exists()
+    if rotated_existed:
+        rotated_backup = backup_dir / f"{item_id}.rotated.bak_{staging_token}"
+        os.replace(rotated_dir, rotated_backup)
+        logger.info("Backed up rotated dir %s to %s", rotated_dir, rotated_backup)
+
+    swap_started = False
     try:
+        swap_started = True
+        backup_and_replace(staging_svg, svg_final)
+        backup_and_replace(staging_nc, nc_final)
+        if staging_preview and preview_final:
+            backup_and_replace(staging_preview, preview_final)
+        swap_started = True
         rotate_gcode_for_contour(item_id)
     except Exception as exc:
-        svg_path.unlink(missing_ok=True)
-        nc_path.unlink(missing_ok=True)
-        if preview_path:
-            preview_path.unlink(missing_ok=True)
-        rotated_dir = CONTOURS_DIR / "nc" / item_id
-        shutil.rmtree(rotated_dir, ignore_errors=True)
+        if swap_started:
+            logger.warning("Upload failed, rolling back files for %s", item_id, exc_info=True)
+            if rotated_dir.exists():
+                shutil.rmtree(rotated_dir, ignore_errors=True)
+            if rotated_backup and rotated_backup.exists():
+                os.replace(rotated_backup, rotated_dir)
+                logger.info("Restored rotated dir from backup %s", rotated_backup)
+            for final_path, backup_path in backups.items():
+                if backup_path.exists():
+                    os.replace(backup_path, final_path)
+                    logger.info("Restored %s from backup", final_path)
+            for final_path in new_files:
+                if final_path.exists():
+                    rollback_path = backup_dir / f"{final_path.name}.rollback_{staging_token}"
+                    os.replace(final_path, rollback_path)
+                    logger.info("Moved new file %s to rollback stash", final_path)
+        shutil.rmtree(staging_root, ignore_errors=True)
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(status_code=400, detail=str(exc))
+    else:
+        logger.info("Upload committed for %s, cleaning backups", item_id)
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        shutil.rmtree(staging_root, ignore_errors=True)
 
     item["assets"] = {
         "svg": f"svg/{item_id}.svg",
         "nc": f"nc/{item_id}.nc",
         "preview": (
-            f"preview/{preview_path.name}"
-            if preview_path else None
+            f"preview/{preview_final.name}"
+            if preview_final else None
         )
     }
 
