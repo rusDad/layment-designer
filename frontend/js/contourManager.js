@@ -100,6 +100,11 @@ class ContourManager {
     }
 
     checkCollisionsAndHighlight() {
+      if (this.app.workspaceScale !== 1) {
+        console.warn('Collision check must run with workspace scale=1. Use performWithScaleOne().');
+        return false;
+      }
+
       const problematic = new Set();
 
        // Сброс цвета у всех контуров
@@ -236,8 +241,13 @@ class ContourManager {
         // Рекурсивно устанавливаем fill на все дочерние объекты (paths, etc)
         const setFillRecursive = (obj, color) => {
             if (obj.type === 'path' || obj.type === 'polygon' || obj.type === 'polyline' || obj.type === 'circle' || obj.type === 'rect' || obj.type === 'ellipse') {
-                obj.set('fill', color);
-                obj.set('stroke', null);
+                obj.set({
+                    fill: color,
+                    stroke: color,
+                    strokeWidth: Config.GEOMETRY.CLEARANCE_MM,
+                    strokeLineJoin: 'round',
+                    strokeLineCap: 'round'
+                });
             }
             if (obj.type === 'group') {
                 obj.forEachObject(child => setFillRecursive(child, color));
