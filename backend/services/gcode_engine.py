@@ -57,7 +57,7 @@ def build_final_gcode(order_data) -> List[str]:
     z_depth = -30.0
     tool_dia = 6.0
     feed_rate = 1000
-    rectangle_gcode = generate_rectangle_gcode(0, 0, width, height, z_depth, tool_dia, feed_rate)
+    rectangle_gcode = generate_rectangle_gcode(0, 0, height, width, z_depth, tool_dia, feed_rate)
     final_gcode.extend(rectangle_gcode)
     final_gcode.append("G0 Z20")
 
