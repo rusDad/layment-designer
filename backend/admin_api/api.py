@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 
 
+
+
+def _normalize_asset_path(asset_path: Optional[str]) -> Optional[str]:
+    if not isinstance(asset_path, str):
+        return asset_path
+    return asset_path.lstrip("/")
+
+
 class PreviewIdRequest(BaseModel):
     article: str
 
@@ -310,16 +318,10 @@ def upload_dxf_convert_to_svg(
         shutil.rmtree(staging_root, ignore_errors=True)
 
     assets = item.get("assets") or {}
-    nc_asset = assets.get("nc")
-    preview_asset = assets.get("preview")
     item["assets"] = {
         "svg": f"svg/{item_id}.svg",
-        "nc": nc_asset.lstrip("/") if isinstance(nc_asset, str) else nc_asset,
-        "preview": (
-            preview_asset.lstrip("/")
-            if isinstance(preview_asset, str)
-            else preview_asset
-        )
+        "nc": _normalize_asset_path(assets.get("nc")),
+        "preview": _normalize_asset_path(assets.get("preview"))
     }
 
     manifest["version"] = manifest.get("version", 1) + 1
@@ -377,7 +379,7 @@ def _item_preview_url(item: dict, preview_dir: Path) -> Optional[str]:
 def _preview_file_path(item_id: str, assets: dict, preview_dir: Path) -> Optional[Path]:
     preview_asset = assets.get("preview")
     if preview_asset:
-        normalized = preview_asset.lstrip("/")
+        normalized = _normalize_asset_path(preview_asset)
         preview_path = CONTOURS_DIR / normalized
         if preview_path.exists():
             return preview_path
@@ -390,7 +392,7 @@ def _preview_file_path(item_id: str, assets: dict, preview_dir: Path) -> Optiona
 def _preview_relative_path(preview_path: Path, assets: dict) -> str:
     preview_asset = assets.get("preview")
     if preview_asset:
-        normalized = preview_asset.lstrip("/")
+        normalized = _normalize_asset_path(preview_asset)
         expected = CONTOURS_DIR / normalized
         if preview_path == expected:
             return normalized
