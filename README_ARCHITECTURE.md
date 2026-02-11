@@ -34,7 +34,7 @@ domain/contours/
 
 
 Rules:
-- domain data is read-only at runtime
+- domain read-only для public runtime; изменения только через admin pipeline
 - Frontend не получает manifest и метаданные из /contours/ напрямую. Manifest — только GET /api/contours/manifest
 - Frontend может загружать ассеты (svg/preview) по публичным URL /contours/....
 - backend reads domain files directly from filesystem

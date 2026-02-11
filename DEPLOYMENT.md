@@ -1,4 +1,4 @@
-````md
+```md
 # DEPLOYMENT.md — Layment Designer (VDS Runbook)
 
 Этот документ описывает текущий production-деплой на VDS: пути, systemd/uvicorn, nginx-маршрутизацию и стандартный цикл выката.
