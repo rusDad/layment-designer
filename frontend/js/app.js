@@ -811,17 +811,17 @@ class ContourApp {
 
         const priceMaterial = Math.round(
             areaM2 *
-            Config.MATERIAL_TECHNICAL_WASTE_K *
-            Config.MATERIAL_PRICE_PER_M2
+            Config.PRICES.MATERIAL_TECHNICAL_WASTE_K *
+            Config.PRICES.MATERIAL_PRICE_PER_M2
         );
 
         const priceCutting = Math.round(
-            cuttingM * Config.CUTTING_PRICE_PER_METER
+            cuttingM * Config.PRICES.CUTTING_PRICE_PER_METER
         );
 
         const total = Math.round(
             (priceMaterial + priceCutting) *
-            Config.RRC_PRICE_MULTIPLIER
+            Config.PRICES.RRC_PRICE_MULTIPLIER
         );
 
         //  КОНТРАКТ
