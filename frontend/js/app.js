@@ -577,9 +577,16 @@ class ContourApp {
             return;
         }
 
+        const hasQuery = Boolean(this.catalogQuery.trim());
+
         if (!this.currentCategory) {
-            const categories = this.filterCategories(this.availableCategories);
-            this.renderFolderRows(list, categories);
+            if (!hasQuery) {
+                this.renderFolderRows(list, this.availableCategories);
+                return;
+            }
+
+            const items = this.availableContours.filter(item => this.matchesItemQuery(item));
+            this.renderItemRows(list, items, { showCategoryLabel: true });
             return;
         }
 
@@ -589,23 +596,14 @@ class ContourApp {
         this.renderItemRows(list, items);
     }
 
-    filterCategories(categories) {
-        const query = this.catalogQuery.trim().toLowerCase();
-        if (!query) {
-            return categories;
-        }
-        return categories.filter(category => category.toLowerCase().includes(query));
-    }
-
     matchesItemQuery(item) {
         const query = this.catalogQuery.trim().toLowerCase();
         if (!query) {
             return true;
         }
         const fields = [
-            item.name,
             item.article,
-            item.brand
+            item.name
         ]
             .filter(Boolean)
             .map(value => value.toLowerCase());
@@ -640,7 +638,9 @@ class ContourApp {
         });
     }
 
-    renderItemRows(list, items) {
+    renderItemRows(list, items, options = {}) {
+        const { showCategoryLabel = false } = options;
+
         if (!items.length) {
             const empty = document.createElement('div');
             empty.className = 'catalog-row';
@@ -669,6 +669,16 @@ class ContourApp {
 
             meta.appendChild(article);
             meta.appendChild(name);
+
+            if (showCategoryLabel) {
+                const category = this.getCategoryLabel(item);
+                if (category) {
+                    const categoryLabel = document.createElement('div');
+                    categoryLabel.className = 'catalog-item-article';
+                    categoryLabel.textContent = category;
+                    meta.appendChild(categoryLabel);
+                }
+            }
 
             const addButton = document.createElement('button');
             addButton.type = 'button';
