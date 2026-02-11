@@ -48,6 +48,7 @@ class ContourManager {
         group.setControlsVisibility(Config.FABRIC_CONFIG.CONTROLS_VISIBILITY);
 
         this.metadataMap.set(group, metadata);
+        group.contourId = metadata.id;
 
         group.on('rotating', () => this.snapToAllowedAngle(group));
         group.on('modified', () => this.snapToAllowedAngle(group));
@@ -353,7 +354,9 @@ class ContourManager {
     }
 
     getPlacedContourIds() {
-         return this.contours.map(obj => obj.contourId);
+         return this.contours
+            .map(obj => obj.contourId)
+            .filter(Boolean);
     }
     
 }
