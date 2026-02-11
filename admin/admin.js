@@ -39,6 +39,22 @@ const renderFileStatus = (files = {}) => Object.entries(fileLabels)
     return span;
   });
 
+const resetItemForm = () => {
+  article.value = '';
+  name.value = '';
+  brand.value = '';
+  category.value = '';
+  scaleOverride.value = 1.0;
+  cuttingLengthMeters.value = 0;
+  enabled.checked = true;
+
+  currentItemId = null;
+  itemId.value = '';
+
+  article.disabled = false;
+  uploadBtn.disabled = true;
+};
+
 const fillItemForm = (item) => {
   article.value = item.article || '';
   name.value = item.name || '';
@@ -57,6 +73,13 @@ const fillItemForm = (item) => {
 
 const renderItems = (items) => {
   itemsList.innerHTML = '';
+
+  const createNewCard = document.createElement('button');
+  createNewCard.type = 'button';
+  createNewCard.className = 'item-card item-card-create-new';
+  createNewCard.textContent = '➕ Добавить новый артикул';
+  createNewCard.addEventListener('click', resetItemForm);
+  itemsList.appendChild(createNewCard);
 
   if (!items.length) {
     const empty = document.createElement('div');
