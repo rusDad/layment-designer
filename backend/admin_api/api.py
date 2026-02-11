@@ -10,9 +10,11 @@ from admin_api.file_validation import (
     validate_nc,
     validate_preview
 )
+from admin_api.dxf_to_svg import convert as convert_dxf_to_svg
 from gcode_rotator import rotate_gcode_for_contour
 from domain_store import CONTOURS_DIR
 from pathlib import Path
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 import logging
 import os
@@ -219,6 +221,104 @@ def upload_files(
     save_manifest_atomic(manifest)
 
     return {"status": "ok"}
+
+
+@router.post("/items/{item_id}/dxf-to-svg")
+def upload_dxf_convert_to_svg(
+    item_id: str,
+    dxf: UploadFile = File(...),
+    force: bool = Form(False)
+):
+    manifest = load_manifest()
+
+    item = next(
+        (i for i in manifest["items"] if i["id"] == item_id),
+        None
+    )
+    if not item:
+        raise HTTPException(404, "Item not found")
+
+    if not dxf.filename or not dxf.filename.lower().endswith(".dxf"):
+        raise HTTPException(status_code=400, detail="DXF file is required")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    staging_token = f"{timestamp}_{uuid.uuid4().hex[:8]}"
+    staging_root = CONTOURS_DIR / ".staging" / f"{item_id}_{staging_token}"
+    staging_dxf = staging_root / "input" / f"{item_id}.dxf"
+    staging_svg = staging_root / "svg" / f"{item_id}.svg"
+
+    staging_root.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Uploading DXF to staging %s", staging_root)
+    save_upload_file(dxf, staging_dxf)
+
+    try:
+        convert_dxf_to_svg(staging_dxf, staging_svg)
+    except Exception as exc:
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"DXF conversion failed: {exc}")
+
+    try:
+        with staging_svg.open("rb") as svg_fp:
+            ET.parse(svg_fp)
+    except Exception:
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="DXF conversion failed: invalid SVG output")
+
+    svg_final = DIRS["svg"] / f"{item_id}.svg"
+
+    if not force and svg_final.exists():
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise HTTPException(
+            status_code=409,
+            detail=f"File {svg_final.name} already exists"
+        )
+
+    backup_dir = staging_root / "backup"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    svg_backup = None
+    created_new = False
+
+    try:
+        if svg_final.exists():
+            svg_backup = backup_dir / f"{svg_final.name}.bak_{staging_token}"
+            os.replace(svg_final, svg_backup)
+            logger.info("Backed up %s to %s", svg_final, svg_backup)
+        else:
+            created_new = True
+
+        os.replace(staging_svg, svg_final)
+        logger.info("Replaced %s from staged DXF conversion", svg_final)
+    except Exception as exc:
+        logger.warning("DXF upload failed, rolling back files for %s", item_id, exc_info=True)
+        if svg_backup and svg_backup.exists():
+            if svg_final.exists():
+                rollback_path = backup_dir / f"{svg_final.name}.rollback_{staging_token}"
+                os.replace(svg_final, rollback_path)
+            os.replace(svg_backup, svg_final)
+            logger.info("Restored %s from backup", svg_final)
+        elif created_new and svg_final.exists():
+            rollback_path = backup_dir / f"{svg_final.name}.rollback_{staging_token}"
+            os.replace(svg_final, rollback_path)
+            logger.info("Moved new file %s to rollback stash", svg_final)
+        shutil.rmtree(staging_root, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=str(exc))
+    else:
+        logger.info("DXF conversion committed for %s, cleaning backups", item_id)
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        shutil.rmtree(staging_root, ignore_errors=True)
+
+    assets = item.get("assets") or {}
+    item["assets"] = {
+        "svg": f"svg/{item_id}.svg",
+        "nc": assets.get("nc"),
+        "preview": assets.get("preview")
+    }
+
+    manifest["version"] = manifest.get("version", 1) + 1
+    save_manifest_atomic(manifest)
+
+    return {"status": "ok", "svg": f"svg/{item_id}.svg"}
 
 @router.get("/items")
 def list_items():
