@@ -456,6 +456,73 @@ class PrimitiveManager {
         }
     }
 
+    getPrimitiveDimensions(obj) {
+        if (!obj || !obj.primitiveType) {
+            return null;
+        }
+
+        if (obj.primitiveType === 'rect') {
+            return {
+                type: 'rect',
+                width: Math.round(obj.width * obj.scaleX),
+                height: Math.round(obj.height * obj.scaleY)
+            };
+        }
+
+        if (obj.primitiveType === 'circle') {
+            return {
+                type: 'circle',
+                radius: Math.round(obj.radius * obj.scaleX)
+            };
+        }
+
+        return null;
+    }
+
+    applyDimensions(obj, dimensions) {
+        if (!obj || !obj.primitiveType) {
+            return false;
+        }
+
+        if (obj.primitiveType === 'rect') {
+            const limits = Config.GEOMETRY.PRIMITIVES.RECT;
+            const width = dimensions.width;
+            const height = dimensions.height;
+            if (!Number.isFinite(width) || !Number.isFinite(height)) {
+                return false;
+            }
+            if (width < limits.MIN_WIDTH || width > limits.MAX_WIDTH ||
+                height < limits.MIN_HEIGHT || height > limits.MAX_HEIGHT) {
+                return false;
+            }
+            obj.set({
+                scaleX: width / obj.width,
+                scaleY: height / obj.height
+            });
+            obj.setCoords();
+            this.canvas.renderAll();
+            return true;
+        }
+
+        if (obj.primitiveType === 'circle') {
+            const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
+            const radius = dimensions.radius;
+            if (!Number.isFinite(radius)) {
+                return false;
+            }
+            if (radius < limits.MIN_RADIUS || radius > limits.MAX_RADIUS) {
+                return false;
+            }
+            const scale = radius / obj.radius;
+            obj.set({ scaleX: scale, scaleY: scale });
+            obj.setCoords();
+            this.canvas.renderAll();
+            return true;
+        }
+
+        return false;
+    }
+
     removePrimitive(obj) {
         this.primitives = this.primitives.filter(p => p !== obj);
         this.canvas.remove(obj);

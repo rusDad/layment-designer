@@ -6,6 +6,9 @@ window.UIDom = {
     laymentWidth: document.getElementById('laymentWidth'),
     laymentHeight: document.getElementById('laymentHeight'),
     workspaceScale: document.getElementById('workspaceScale'),
+    primitiveWidth: document.getElementById('primitiveWidth'),
+    primitiveHeight: document.getElementById('primitiveHeight'),
+    primitiveRadius: document.getElementById('primitiveRadius'),
   },
 
   buttons: {
@@ -22,6 +25,14 @@ window.UIDom = {
   panels: {
     catalogList: document.getElementById('catalogList'),
     toolButtons: document.querySelector('.tool-buttons'),
+    primitiveControls: document.getElementById('primitiveControls'),
+  },
+
+  primitive: {
+    typeLabel: document.getElementById('primitiveTypeLabel'),
+    widthRow: document.getElementById('primitiveWidthRow'),
+    heightRow: document.getElementById('primitiveHeightRow'),
+    radiusRow: document.getElementById('primitiveRadiusRow'),
   },
 
   catalog: {

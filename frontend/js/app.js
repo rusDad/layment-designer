@@ -15,6 +15,7 @@ class ContourApp {
         this.catalogQuery = '';
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
+        this.isSyncingPrimitiveControls = false;
 
         this.init();
     }
@@ -25,6 +26,7 @@ class ContourApp {
         this.createLayment();
         await this.loadAvailableContours();
         this.setupEventListeners();
+        this.syncPrimitiveControlsFromSelection();
         await this.loadWorkspaceFromStorage();
     }
 
@@ -179,16 +181,19 @@ class ContourApp {
         this.canvas.on('selection:created', () => {
             this.updateButtons();
             this.updateStatusBar();
+            this.syncPrimitiveControlsFromSelection();
         });
 
         this.canvas.on('selection:updated', () => {
             this.updateButtons();
             this.updateStatusBar();
+            this.syncPrimitiveControlsFromSelection();
         });
 
         this.canvas.on('selection:cleared', () => {
             this.updateButtons();
             this.updateStatusBar();
+            this.syncPrimitiveControlsFromSelection();
         });
 
         this.canvas.on('object:moving', () => {
@@ -199,6 +204,7 @@ class ContourApp {
             if (this.shouldAutosaveForObject(event.target)) {
                 this.scheduleWorkspaceSave();
             }
+            this.syncPrimitiveControlsFromSelection();
         });
     }    
     bindUIButtonEvents() {
@@ -271,6 +277,14 @@ class ContourApp {
             scaleInput.value = val;
             scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
+
+        UIDom.inputs.primitiveWidth.addEventListener('input', () => this.applyPrimitiveDimensionsFromInputs());
+        UIDom.inputs.primitiveHeight.addEventListener('input', () => this.applyPrimitiveDimensionsFromInputs());
+        UIDom.inputs.primitiveRadius.addEventListener('input', () => this.applyPrimitiveDimensionsFromInputs());
+
+        UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
+        UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
+        UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
     }
 
     bindCatalogEvents() {
@@ -383,7 +397,110 @@ class ContourApp {
     updateButtons() {
         const has = !!this.canvas.getActiveObject();
         UIDom.buttons.delete.disabled = !has;
-        UIDom.buttons.rotate.disabled = !has;
+        const active = this.canvas.getActiveObject();
+        UIDom.buttons.rotate.disabled = !has || !!active?.primitiveType;
+    }
+
+    getSingleSelectedPrimitive() {
+        const active = this.canvas.getActiveObject();
+        if (!active || active.type === 'activeSelection') {
+            return null;
+        }
+        return active.primitiveType ? active : null;
+    }
+
+    setPrimitiveControlsEnabled(enabled) {
+        const controls = UIDom.panels.primitiveControls;
+        if (!controls) {
+            return;
+        }
+        controls.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        UIDom.inputs.primitiveWidth.disabled = !enabled;
+        UIDom.inputs.primitiveHeight.disabled = !enabled;
+        UIDom.inputs.primitiveRadius.disabled = !enabled;
+    }
+
+    syncPrimitiveControlsFromSelection() {
+        const primitive = this.getSingleSelectedPrimitive();
+        this.isSyncingPrimitiveControls = true;
+
+        if (!primitive) {
+            UIDom.primitive.typeLabel.textContent = '—';
+            UIDom.inputs.primitiveWidth.value = '';
+            UIDom.inputs.primitiveHeight.value = '';
+            UIDom.inputs.primitiveRadius.value = '';
+            UIDom.primitive.widthRow.style.display = 'none';
+            UIDom.primitive.heightRow.style.display = 'none';
+            UIDom.primitive.radiusRow.style.display = 'none';
+            this.setPrimitiveControlsEnabled(false);
+            this.isSyncingPrimitiveControls = false;
+            return;
+        }
+
+        const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
+        UIDom.primitive.typeLabel.textContent = dimensions.type === 'rect' ? 'Прямоугольник' : 'Круг';
+
+        if (dimensions.type === 'rect') {
+            UIDom.inputs.primitiveWidth.value = dimensions.width;
+            UIDom.inputs.primitiveHeight.value = dimensions.height;
+            UIDom.inputs.primitiveRadius.value = '';
+            UIDom.primitive.widthRow.style.display = 'block';
+            UIDom.primitive.heightRow.style.display = 'block';
+            UIDom.primitive.radiusRow.style.display = 'none';
+            UIDom.inputs.primitiveWidth.min = Config.GEOMETRY.PRIMITIVES.RECT.MIN_WIDTH;
+            UIDom.inputs.primitiveWidth.max = Config.GEOMETRY.PRIMITIVES.RECT.MAX_WIDTH;
+            UIDom.inputs.primitiveHeight.min = Config.GEOMETRY.PRIMITIVES.RECT.MIN_HEIGHT;
+            UIDom.inputs.primitiveHeight.max = Config.GEOMETRY.PRIMITIVES.RECT.MAX_HEIGHT;
+        } else {
+            UIDom.inputs.primitiveWidth.value = '';
+            UIDom.inputs.primitiveHeight.value = '';
+            UIDom.inputs.primitiveRadius.value = dimensions.radius;
+            UIDom.primitive.widthRow.style.display = 'none';
+            UIDom.primitive.heightRow.style.display = 'none';
+            UIDom.primitive.radiusRow.style.display = 'block';
+            UIDom.inputs.primitiveRadius.min = Config.GEOMETRY.PRIMITIVES.CIRCLE.MIN_RADIUS;
+            UIDom.inputs.primitiveRadius.max = Config.GEOMETRY.PRIMITIVES.CIRCLE.MAX_RADIUS;
+        }
+
+        this.setPrimitiveControlsEnabled(true);
+        this.isSyncingPrimitiveControls = false;
+    }
+
+    applyPrimitiveDimensionsFromInputs() {
+        if (this.isSyncingPrimitiveControls) {
+            return;
+        }
+
+        const primitive = this.getSingleSelectedPrimitive();
+        if (!primitive) {
+            return;
+        }
+
+        const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
+        let applied = false;
+
+        if (dimensions.type === 'rect') {
+            const width = parseInt(UIDom.inputs.primitiveWidth.value, 10);
+            const height = parseInt(UIDom.inputs.primitiveHeight.value, 10);
+            if (!Number.isFinite(width) || !Number.isFinite(height)) {
+                return;
+            }
+            applied = this.primitiveManager.applyDimensions(primitive, { width, height });
+        } else if (dimensions.type === 'circle') {
+            const radius = parseInt(UIDom.inputs.primitiveRadius.value, 10);
+            if (!Number.isFinite(radius)) {
+                return;
+            }
+            applied = this.primitiveManager.applyDimensions(primitive, { radius });
+        }
+
+        if (!applied) {
+            alert('Размер выходит за пределы допустимого!');
+        } else {
+            this.scheduleWorkspaceSave();
+        }
+
+        this.syncPrimitiveControlsFromSelection();
     }
 
     //  подписка на события для статус-бара
@@ -780,6 +897,7 @@ class ContourApp {
             this.canvas.renderAll();
             this.updateButtons();
             this.updateStatusBar();
+            this.syncPrimitiveControlsFromSelection();
         });
         this.isRestoringWorkspace = false;
         UIDom.inputs.workspaceScale.value = this.workspaceScale;
