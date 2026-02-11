@@ -7,6 +7,7 @@ const cuttingLengthMeters = document.getElementById('cuttingLengthMeters');
 const enabled = document.getElementById('enabled');
 
 const svg = document.getElementById('svg');
+const dxf = document.getElementById('dxf');
 const nc = document.getElementById('nc');
 const preview = document.getElementById('preview');
 const force = document.getElementById('force');
@@ -15,6 +16,7 @@ const itemId = document.getElementById('itemId');
 
 const createBtn = document.getElementById('createItemBtn');
 const uploadBtn = document.getElementById('uploadFilesBtn');
+const uploadDxfBtn = document.getElementById('uploadDxfBtn');
 
 const statusEl = document.getElementById('status');
 const resultEl = document.getElementById('result');
@@ -53,6 +55,7 @@ const resetItemForm = () => {
 
   article.disabled = false;
   uploadBtn.disabled = true;
+  uploadDxfBtn.disabled = true;
 };
 
 const fillItemForm = (item) => {
@@ -69,6 +72,7 @@ const fillItemForm = (item) => {
 
   article.disabled = true;
   uploadBtn.disabled = false;
+  uploadDxfBtn.disabled = false;
 };
 
 const renderItems = (items) => {
@@ -158,6 +162,7 @@ createBtn.addEventListener('click', async () => {
   statusEl.textContent = 'Создание артикула…';
   resultEl.textContent = '';
   uploadBtn.disabled = true;
+  uploadDxfBtn.disabled = true;
 
   const payload = {
     article: article.value.trim(),
@@ -191,6 +196,7 @@ createBtn.addEventListener('click', async () => {
 
     article.disabled = true;
     uploadBtn.disabled = false;
+    uploadDxfBtn.disabled = false;
 
     statusEl.textContent = `Артикул готов: ${currentItemId}`;
     resultEl.textContent = JSON.stringify(data, null, 2);
@@ -253,6 +259,54 @@ uploadBtn.addEventListener('click', async () => {
     resultEl.textContent = text;
     await loadItems();
 
+  } catch (err) {
+    statusEl.textContent = 'Ошибка запроса';
+    resultEl.textContent = err.toString();
+  }
+});
+
+
+uploadDxfBtn.addEventListener('click', async () => {
+  if (!currentItemId) {
+    alert('Сначала создайте артикул');
+    return;
+  }
+
+  if (!dxf.files[0]) {
+    alert('DXF обязателен для конвертации');
+    return;
+  }
+
+  statusEl.textContent = 'Конвертация DXF в SVG…';
+  resultEl.textContent = '';
+
+  const fd = new FormData();
+  fd.append('dxf', dxf.files[0]);
+
+  if (force.checked) {
+    fd.append('force', 'true');
+  }
+
+  try {
+    const res = await fetch(
+      `/admin/api/items/${currentItemId}/dxf-to-svg`,
+      {
+        method: 'POST',
+        body: fd
+      }
+    );
+
+    const text = await res.text();
+
+    if (!res.ok) {
+      statusEl.textContent = 'Ошибка конвертации DXF';
+      resultEl.textContent = text;
+      return;
+    }
+
+    statusEl.textContent = 'DXF успешно конвертирован в SVG';
+    resultEl.textContent = text;
+    await loadItems();
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса';
     resultEl.textContent = err.toString();
