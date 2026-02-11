@@ -114,6 +114,34 @@ body {
     gap: 0.5rem;
 }
 
+.primitive-controls {
+    padding: 0.5rem;
+    background: #fff;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.primitive-controls[aria-disabled="true"] {
+    opacity: 0.65;
+}
+
+.primitive-controls-header {
+    font-size: 0.9rem;
+    color: #2c3e50;
+}
+
+.primitive-controls label {
+    display: block;
+}
+
+.primitive-controls input {
+    width: 100px;
+    padding: 0.25rem;
+    margin-left: 0.5rem;
+}
+
 .tool-button {
     width: 100%;
     padding: 0.5rem;

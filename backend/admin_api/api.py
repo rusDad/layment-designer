@@ -248,7 +248,6 @@ def upload_dxf_convert_to_svg(
     staging_svg = staging_root / "svg" / f"{item_id}.svg"
 
     staging_root.mkdir(parents=True, exist_ok=True)
-    staging_svg.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("Uploading DXF to staging %s", staging_root)
     save_upload_file(dxf, staging_dxf)
