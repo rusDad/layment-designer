@@ -8,6 +8,7 @@
 # ---------------------------
 
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -72,6 +73,7 @@ def read_lwpolyline(path: Path):
 def invert_y(vertices):
     for v in vertices:
         v["y"] = -v["y"]
+        v["bulge"] = -v["bulge"]
     return vertices
 
 
@@ -191,11 +193,33 @@ def convert(dxf_path: Path, svg_path: Path):
     write_svg(path_d, bbox, svg_path)
 
 
+def _selftest_arc_direction():
+    # Контур: нижняя кромка как дуга и 2 прямых до замыкания.
+    # До фикса инверсии bulge sweep был 1, после фикса должен быть 0.
+    verts = [
+        {"x": 0.0, "y": 0.0, "bulge": 1.0},
+        {"x": 10.0, "y": 0.0, "bulge": 0.0},
+        {"x": 10.0, "y": 10.0, "bulge": 0.0},
+        {"x": 0.0, "y": 10.0, "bulge": 0.0},
+    ]
+
+    path_d = polyline_to_svg_path(invert_y(verts))
+
+    assert "A " in path_d, f"Expected arc command in path, got: {path_d}"
+    assert " 0 0 " in path_d, (
+        "Expected arc flags 'large=0 sweep=0' after Y inversion; "
+        f"got path: {path_d}"
+    )
+
+
 # ---------------------------
 # CLI
 # ---------------------------
 
 def main():
+    if os.getenv("DXF_TO_SVG_SELFTEST") == "1":
+        _selftest_arc_direction()
+
     if len(sys.argv) != 3:
         print("Usage: dxf_to_svg.py input.dxf output.svg")
         sys.exit(1)
