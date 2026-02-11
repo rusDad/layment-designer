@@ -1,7 +1,10 @@
 const article = document.getElementById('article');
 const name = document.getElementById('name');
 const brand = document.getElementById('brand');
-const category = document.getElementById('category');
+const categorySelect = document.getElementById('categorySelect');
+const newCategorySlug = document.getElementById('newCategorySlug');
+const newCategoryLabel = document.getElementById('newCategoryLabel');
+const createCategoryBtn = document.getElementById('createCategoryBtn');
 const scaleOverride = document.getElementById('scaleOverride');
 const cuttingLengthMeters = document.getElementById('cuttingLengthMeters');
 const enabled = document.getElementById('enabled');
@@ -25,6 +28,7 @@ const itemsStatus = document.getElementById('itemsStatus');
 
 let currentItemId = null;
 let itemsCache = [];
+let categoriesCache = {};
 
 const fileLabels = {
   svg: 'SVG',
@@ -41,11 +45,102 @@ const renderFileStatus = (files = {}) => Object.entries(fileLabels)
     return span;
   });
 
+const createCategoryOption = (slug, label, isUnknown = false) => {
+  const option = document.createElement('option');
+  option.value = slug;
+  option.textContent = isUnknown
+    ? `Неизвестная категория: ${slug}`
+    : `${label} (${slug})`;
+  if (isUnknown) {
+    option.dataset.unknown = 'true';
+  }
+  return option;
+};
+
+const removeUnknownCategoryOption = () => {
+  const unknownOption = categorySelect.querySelector('option[data-unknown="true"]');
+  if (unknownOption) {
+    unknownOption.remove();
+  }
+};
+
+const ensureCategoryOption = (slug) => {
+  if (!slug) {
+    return;
+  }
+
+  const hasOption = Array.from(categorySelect.options).some((option) => option.value === slug);
+  if (hasOption) {
+    return;
+  }
+
+  removeUnknownCategoryOption();
+  categorySelect.appendChild(createCategoryOption(slug, slug, true));
+};
+
+const setCategoryValue = (slug) => {
+  const normalized = (slug || '').trim();
+  if (!normalized) {
+    categorySelect.value = '';
+    return;
+  }
+
+  ensureCategoryOption(normalized);
+  categorySelect.value = normalized;
+};
+
+const populateCategorySelect = () => {
+  const previousValue = categorySelect.value;
+  categorySelect.innerHTML = '';
+
+  const emptyOption = document.createElement('option');
+  emptyOption.value = '';
+  emptyOption.textContent = '— Выберите категорию —';
+  categorySelect.appendChild(emptyOption);
+
+  Object.entries(categoriesCache).forEach(([slug, label]) => {
+    categorySelect.appendChild(createCategoryOption(slug, label));
+  });
+
+  if (previousValue) {
+    setCategoryValue(previousValue);
+  }
+};
+
+const loadCategories = async () => {
+  try {
+    const res = await fetch('/admin/api/categories');
+    const text = await res.text();
+
+    if (!res.ok) {
+      resultEl.textContent = text;
+      return;
+    }
+
+    const data = JSON.parse(text);
+    categoriesCache = {};
+    (data.categories || []).forEach((category) => {
+      categoriesCache[category.slug] = category.label || category.slug;
+    });
+
+    populateCategorySelect();
+
+    if (currentItemId) {
+      const selectedItem = itemsCache.find((item) => item.id === currentItemId);
+      if (selectedItem) {
+        setCategoryValue(selectedItem.category || '');
+      }
+    }
+  } catch (err) {
+    resultEl.textContent = err.toString();
+  }
+};
+
 const resetItemForm = () => {
   article.value = '';
   name.value = '';
   brand.value = '';
-  category.value = '';
+  setCategoryValue('');
   scaleOverride.value = 1.0;
   cuttingLengthMeters.value = 0;
   enabled.checked = true;
@@ -62,7 +157,7 @@ const fillItemForm = (item) => {
   article.value = item.article || '';
   name.value = item.name || '';
   brand.value = item.brand || '';
-  category.value = item.category || '';
+  setCategoryValue(item.category || '');
   scaleOverride.value = item.scaleOverride ?? 1.0;
   cuttingLengthMeters.value = item.cuttingLengthMeters ?? 0;
   enabled.checked = item.enabled !== false;
@@ -168,7 +263,7 @@ createBtn.addEventListener('click', async () => {
     article: article.value.trim(),
     name: name.value.trim(),
     brand: brand.value.trim(),
-    category: category.value.trim(),
+    category: categorySelect.value.trim(),
     scaleOverride: parseFloat(scaleOverride.value || 1.0),
     cuttingLengthMeters: parseFloat(cuttingLengthMeters.value || 0),
     enabled: enabled.checked
@@ -202,6 +297,44 @@ createBtn.addEventListener('click', async () => {
     resultEl.textContent = JSON.stringify(data, null, 2);
     await loadItems();
 
+  } catch (err) {
+    statusEl.textContent = 'Ошибка запроса';
+    resultEl.textContent = err.toString();
+  }
+});
+
+createCategoryBtn.addEventListener('click', async () => {
+  const payload = {
+    slug: newCategorySlug.value.trim(),
+    label: newCategoryLabel.value.trim()
+  };
+
+  statusEl.textContent = 'Создание категории…';
+  resultEl.textContent = '';
+
+  try {
+    const res = await fetch('/admin/api/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const text = await res.text();
+
+    if (!res.ok) {
+      statusEl.textContent = 'Ошибка создания категории';
+      resultEl.textContent = text;
+      return;
+    }
+
+    const data = JSON.parse(text);
+    await loadCategories();
+    setCategoryValue(data.slug);
+    newCategorySlug.value = '';
+    newCategoryLabel.value = '';
+
+    statusEl.textContent = 'Категория создана';
+    resultEl.textContent = JSON.stringify(data, null, 2);
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса';
     resultEl.textContent = err.toString();
@@ -265,7 +398,6 @@ uploadBtn.addEventListener('click', async () => {
   }
 });
 
-
 uploadDxfBtn.addEventListener('click', async () => {
   if (!currentItemId) {
     alert('Сначала создайте артикул');
@@ -313,4 +445,4 @@ uploadDxfBtn.addEventListener('click', async () => {
   }
 });
 
-loadItems();
+Promise.all([loadItems(), loadCategories()]);
