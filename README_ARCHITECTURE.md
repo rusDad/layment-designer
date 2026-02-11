@@ -25,6 +25,7 @@ Browser
 
 The `domain/` directory contains all data related to tools and contours.
 It is the single source of truth and is not owned by frontend or backend code.
+domain хранится файлово на VDS, может не быть в репозитории; в репо — только код
 
 domain/contours/
 ├── manifest.json
