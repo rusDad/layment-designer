@@ -1,7 +1,7 @@
 # admin/api.py
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict
 import re
 from admin_api.manifest_service import load_manifest, save_manifest_atomic
 from admin_api.id_utils import generate_id
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 CATEGORY_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
-def _sorted_categories(categories: dict) -> list[dict]:
+def _sorted_categories(categories: dict) -> List[Dict[str, str]]:
     return sorted(
         [
             {
