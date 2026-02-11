@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import Optional
+import re
 from admin_api.manifest_service import load_manifest, save_manifest_atomic
 from admin_api.id_utils import generate_id
 from admin_api.file_service import save_upload_file, DIRS
@@ -24,8 +25,41 @@ import uuid
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+CATEGORY_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
+def _sorted_categories(categories: dict) -> list[dict]:
+    return sorted(
+        [
+            {
+                "slug": slug,
+                "label": (meta or {}).get("label", slug)
+            }
+            for slug, meta in categories.items()
+            if isinstance(slug, str)
+        ],
+        key=lambda item: ((item["label"] or "").lower(), item["slug"])
+    )
+
+
+def _validate_category_slug(slug: str) -> str:
+    normalized = (slug or "").strip()
+    if not CATEGORY_SLUG_RE.fullmatch(normalized):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid category slug. Use lowercase latin letters, digits, "
+                "and dashes only (regex: ^[a-z0-9]+(?:-[a-z0-9]+)*$)."
+            )
+        )
+    return normalized
+
+
+def _validate_category_label(label: str) -> str:
+    normalized = (label or "").strip()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Category label must not be empty")
+    return normalized
 
 
 def _normalize_asset_path(asset_path: Optional[str]) -> Optional[str]:
@@ -54,11 +88,62 @@ class CreateItemRequest(BaseModel):
     cuttingLengthMeters: float
     enabled: bool = True
 
+
+class UpsertCategoryRequest(BaseModel):
+    slug: str
+    label: str
+    force: bool = False
+
+
+@router.get("/categories")
+def list_categories():
+    manifest = load_manifest()
+    categories = manifest.get("categories") or {}
+    return {
+        "version": manifest.get("version"),
+        "categories": _sorted_categories(categories)
+    }
+
+
+@router.post("/categories")
+def upsert_category(data: UpsertCategoryRequest):
+    slug = _validate_category_slug(data.slug)
+    label = _validate_category_label(data.label)
+
+    manifest = load_manifest()
+    categories = manifest.get("categories")
+    if not isinstance(categories, dict):
+        categories = {}
+
+    mode = "created"
+    if slug in categories:
+        if not data.force:
+            raise HTTPException(status_code=409, detail=f"Category '{slug}' already exists")
+        mode = "updated"
+
+    categories[slug] = {"label": label}
+    manifest["categories"] = categories
+    manifest["version"] = manifest.get("version", 1) + 1
+    save_manifest_atomic(manifest)
+
+    return {"slug": slug, "label": label, "mode": mode}
+
+
 @router.post("/items")
 def create_item(data: CreateItemRequest):
     item_id = generate_id(data.article)
 
     manifest = load_manifest()
+    category_slug = (data.category or "").strip()
+    categories = manifest.get("categories") or {}
+    if category_slug and category_slug not in categories:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown category '{category_slug}'. "
+                "Создайте категорию через /admin/api/categories"
+            )
+        )
 
     existing_item = next(
         (item for item in manifest["items"] if item["id"] == item_id),
@@ -68,7 +153,7 @@ def create_item(data: CreateItemRequest):
     if existing_item:
         existing_item["name"] = data.name
         existing_item["brand"] = data.brand
-        existing_item["category"] = data.category
+        existing_item["category"] = category_slug
         existing_item["scaleOverride"] = data.scaleOverride
         existing_item["cuttingLengthMeters"] = data.cuttingLengthMeters
         existing_item["enabled"] = data.enabled
@@ -79,7 +164,7 @@ def create_item(data: CreateItemRequest):
             "article": data.article,
             "name": data.name,
             "brand": data.brand,
-            "category": data.category,
+            "category": category_slug,
             "scaleOverride": data.scaleOverride,
             "cuttingLengthMeters": data.cuttingLengthMeters,
             "enabled": data.enabled
