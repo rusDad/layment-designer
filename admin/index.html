@@ -137,8 +137,22 @@
 
       <label>
         Category
-        <input id="category" />
+        <select id="categorySelect"></select>
       </label>
+
+      <div>
+        <label>
+          New category slug
+          <input id="newCategorySlug" placeholder="new-category-slug" />
+        </label>
+
+        <label>
+          New category label
+          <input id="newCategoryLabel" placeholder="Label на русском" />
+        </label>
+
+        <button id="createCategoryBtn" type="button">Создать категорию</button>
+      </div>
 
       <label>
         Scale override
