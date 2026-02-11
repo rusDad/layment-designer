@@ -2,11 +2,11 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from admin_api.api import router as admin_router
-from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH, contour_rotated_nc_path
+from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH
 from pydantic import BaseModel
 from typing import Any, List, Optional, Dict
 import json
-from gcode_rotator import offset_gcode, generate_rectangle_gcode 
+from services.gcode_engine import GCodeProcessingError, build_final_gcode
 
 
 app = FastAPI()
@@ -51,64 +51,21 @@ def get_contours_manifest():
 @public_router.post("/export-layment")
 async def export_layment(order_data: ExportRequest):
     try:
-        final_gcode = [
-            'G0 G17 G90',
-            'G0 G40 G49 G80',  
-            'G21',
-	        'T1',
-	        'S15000 M3',
-	        'G54'
-        ]
-        width = order_data.orderMeta.width
-        height = order_data.orderMeta.height
-        # Хардкод параметров   
-        z_depth = -30.0  
-        tool_dia = 6.0  
-        feed_rate = 1000  
-        rectangle_gcode = generate_rectangle_gcode(0, 0, width, height, z_depth, tool_dia, feed_rate)  
-        final_gcode.extend(rectangle_gcode)  
-        final_gcode.append('G0 Z20')  
+        final_gcode = build_final_gcode(order_data)
 
-        for contour in order_data.contours:
-            rot_value = int(contour.angle) if float(contour.angle).is_integer() else contour.angle
-            rot = str(rot_value)
-            nc_path = contour_rotated_nc_path(contour.id, rot)
-            if not nc_path.exists():
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        "Rotated contour is not prepared for the requested angle. "
-                        "Please upload the contour in admin to generate rotated NC files."
-                    ),
-                )
-            
-            with nc_path.open('r') as f:
-                contour_lines = f.read().splitlines()
-            
-	         # Применяем смещение вместо G92
-            offset_contour_gcode = offset_gcode(contour_lines, contour.x, contour.y)
-            final_gcode.append('G0 Z20')
-            final_gcode.append(f"G0 X{contour.x} Y{contour.y}")
-            final_gcode.extend(offset_contour_gcode)
-            final_gcode.append('G0 Z20')
-        
-        
-        
-        final_gcode.append('M5')
-        final_gcode.append('G49')
-        final_gcode.append('M30')
-        
         orders_dir = BASE_DIR / "orders"
         orders_dir.mkdir(parents=True, exist_ok=True)
         output_path = orders_dir / "final_layment.nc"
-        with output_path.open('w') as f:
-            f.write('\n'.join(final_gcode))
-        
-        return FileResponse(output_path, filename='final_layment.nc')
+        with output_path.open("w", encoding="utf-8") as file_obj:
+            file_obj.write("\n".join(final_gcode))
+
+        return FileResponse(output_path, filename="final_layment.nc")
+    except GCodeProcessingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 app.include_router(public_router, prefix="/api")
 app.include_router(admin_router, prefix="/admin/api")

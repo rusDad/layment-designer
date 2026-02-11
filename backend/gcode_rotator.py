@@ -2,6 +2,8 @@ import re
 import math
 from domain_store import contour_nc_path, CONTOURS_DIR
 
+ALLOWED_GCODE_LETTERS = set("GXYZFIJR")
+
 def parse_gcode(lines):
     original_current_pos = {'X': 0.0, 'Y': 0.0, 'Z': 0.0, 'F': None}
     modal_cmd = 'G1'
@@ -11,8 +13,13 @@ def parse_gcode(lines):
         line = line.strip()
         if not line or line.startswith(';') or line.startswith('('):
             continue
+        line_upper = line.upper()
+        unsupported_letters = sorted(set(re.findall(r"[A-Z]", line_upper)) - ALLOWED_GCODE_LETTERS)
+        if unsupported_letters:
+            raise ValueError(f"Неизвестные команды/параметры в NC: {', '.join(unsupported_letters)} (строка: {line})")
+
         # Улучшенный regex: захватывает букву и значение (поддержка экспоненты)
-        parts = re.findall(r'([GXYZFIJR])([-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?)', line.upper())
+        parts = re.findall(r'([GXYZFIJR])([-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?)', line_upper)
         if parts and parts[0][0] == 'G':
             g_value = float(parts[0][1])
             cmd = 'G%d' % int(g_value)  # Нормализация G01 → G1
@@ -24,7 +31,8 @@ def parse_gcode(lines):
         # Вычисляем полную оригинальную позицию
         full_orig_pos = original_current_pos.copy()
         full_orig_pos.update({k: v for k, v in params.items() if k in 'XYZF'})
-        if params or cmd in ['G2', 'G3']:  # Включаем даже если params пустые, но arc
+        has_explicit_g = any(letter == 'G' for letter, _ in parts)
+        if params or cmd in ['G2', 'G3'] or has_explicit_g:  # Включаем явные G команды
             output.append((cmd, params, full_orig_pos.copy()))
         # Обновляем original_current_pos
         original_current_pos = full_orig_pos
