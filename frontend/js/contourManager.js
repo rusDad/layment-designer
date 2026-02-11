@@ -115,7 +115,7 @@ class ContourManager {
             opacity: 1,
             borderColor: Config.COLORS.SELECTION.BORDER,   // цвет рамки выделения (если останется)
             cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: null  // Сброс fill
+            fill: '#208820'  // Сброс fill
         });
       });
 
@@ -127,7 +127,7 @@ class ContourManager {
             opacity: 1,
             borderColor: Config.COLORS.SELECTION.BORDER,
             cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: 'transparent'
+            fill: '#208820'
         });
       });
 
@@ -386,7 +386,7 @@ class PrimitiveManager {
                 top: position.y,
                 width: size.width,
                 height: size.height,
-                fill: 'transparent',
+                fill: '#208820',
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
                 strokeWidth: 2,
                 strokeUniform: true,
@@ -545,3 +545,4 @@ class PrimitiveManager {
         this.canvas.renderAll();
     }
 }
+
