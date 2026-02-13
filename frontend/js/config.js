@@ -67,6 +67,7 @@ window.Config = {
         CONTOUR: {
             NORMAL: '#101214ff',
             ERROR: '#e74c3c',
+            FILL: '#208820',
             NORMAL_STROKE_WIDTH: 10,
             ERROR_STROKE_WIDTH: 15
         },
@@ -78,6 +79,7 @@ window.Config = {
         },
         PRIMITIVE: {
             STROKE: '#00ff00',  // Зеленый для примитивов
+            FILL: '#208820',
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
     },

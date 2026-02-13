@@ -32,7 +32,7 @@ class ContourManager {
             top: position.y,
             originX: 'center',
             originY: 'center',
-            fill: '#208820',
+            fill: Config.COLORS.CONTOUR.FILL,
             scaleX: factor,
             scaleY: factor,
             hasControls: true,
@@ -115,7 +115,7 @@ class ContourManager {
             opacity: 1,
             borderColor: Config.COLORS.SELECTION.BORDER,   // цвет рамки выделения (если останется)
             cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: '#208820'  // Сброс fill
+            fill: Config.COLORS.CONTOUR.FILL  // Сброс fill
         });
       });
 
@@ -127,7 +127,7 @@ class ContourManager {
             opacity: 1,
             borderColor: Config.COLORS.SELECTION.BORDER,
             cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: '#208820'
+            fill: Config.COLORS.PRIMITIVE.FILL
         });
       });
 
@@ -386,11 +386,11 @@ class PrimitiveManager {
                 top: position.y,
                 width: size.width,
                 height: size.height,
-                fill: '#208820',
+                fill: Config.COLORS.PRIMITIVE.FILL,
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
                 strokeWidth: 2,
                 strokeUniform: true,
-                strokeDashArray: [5, 1],
+                strokeDashArray: [1, 1],
                 originX: 'left',
                 originY: 'top',
                 lockScalingFlip: true,
@@ -406,11 +406,11 @@ class PrimitiveManager {
                 left: position.x,
                 top: position.y,
                 radius: size.radius,
-                fill: 'transparent',
+                fill: Config.COLORS.PRIMITIVE.FILL,
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
                 strokeWidth: 2,
                 strokeUniform: true,
-                strokeDashArray: [5, 1],
+                strokeDashArray: [1, 1],
                 originX: 'center',
                 originY: 'center',
                 lockScalingFlip: true,
