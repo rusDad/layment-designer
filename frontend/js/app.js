@@ -303,87 +303,7 @@ class ContourApp {
         });
     }
 
-
-        /*
-        // Размеры ложемента
-        UIDom.inputs.laymentWidth.addEventListener('change', e => {
-            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
-            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
-            e.target.value = v;
-            this.updateLaymentSize(v, this.layment.height);
-        });
-
-        UIDom.inputs.laymentHeight.addEventListener('change', e => {
-            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
-            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
-            e.target.value = v;
-            this.updateLaymentSize(this.layment.width, v);
-        });
-
-        // Масштаб
-        UIDom.inputs.workspaceScale.addEventListener('change', e => {
-            const s = parseFloat(e.target.value);
-            if (s >= Config.WORKSPACE_SCALE.MIN && s <= Config.WORKSPACE_SCALE.MAX) {
-                this.updateWorkspaceScale(s);
-            } else {
-                e.target.value = this.workspaceScale;
-            }
-        });
-
-        // Зум колёсиком мыши
-        const scaleInput = UIDom.inputs.workspaceScale;
-        this.canvas.wrapperEl.addEventListener('wheel', e => {
-           e.preventDefault();
-           const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
-           const delta = e.deltaY > 0 ? -step : step;
-            let val = parseFloat(scaleInput.value) || 1;
-
-            val = Math.max(0.5, Math.min(10, val + delta));
-            val = Math.round(val * 100) / 100;
-
-           scaleInput.value = val;
-            scaleInput.dispatchEvent(new Event('change'));
-        }, { passive: false });
-
-        UIDom.buttons.addRect.addEventListener('click', () => {
-            const centerX = this.canvas.width / 2;
-            const centerY = this.canvas.height / 2;
-            this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
-        });
-
-        UIDom.buttons.addCircle.addEventListener('click', () => {
-            const centerX = this.canvas.width / 2;
-            const centerY = this.canvas.height / 2;
-            this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
-        });
-
-        // Кнопки
-        UIDom.buttons.delete.onclick = () => this.deleteSelected();
-        UIDom.buttons.rotate.onclick = () => this.rotateSelected();
-        UIDom.buttons.export.onclick = () => this.performWithScaleOne(() => this.exportData());
-
-        //Строка состояния
-        this.setupStatusBarUpdates();
-
-        // Кнопка проверки
-         
-        UIDom.buttons.check.onclick = () =>
-        this.performWithScaleOne(() => {
-        const ok = this.contourManager.checkCollisionsAndHighlight();
-        alert(
-        ok
-            ? Config.MESSAGES.VALID_LAYOUT
-            : Config.MESSAGES.COLLISION_ERROR
-        );
-        });
-
-
-        this.canvas.on('selection:created', () => this.updateButtons());
-        this.canvas.on('selection:updated', () => this.updateButtons());
-        this.canvas.on('selection:cleared', () => this.updateButtons());
-    }
-        */
-
+   
     // Выполнить с временным  scale=1
 
     async performWithScaleOne(action) {
@@ -438,7 +358,7 @@ class ContourApp {
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
-        UIDom.primitive.typeLabel.textContent = dimensions.type === 'rect' ? 'Прямоугольник' : 'Круг';
+        UIDom.primitive.typeLabel.textContent = dimensions.type === 'rect' ? 'Прямоугольная' : 'Круглая';
 
         if (dimensions.type === 'rect') {
             UIDom.inputs.primitiveWidth.value = dimensions.width;
