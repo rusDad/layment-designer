@@ -437,32 +437,50 @@ class PrimitiveManager {
     }
 
     validatePrimitive(obj) {
-        const prevScaleX = obj.scaleX;
-        const prevScaleY = obj.scaleY;
-        let valid = true;
+        if (!obj || !obj.primitiveType) {
+            return;
+        }
+
+        const scale = this.app.workspaceScale || 1;
+        let nextScaleX = obj.scaleX;
+        let nextScaleY = obj.scaleY;
+        let changed = false;
 
         if (obj.primitiveType === 'rect') {
-            const newWidth = obj.width * obj.scaleX;
-            const newHeight = obj.height * obj.scaleY;
+            const realWidth = (obj.width * obj.scaleX) / scale;
+            const realHeight = (obj.height * obj.scaleY) / scale;
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
-            if (newWidth < limits.MIN_WIDTH || newWidth > limits.MAX_WIDTH ||
-                newHeight < limits.MIN_HEIGHT || newHeight > limits.MAX_HEIGHT) {
-                valid = false;
+            const clampedWidth = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, realWidth));
+            const clampedHeight = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, realHeight));
+            const targetScaledW = clampedWidth * scale;
+            const targetScaledH = clampedHeight * scale;
+            const targetScaleX = targetScaledW / obj.width;
+            const targetScaleY = targetScaledH / obj.height;
+
+            if (Math.abs(targetScaleX - obj.scaleX) > 0.0001 || Math.abs(targetScaleY - obj.scaleY) > 0.0001) {
+                nextScaleX = targetScaleX;
+                nextScaleY = targetScaleY;
+                changed = true;
             }
         } else if (obj.primitiveType === 'circle') {
-            const newRadius = obj.radius * obj.scaleX;
+            const realRadius = (obj.radius * obj.scaleX) / scale;
             const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
-            if (newRadius < limits.MIN_RADIUS || newRadius > limits.MAX_RADIUS) {
-                valid = false;
+            const clampedRadius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, realRadius));
+            const targetScaledR = clampedRadius * scale;
+            const targetScale = targetScaledR / obj.radius;
+
+            if (Math.abs(targetScale - obj.scaleX) > 0.0001 || Math.abs(targetScale - obj.scaleY) > 0.0001) {
+                nextScaleX = targetScale;
+                nextScaleY = targetScale;
+                changed = true;
             }
         }
 
-        if (!valid) {
-            obj.scaleX = prevScaleX;
-            obj.scaleY = prevScaleY;
+        if (changed) {
+            obj.scaleX = nextScaleX;
+            obj.scaleY = nextScaleY;
             obj.setCoords();
             this.canvas.renderAll();
-            alert('Размер выходит за пределы допустимого!');
         }
     }
 
@@ -471,18 +489,20 @@ class PrimitiveManager {
             return null;
         }
 
+        const scale = this.app.workspaceScale || 1;
+
         if (obj.primitiveType === 'rect') {
             return {
                 type: 'rect',
-                width: Math.round(obj.width * obj.scaleX),
-                height: Math.round(obj.height * obj.scaleY)
+                width: Math.round((obj.width * obj.scaleX) / scale),
+                height: Math.round((obj.height * obj.scaleY) / scale)
             };
         }
 
         if (obj.primitiveType === 'circle') {
             return {
                 type: 'circle',
-                radius: Math.round(obj.radius * obj.scaleX)
+                radius: Math.round((obj.radius * obj.scaleX) / scale)
             };
         }
 
@@ -494,20 +514,20 @@ class PrimitiveManager {
             return false;
         }
 
+        const scale = this.app.workspaceScale || 1;
+
         if (obj.primitiveType === 'rect') {
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
-            const width = dimensions.width;
-            const height = dimensions.height;
-            if (!Number.isFinite(width) || !Number.isFinite(height)) {
+            if (!Number.isFinite(dimensions.width) || !Number.isFinite(dimensions.height)) {
                 return false;
             }
-            if (width < limits.MIN_WIDTH || width > limits.MAX_WIDTH ||
-                height < limits.MIN_HEIGHT || height > limits.MAX_HEIGHT) {
-                return false;
-            }
+            const width = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, dimensions.width));
+            const height = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, dimensions.height));
+            const targetScaledW = width * scale;
+            const targetScaledH = height * scale;
             obj.set({
-                scaleX: width / obj.width,
-                scaleY: height / obj.height
+                scaleX: targetScaledW / obj.width,
+                scaleY: targetScaledH / obj.height
             });
             obj.setCoords();
             this.canvas.renderAll();
@@ -516,15 +536,13 @@ class PrimitiveManager {
 
         if (obj.primitiveType === 'circle') {
             const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
-            const radius = dimensions.radius;
-            if (!Number.isFinite(radius)) {
+            if (!Number.isFinite(dimensions.radius)) {
                 return false;
             }
-            if (radius < limits.MIN_RADIUS || radius > limits.MAX_RADIUS) {
-                return false;
-            }
-            const scale = radius / obj.radius;
-            obj.set({ scaleX: scale, scaleY: scale });
+            const radius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, dimensions.radius));
+            const targetScaledR = radius * scale;
+            const targetScale = targetScaledR / obj.radius;
+            obj.set({ scaleX: targetScale, scaleY: targetScale });
             obj.setCoords();
             this.canvas.renderAll();
             return true;

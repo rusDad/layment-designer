@@ -205,6 +205,7 @@ class ContourApp {
                 this.scheduleWorkspaceSave();
             }
             this.syncPrimitiveControlsFromSelection();
+            this.updateStatusBar();
         });
     }    
     bindUIButtonEvents() {
@@ -226,15 +227,17 @@ class ContourApp {
             });
 
         UIDom.buttons.addRect.addEventListener('click', () => {
-            const centerX = this.layment.width / 2;
-            const centerY = this.layment.height / 2;
+            const bbox = this.layment.getBoundingRect(true);
+            const centerX = bbox.left + (bbox.width / 2);
+            const centerY = bbox.top + (bbox.height / 2);
             this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
             this.scheduleWorkspaceSave();
         });
 
         UIDom.buttons.addCircle.addEventListener('click', () => {
-            const centerX = this.layment.width / 2;
-            const centerY = this.layment.height / 2;
+            const bbox = this.layment.getBoundingRect(true);
+            const centerX = bbox.left + (bbox.width / 2);
+            const centerY = bbox.top + (bbox.height / 2);
             this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
             this.scheduleWorkspaceSave();
         });
@@ -277,10 +280,6 @@ class ContourApp {
             scaleInput.value = val;
             scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
-
-        UIDom.inputs.primitiveWidth.addEventListener('input', () => this.applyPrimitiveDimensionsFromInputs());
-        UIDom.inputs.primitiveHeight.addEventListener('input', () => this.applyPrimitiveDimensionsFromInputs());
-        UIDom.inputs.primitiveRadius.addEventListener('input', () => this.applyPrimitiveDimensionsFromInputs());
 
         UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
@@ -343,9 +342,13 @@ class ContourApp {
     syncPrimitiveControlsFromSelection() {
         const primitive = this.getSingleSelectedPrimitive();
         this.isSyncingPrimitiveControls = true;
+        const typeRow = UIDom.primitive.typeLabel?.parentElement;
 
         if (!primitive) {
             UIDom.primitive.typeLabel.textContent = '—';
+            if (typeRow) {
+                typeRow.style.display = 'none';
+            }
             UIDom.inputs.primitiveWidth.value = '';
             UIDom.inputs.primitiveHeight.value = '';
             UIDom.inputs.primitiveRadius.value = '';
@@ -358,7 +361,9 @@ class ContourApp {
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
-        UIDom.primitive.typeLabel.textContent = dimensions.type === 'rect' ? 'Прямоугольная' : 'Круглая';
+        if (typeRow) {
+            typeRow.style.display = 'none';
+        }
 
         if (dimensions.type === 'rect') {
             UIDom.inputs.primitiveWidth.value = dimensions.width;
@@ -397,6 +402,7 @@ class ContourApp {
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
+        const prevDimensions = { ...dimensions };
         let applied = false;
 
         if (dimensions.type === 'rect') {
@@ -414,13 +420,16 @@ class ContourApp {
             applied = this.primitiveManager.applyDimensions(primitive, { radius });
         }
 
-        if (!applied) {
-            alert('Размер выходит за пределы допустимого!');
-        } else {
-            this.scheduleWorkspaceSave();
-        }
-
         this.syncPrimitiveControlsFromSelection();
+        this.updateStatusBar();
+
+        if (applied) {
+            const nextDimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
+            const changed = JSON.stringify(prevDimensions) !== JSON.stringify(nextDimensions);
+            if (changed) {
+                this.scheduleWorkspaceSave();
+            }
+        }
     }
 
     //  подписка на события для статус-бара
@@ -642,29 +651,51 @@ class ContourApp {
 
     // обновление строки состояния
     updateStatusBar() {
-     const statusEl = UIDom.status.info;
-     const active = this.canvas.getActiveObject();
+        const statusEl = UIDom.status.info;
+        const active = this.canvas.getActiveObject();
 
         if (!active || active.type === 'activeSelection') {
-        statusEl.textContent = 'Ничего не выделено';
-        return;
+            statusEl.textContent = 'Ничего не выделено';
+            return;
         }
 
-       // Находим оригинальную группу контура в массиве contourManager.contours
-       const contour = this.contourManager.contours.find(c => 
-         c === active || (active.getObjects && active.getObjects().includes(c))
-       );
+        if (active.primitiveType === 'rect' || active.primitiveType === 'circle') {
+            const dimensions = this.primitiveManager.getPrimitiveDimensions(active);
+            const laymentBbox = this.layment.getBoundingRect(true);
+
+            if (active.primitiveType === 'rect') {
+                const bbox = active.getBoundingRect(true);
+                const realX = ((bbox.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
+                const realY = ((bbox.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
+                statusEl.innerHTML = `
+                <strong>Выемка: Прямоугольная</strong>
+                X: ${realX} мм  Y: ${realY} мм  W: ${dimensions.width} мм  H: ${dimensions.height} мм`;
+                return;
+            }
+
+            const realX = ((active.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
+            const realY = ((active.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
+            statusEl.innerHTML = `
+            <strong>Выемка: Круглая</strong>
+            X: ${realX} мм  Y: ${realY} мм  R: ${dimensions.radius} мм`;
+            return;
+        }
+
+        // Находим оригинальную группу контура в массиве contourManager.contours
+        const contour = this.contourManager.contours.find(c =>
+            c === active || (active.getObjects && active.getObjects().includes(c))
+        );
 
         if (!contour) {
-        statusEl.textContent = 'Контур не найден';
-        return;
+            statusEl.textContent = 'Контур не найден';
+            return;
         }
 
-       const meta = this.contourManager.metadataMap.get(contour);
-       const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
-       const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1); 
-       const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
-    
+        const meta = this.contourManager.metadataMap.get(contour);
+        const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
+        const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1);
+        const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
+
         statusEl.innerHTML = `
         <strong>${meta.name}</strong>
         X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°`;
