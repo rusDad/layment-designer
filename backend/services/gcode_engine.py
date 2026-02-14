@@ -63,10 +63,11 @@ def build_final_gcode(order_data) -> List[str]:
 
     for contour in order_data.contours:
         contour_lines = load_rotated_fragment(contour.id, contour.angle)
-        offset_contour_gcode = apply_offset(contour_lines, contour.x, contour.y)
+        cnc_x, cnc_y = contour.y, contour.x  # приведение системы координат фронтенда к координатам станка
+        offset_contour_gcode = apply_offset(contour_lines, cnc_x, cnc_y)
 
         final_gcode.append("G0 Z20")
-        final_gcode.append(f"G0 X{contour.x} Y{contour.y}")
+        final_gcode.append(f"G0 X{cnc_x} Y{cnc_y}")
         final_gcode.extend(offset_contour_gcode)
         final_gcode.append("G0 Z20")
 
