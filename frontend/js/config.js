@@ -27,7 +27,7 @@ window.Config = {
         STROKE: '#000',
         STROKE_WIDTH: 2,
         STROKE_DASH_ARRAY: [10, 5],
-        FILL: 'transparent'
+        FILL: '#464746'
     },
 
     // ==================== ЦЕНЫ И РАСЧЕТЫ ====================
@@ -56,7 +56,7 @@ window.Config = {
     GEOMETRY : {
         ALLOWED_ANGLES: [0, 90, 180, 270],
         LAYMENT_PADDING: 8,
-        CLEARANCE_MM: 6,
+        CLEARANCE_MM: 2,
         PRIMITIVES: {
             RECT: { MIN_WIDTH: 8, MAX_WIDTH: 800, MIN_HEIGHT: 8, MAX_HEIGHT: 400 },
             CIRCLE: { MIN_RADIUS: 4, MAX_RADIUS: 200 }
@@ -88,7 +88,7 @@ window.Config = {
     // ==================== Константы PixelOverlap  ДЛЯ ПРОВЕРКИ ПЕРЕСЕЧЕНИЙ ====================
     CANVAS_OVERLAP : {
         TEMP_BACKGROUND: '#ffffff',
-        PIXEL_CHECK_PADDING: 20,
+        PIXEL_CHECK_PADDING: 10,
         CENTER_OFFSET: 20,
         OVERLAP_COLOR: 'rgba(0,0,0,0.5)',
         OVERLAP_THRESHOLD: {
