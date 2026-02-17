@@ -282,6 +282,28 @@ def get_order_details(order_id: str):
     }
 
 
+
+
+def _write_status(order_dir: Path, status_data: Dict[str, Any]) -> None:
+    with (order_dir / "status.json").open("w", encoding="utf-8") as status_file:
+        json.dump(status_data, status_file, ensure_ascii=False, indent=2)
+
+
+def _mark_order_status(order_id: str, status_field: str, time_field: str):
+    order_dir = _order_dir(order_id)
+    status_data = _read_json_if_exists(order_dir / "status.json") or {}
+
+    if status_data.get(status_field):
+        return {"orderId": order_id, "status": status_data}
+
+    status_data[status_field] = True
+    status_data[time_field] = datetime.now(timezone.utc).isoformat()
+    if not status_data.get("createdAt"):
+        status_data["createdAt"] = datetime.fromtimestamp(order_dir.stat().st_mtime, timezone.utc).isoformat()
+
+    _write_status(order_dir, status_data)
+    return {"orderId": order_id, "status": status_data}
+
 def _serve_order_file(order_id: str, filename: str, media_type: Optional[str] = None) -> FileResponse:
     order_dir = _order_dir(order_id)
     file_path = order_dir / filename
@@ -320,22 +342,15 @@ def download_status_json(order_id: str):
     return _serve_order_file(order_id, "status.json", media_type="application/json")
 
 
+
 @admin_orders_router.post("/orders/{order_id}/confirm")
-def confirm_order(order_id: str):
-    status = _update_order_status(order_id, field="confirmed", timestamp_field="confirmedAt")
-    return {
-        "orderId": order_id,
-        "status": status,
-    }
+def mark_order_confirmed(order_id: str):
+    return _mark_order_status(order_id, "confirmed", "confirmedAt")
 
 
 @admin_orders_router.post("/orders/{order_id}/produced")
 def mark_order_produced(order_id: str):
-    status = _update_order_status(order_id, field="produced", timestamp_field="producedAt")
-    return {
-        "orderId": order_id,
-        "status": status,
-    }
+    return _mark_order_status(order_id, "produced", "producedAt")
 
 app.include_router(public_router, prefix="/api")
 app.include_router(admin_router, prefix="/admin/api")
