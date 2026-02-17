@@ -70,7 +70,7 @@ window.Config = {
             ERROR: '#e74c3c',
             FILL: '#208820',
             NORMAL_STROKE_WIDTH: 1,
-            ERROR_STROKE_WIDTH: 10
+            ERROR_STROKE_WIDTH: 3
         },
         SELECTION: {
             BORDER: '#3498db',
@@ -88,7 +88,7 @@ window.Config = {
     // ==================== Константы PixelOverlap  ДЛЯ ПРОВЕРКИ ПЕРЕСЕЧЕНИЙ ====================
     CANVAS_OVERLAP : {
         TEMP_BACKGROUND: '#ffffff',
-        PIXEL_CHECK_PADDING: 40,
+        PIXEL_CHECK_PADDING: 20,
         CENTER_OFFSET: 20,
         OVERLAP_COLOR: 'rgba(0,0,0,0.5)',
         OVERLAP_THRESHOLD: {
