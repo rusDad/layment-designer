@@ -180,8 +180,8 @@ def create_item(data: CreateItemRequest):
 @router.post("/items/{item_id}/files")
 def upload_files(
     item_id: str,
-    svg: UploadFile = File(...),
-    nc: UploadFile = File(...),
+    svg: Optional[UploadFile] = File(None),
+    nc: Optional[UploadFile] = File(None),
     preview: Optional[UploadFile] = File(None),
     force: bool = Form(False)
 ):
@@ -194,16 +194,21 @@ def upload_files(
     if not item:
         raise HTTPException(404, "Item not found")
 
-    validate_svg(svg)
-    validate_nc(nc)
+    if not any([svg, nc, preview]):
+        raise HTTPException(status_code=400, detail="At least one file is required")
+
+    if svg:
+        validate_svg(svg)
+    if nc:
+        validate_nc(nc)
     if preview:
         validate_preview(preview)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
     staging_token = f"{timestamp}_{uuid.uuid4().hex[:8]}"
     staging_root = CONTOURS_DIR / ".staging" / f"{item_id}_{staging_token}"
-    staging_svg = staging_root / "svg" / f"{item_id}.svg"
-    staging_nc = staging_root / "nc" / f"{item_id}.nc"
+    staging_svg = (staging_root / "svg" / f"{item_id}.svg") if svg else None
+    staging_nc = (staging_root / "nc" / f"{item_id}.nc") if nc else None
     staging_preview = None
     preview_ext = None
     if preview:
@@ -211,11 +216,11 @@ def upload_files(
         staging_preview = staging_root / "preview" / f"{item_id}.{preview_ext}"
 
     staging_root.mkdir(parents=True, exist_ok=True)
-    (staging_root / "nc" / item_id).mkdir(parents=True, exist_ok=True)
-
     logger.info("Uploading files to staging %s", staging_root)
-    save_upload_file(svg, staging_svg)
-    save_upload_file(nc, staging_nc)
+    if svg and staging_svg:
+        save_upload_file(svg, staging_svg)
+    if nc and staging_nc:
+        save_upload_file(nc, staging_nc)
     if preview and staging_preview:
         save_upload_file(preview, staging_preview)
 
@@ -228,9 +233,9 @@ def upload_files(
 
     if not force:
         conflict_path = None
-        if svg_final.exists():
+        if svg and svg_final.exists():
             conflict_path = svg_final
-        elif nc_final.exists():
+        elif nc and nc_final.exists():
             conflict_path = nc_final
         elif preview_final and preview_final.exists():
             conflict_path = preview_final
@@ -260,7 +265,7 @@ def upload_files(
 
     rotated_dir = CONTOURS_DIR / "nc" / item_id
     rotated_backup = None
-    rotated_existed = rotated_dir.exists()
+    rotated_existed = nc is not None and rotated_dir.exists()
     if rotated_existed:
         rotated_backup = backup_dir / f"{item_id}.rotated.bak_{staging_token}"
         os.replace(rotated_dir, rotated_backup)
@@ -269,12 +274,15 @@ def upload_files(
     swap_started = False
     try:
         swap_started = True
-        backup_and_replace(staging_svg, svg_final)
-        backup_and_replace(staging_nc, nc_final)
+        if staging_svg:
+            backup_and_replace(staging_svg, svg_final)
+        if staging_nc:
+            backup_and_replace(staging_nc, nc_final)
         if staging_preview and preview_final:
             backup_and_replace(staging_preview, preview_final)
         swap_started = True
-        rotate_gcode_for_contour(item_id)
+        if nc:
+            rotate_gcode_for_contour(item_id)
     except Exception as exc:
         if swap_started:
             logger.warning("Upload failed, rolling back files for %s", item_id, exc_info=True)
@@ -301,12 +309,13 @@ def upload_files(
         shutil.rmtree(backup_dir, ignore_errors=True)
         shutil.rmtree(staging_root, ignore_errors=True)
 
+    assets = item.get("assets") or {}
     item["assets"] = {
-        "svg": f"svg/{item_id}.svg",
-        "nc": f"nc/{item_id}.nc",
+        "svg": f"svg/{item_id}.svg" if svg else _normalize_asset_path(assets.get("svg")),
+        "nc": f"nc/{item_id}.nc" if nc else _normalize_asset_path(assets.get("nc")),
         "preview": (
             f"preview/{preview_final.name}"
-            if preview_final else None
+            if preview_final else _normalize_asset_path(assets.get("preview"))
         )
     }
 
