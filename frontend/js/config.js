@@ -27,7 +27,7 @@ window.Config = {
         STROKE: '#000',
         STROKE_WIDTH: 2,
         STROKE_DASH_ARRAY: [10, 5],
-        FILL: '#464746'
+        FILL: 'transparent'
     },
 
     // ==================== ЦЕНЫ И РАСЧЕТЫ ====================
