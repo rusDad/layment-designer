@@ -1,113 +1,146 @@
-# Layment Designer — Architecture Overview
+# Layment Designer — обзор архитектуры
 
-## Purpose
+## Назначение
 
-Layment Designer is a production-oriented service for generating CNC G-code
-for EVA-foam tool inlays based on a user-defined layout.
+Layment Designer — производственно-ориентированный сервис для формирования раскладки
+инструментов в ложементе и детерминированной генерации CNC G-code для производства.
 
-The system is designed with strict separation of responsibilities:
-- frontend is a visualization and data collection layer
-- backend is a deterministic G-code generator
-- domain is the single source of truth for tool data
+Важно:
+- `final.nc` — внутренний технологический артефакт производства;
+- `final.nc` не является продуктом сервиса и не является тем, что передаётся клиенту как конечный результат;
+- конечный продукт сервиса — физически изготовленный ложемент.
+
+Система спроектирована с жёстким разделением ответственности:
+- frontend — слой визуализации и сбора данных;
+- backend — детерминированная обработка заказа и генерация производственных артефактов;
+- domain — единственный источник истины по данным инструментов.
 
 ---
 
-## High-Level Architecture
+## Высокоуровневая архитектура
 
 Browser
   → Nginx
     → Backend (FastAPI)
-      → Domain (file-based data)
+      → Domain (файловые данные)
 
 ---
 
 ## Domain
 
-The `domain/` directory contains all data related to tools and contours.
-It is the single source of truth and is not owned by frontend or backend code.
-domain хранится файлово на VDS, может не быть в репозитории; в репо — только код
+Каталог `domain/` содержит все данные по инструментам и контурам.
+Это единый источник истины, которым не владеют frontend/backend как кодовые модули.
+`domain` хранится файлово на VDS и может отсутствовать в репозитории (в репозитории — только код).
 
+```text
 domain/contours/
 ├── manifest.json
-├── svg/ # tool contours for frontend visualization
-├── preview/ # tool previews (optional)
-└── nc/ # reference CNC programs (backend only)
+├── svg/      # контуры инструментов для визуализации на frontend
+├── preview/  # превью инструментов (опционально)
+└── nc/       # эталонные CNC-программы (используются backend)
+```
 
-
-Rules:
-- domain read-only для public runtime; изменения только через admin pipeline
-- Frontend не получает manifest и метаданные из /contours/ напрямую. Manifest — только GET /api/contours/manifest
-- Frontend может загружать ассеты (svg/preview) по публичным URL /contours/....
-- backend reads domain files directly from filesystem
+Правила:
+- `domain` read-only для public runtime; изменения только через admin pipeline;
+- frontend не получает manifest и метаданные из `/contours/` напрямую;
+- manifest доступен только через `GET /api/contours/manifest`;
+- frontend может загружать ассеты (`svg/preview`) по публичным URL `/contours/...`;
+- backend читает файлы `domain` напрямую из файловой системы.
 
 ---
 
 ## Backend (FastAPI)
 
-Responsibilities:
-- reading `domain/contours/manifest.json`
-- validating and processing orders
-- generating CNC G-code
-- exposing stable API contracts
+Зона ответственности:
+- чтение `domain/contours/manifest.json`;
+- валидация и обработка заказов;
+- генерация CNC G-code как производственного артефакта;
+- предоставление стабильных API-контрактов.
 
-Key endpoints:
-- `GET /api/contours/manifest`
-- `POST /api/export-layment`
+Ключевые endpoint'ы:
+- `GET /api/contours/manifest`;
+- `POST /api/export-layment`.
 
-Backend is deployed as a systemd service and is environment-agnostic.
+Backend разворачивается как systemd-сервис и не зависит от `cwd`.
+
+---
+
+## Orders
+
+Единица хранения заказа: папка `backend/orders/<orderId>`.
+
+Состав файлов заказа:
+- `order.json` — исходные данные заказа (экспорт с frontend + бизнес-контекст);
+- `meta.json` — технические метаданные заказа (временные метки, версии, параметры обработки);
+- `status.json` — текущее состояние заказа в жизненном цикле;
+- `final.nc` — внутренний артефакт производства для ЧПУ;
+- `layout.png` / `layout.svg` — визуальный слепок раскладки для контроля и документооборота.
+
+Канонический flow:
+- `export` → создание заказа и `orderId` (`created`);
+- переход к оплате (точка интеграции);
+- после оплаты: `confirm` (`confirmed`);
+- производство (`production`);
+- завершение изготовления: `produced`.
+
+После создания заказа должна существовать точка интеграции:
+- переход на оплату;
+- передача данных заказа в 1С/документооборот.
+
+На текущем этапе эта интеграция фиксируется архитектурно, без реализации.
 
 ---
 
 ## Frontend
 
-Frontend responsibilities:
-- load manifest via API
-- render SVG contours
-- collect layout data
-- submit orders to backend
+Зона ответственности frontend:
+- загрузка manifest через API;
+- рендер SVG-контуров;
+- сбор данных раскладки;
+- отправка заказа на backend.
 
 Frontend:
-- does not know about CNC, G-code, or NC files
-- does not access filesystem paths
-- works only via HTTP API
+- не знает о CNC, G-code и NC-файлах;
+- не работает с файловыми путями на сервере;
+- работает только через HTTP API.
 
 ---
 
 ## Nginx
 
-Nginx is used as a reverse proxy and static file server.
+Nginx используется как reverse proxy и сервер статических файлов.
 
-Routing rules:
-- `/` → frontend
-- `/api/*` → backend (FastAPI)
-- `/contours/*` → static files from `domain/contours/`
+Правила маршрутизации:
+- `/` → frontend;
+- `/api/*` → backend (FastAPI);
+- `/contours/*` → статика из `domain/contours/`.
 
-Direct access to `manifest.json` via `/contours/manifest.json` is запрещён.
-
----
-
-## Design Principles
-
-- stable identifiers over convenience
-- frontend is dumb, backend is smart
-- no implicit coordinate transformations
-- all domain data must be FS-safe
-- MVP without technical debt
+Прямой доступ к `manifest.json` через `/contours/manifest.json` запрещён.
 
 ---
 
-## Smoke Test (manual)
+## Принципы проектирования
 
-Assumes FastAPI is running locally on `http://localhost:8001`.
+- стабильные идентификаторы важнее удобства;
+- frontend «тупой», backend «умный»;
+- никаких неявных преобразований координат;
+- все данные domain должны быть FS-safe;
+- MVP без технического долга.
 
-1) Manifest and static SVG:
+---
+
+## Smoke test (ручной)
+
+Предполагается, что FastAPI запущен локально на `http://localhost:8001`.
+
+1) Manifest и статический SVG:
 
 ```bash
 curl -s http://localhost:8001/api/contours/manifest
 curl -I http://localhost:8001/contours/svg/<id>.svg
 ```
 
-2) Public export:
+2) Публичный export:
 
 ```bash
 curl -X POST http://localhost:8001/api/export-layment \
@@ -120,7 +153,7 @@ curl -X POST http://localhost:8001/api/export-layment \
   }'
 ```
 
-3) Admin: create item + upload files + manifest assets format:
+3) Admin: создание item + загрузка файлов + формат `manifest.assets`:
 
 ```bash
 curl -X POST http://localhost:8001/admin/api/items \
