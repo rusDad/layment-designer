@@ -34,6 +34,8 @@ def validate_nc(file: UploadFile):
         line = raw_line.strip()
         if not line:
             continue
+        if line.startswith("'"):          # <-- добавили апостроф как комментарий
+            continue
         if line.startswith(";"):
             continue
         if line.startswith("(") and line.endswith(")"):
@@ -41,16 +43,18 @@ def validate_nc(file: UploadFile):
 
         line_errors = []
         first = _NC_TOKEN_RE.match(line, 0)
-        if not first or first.group(1).upper() != "G":
-            line_errors.append("line must start with G0/G1/G2/G3")
+        first_letter = first.group(1).upper() if first else None
+        if not first or first_letter not in {"G", "X", "Y", "Z"}:
+            line_errors.append("line must start with G0/G1/G2/G3 or a modal X/Y/Z")
         else:
-            g_raw = first.group(2)
-            try:
-                g_value = float(g_raw)
-                if not g_value.is_integer() or int(g_value) not in {0, 1, 2, 3}:
-                    line_errors.append("only G0/G1/G2/G3 commands are allowed")
-            except ValueError:
-                line_errors.append("invalid G command")
+            if first_letter == "G":
+                g_raw = first.group(2)
+                try:
+                    g_value = float(g_raw)
+                    if not g_value.is_integer() or int(g_value) not in {0, 1, 2, 3}:
+                        line_errors.append("only G0/G1/G2/G3 commands are allowed")
+                except ValueError:
+                    line_errors.append("invalid G command")
 
         cursor = first.end() if first else 0
         while cursor < len(line):
