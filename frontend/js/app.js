@@ -872,7 +872,7 @@ class ContourApp {
       }, 0);
     }
 
-    exportData() {
+    async exportData() {
         const valid = this.contourManager.checkCollisionsAndHighlight();
         if (!valid) {
             alert(Config.MESSAGES.EXPORT_ERROR);
@@ -903,6 +903,9 @@ class ContourApp {
             Config.PRICES.RRC_PRICE_MULTIPLIER
         );
 
+        const layoutPng = this.canvas.toDataURL({ format: 'png' });
+        const layoutSvg = this.canvas.toSVG();
+
         //  КОНТРАКТ
         const data = {
             orderMeta: {
@@ -910,6 +913,7 @@ class ContourApp {
             height: realHeight,
             units: "mm",
             coordinateSystem: "origin-top-left",
+            canvasPng: layoutPng,
             pricePreview: {
                 material: priceMaterial,
                 cutting: priceCutting,
@@ -917,6 +921,8 @@ class ContourApp {
             },
             workspaceSnapshot: this.buildWorkspaceSnapshot()
             },
+            layoutPng,
+            layoutSvg,
 
             contours: this.contourManager.getContoursData(),
             primitives: this.contourManager.getPrimitivesData()
@@ -924,23 +930,31 @@ class ContourApp {
 
         console.log('Заказ:', data);
 
-        fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        })
-            .then(r => r.ok ? r.text() : r.text().then(t => { throw new Error(t); }))
-            .then(gcode => {
+        try {
+            const response = await fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText);
+            }
+
+            const result = await response.json();
+            const orderId = result?.orderId || '—';
             alert(
-                `Файл создан!\n\n` +
+                `Заказ создан!\n\n` +
+                `ID заказа: ${orderId}\n` +
+                `Оплата: pay.html?orderId=${encodeURIComponent(orderId)}\n\n` +
                 `Размер: ${realWidth}×${realHeight} мм\n` +
                 `Стоимость: ${total} ₽`
             );
-            })
-            .catch(err => {
+        } catch (err) {
             console.error(err);
-            alert('Ошибка при создании файла: ' + err.message);
-            });
+            alert('Ошибка при создании заказа: ' + err.message);
+        }
     }
 }
 
