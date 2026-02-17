@@ -69,8 +69,8 @@ window.Config = {
             NORMAL: '#101214ff',
             ERROR: '#e74c3c',
             FILL: '#208820',
-            NORMAL_STROKE_WIDTH: 10,
-            ERROR_STROKE_WIDTH: 15
+            NORMAL_STROKE_WIDTH: 1,
+            ERROR_STROKE_WIDTH: 10
         },
         SELECTION: {
             BORDER: '#3498db',
