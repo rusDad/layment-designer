@@ -70,6 +70,34 @@ def _read_json_if_exists(file_path: Path) -> Optional[Dict[str, Any]]:
         return json.load(file)
 
 
+def _write_json(file_path: Path, data: Dict[str, Any]) -> None:
+    with file_path.open("w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+
+
+def _load_order_status(order_dir: Path) -> Dict[str, Any]:
+    return _read_json_if_exists(order_dir / "status.json") or {}
+
+
+def _update_order_status(order_id: str, *, field: str, timestamp_field: str) -> Dict[str, Any]:
+    order_dir = _order_dir(order_id)
+    status_path = order_dir / "status.json"
+    status = _load_order_status(order_dir)
+
+    if status.get(field) is True:
+        return status
+
+    status[field] = True
+    status[timestamp_field] = datetime.now(timezone.utc).isoformat()
+    _write_json(status_path, status)
+    return status
+
+
+def _notify_production(order_id: str) -> None:
+    # TODO: notify_production(order_id) integration (email/Jira/1C).
+    _ = order_id
+
+
 def _order_meta_from_order_json(order_payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not isinstance(order_payload, dict):
         return {}
@@ -290,6 +318,24 @@ def download_meta_json(order_id: str):
 @admin_orders_router.get("/orders/{order_id}/status.json")
 def download_status_json(order_id: str):
     return _serve_order_file(order_id, "status.json", media_type="application/json")
+
+
+@admin_orders_router.post("/orders/{order_id}/confirm")
+def confirm_order(order_id: str):
+    status = _update_order_status(order_id, field="confirmed", timestamp_field="confirmedAt")
+    return {
+        "orderId": order_id,
+        "status": status,
+    }
+
+
+@admin_orders_router.post("/orders/{order_id}/produced")
+def mark_order_produced(order_id: str):
+    status = _update_order_status(order_id, field="produced", timestamp_field="producedAt")
+    return {
+        "orderId": order_id,
+        "status": status,
+    }
 
 app.include_router(public_router, prefix="/api")
 app.include_router(admin_router, prefix="/admin/api")
