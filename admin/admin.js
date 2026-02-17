@@ -351,8 +351,8 @@ uploadBtn.addEventListener('click', async () => {
     return;
   }
 
-  if (!svg.files[0] || !nc.files[0]) {
-    alert('SVG и NC обязательны');
+  if (!svg.files[0] && !nc.files[0] && !preview.files[0]) {
+    alert('Выберите хотя бы один файл для загрузки');
     return;
   }
 
@@ -360,8 +360,14 @@ uploadBtn.addEventListener('click', async () => {
   resultEl.textContent = '';
 
   const fd = new FormData();
-  fd.append('svg', svg.files[0]);
-  fd.append('nc', nc.files[0]);
+
+  if (svg.files[0]) {
+    fd.append('svg', svg.files[0]);
+  }
+
+  if (nc.files[0]) {
+    fd.append('nc', nc.files[0]);
+  }
 
   if (preview.files[0]) {
     fd.append('preview', preview.files[0]);
@@ -438,6 +444,7 @@ uploadDxfBtn.addEventListener('click', async () => {
 
     statusEl.textContent = 'DXF успешно конвертирован в SVG';
     resultEl.textContent = text;
+    dxf.value = '';
     await loadItems();
   } catch (err) {
     statusEl.textContent = 'Ошибка запроса';
