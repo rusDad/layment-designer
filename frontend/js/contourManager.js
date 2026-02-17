@@ -243,7 +243,7 @@ class ContourManager {
             if (obj.type === 'path' || obj.type === 'polygon' || obj.type === 'polyline' || obj.type === 'circle' || obj.type === 'rect' || obj.type === 'ellipse') {
                 obj.set({
                     fill: color,
-                    stroke: color,
+                    stroke: 'transparent',
                     strokeWidth: Config.GEOMETRY.CLEARANCE_MM,
                     strokeLineJoin: 'round',
                     strokeLineCap: 'round'
