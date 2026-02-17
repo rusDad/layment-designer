@@ -41,7 +41,7 @@ window.Config = {
     CONVERSION : {
         MM_TO_METERS: 0.001,
         MM2_TO_M2: 1e-6,
-        SCALE_FACTOR: 0.0353  // 1px = 0.0353 мм
+        SCALE_FACTOR: 1  // 1px = 0.0353 мм
     },
 
     // ==================== API И ПУТИ ====================
