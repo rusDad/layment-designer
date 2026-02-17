@@ -79,11 +79,13 @@ async def export_layment(payload: Dict[str, Any]):
         try:
             staging_dir.mkdir(parents=True, exist_ok=False)
 
+            created_at = datetime.now(timezone.utc).isoformat()
+
             with (staging_dir / "order.json").open('w', encoding='utf-8') as order_file:
                 json.dump(payload, order_file, ensure_ascii=False, indent=2)
 
             meta = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": created_at,
                 "manifest": {
                     "version": manifest_version,
                 },
@@ -93,6 +95,17 @@ async def export_layment(payload: Dict[str, Any]):
 
             with (staging_dir / "meta.json").open('w', encoding='utf-8') as meta_file:
                 json.dump(meta, meta_file, ensure_ascii=False, indent=2)
+
+            status = {
+                "createdAt": created_at,
+                "confirmed": False,
+                "confirmedAt": None,
+                "produced": False,
+                "producedAt": None,
+            }
+
+            with (staging_dir / "status.json").open('w', encoding='utf-8') as status_file:
+                json.dump(status, status_file, ensure_ascii=False, indent=2)
 
             with (staging_dir / "final.nc").open('w', encoding='utf-8') as output_file:
                 output_file.write('\n'.join(final_gcode))
