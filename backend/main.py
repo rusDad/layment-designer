@@ -33,6 +33,7 @@ class OrderMeta(BaseModel):
     coordinateSystem: Optional[str] = None
     pricePreview: Optional[Dict[str, Any]] = None
     workspaceSnapshot: Optional[Dict[str, Any]] = None
+    canvasPng: Optional[str] = None
 
 
 class ContourPlacement(BaseModel):
