@@ -16,6 +16,10 @@ class ContourApp {
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
         this.isSyncingPrimitiveControls = false;
+        this.exportButtonDefaultText = UIDom.buttons.export?.textContent || 'Завершить';
+        this.exportCooldownMs = 5000;
+        this.exportInProgress = false;
+        this.lastOrderResult = null;
 
         this.init();
     }
@@ -214,7 +218,7 @@ class ContourApp {
         UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace();
         UIDom.buttons.loadWorkspace.onclick = () => this.loadWorkspaceFromStorage();
 
-        UIDom.buttons.export.onclick = () => this.performWithScaleOne(() => this.exportData());
+        UIDom.buttons.export.onclick = () => this.withExportCooldown(() => this.performWithScaleOne(() => this.exportData()));
 
         UIDom.buttons.check.onclick =
             () => this.performWithScaleOne(() => {
@@ -225,6 +229,8 @@ class ContourApp {
                 : Config.MESSAGES.COLLISION_ERROR
               );
             });
+
+        UIDom.orderResult.copyButton?.addEventListener('click', () => this.copyOrderResult());
 
         UIDom.buttons.addRect.addEventListener('click', () => {
             const bbox = this.layment.getBoundingRect(true);
@@ -872,10 +878,107 @@ class ContourApp {
       }, 0);
     }
 
+
+    clearOrderResult() {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = true;
+        orderResult.container.classList.remove('order-result-success', 'order-result-error');
+        orderResult.message.textContent = '';
+        orderResult.details.hidden = true;
+        orderResult.orderId.textContent = '—';
+        orderResult.paymentLink.textContent = '';
+        orderResult.paymentLink.href = '#';
+        orderResult.meta.hidden = true;
+        orderResult.meta.textContent = '';
+        this.lastOrderResult = null;
+    }
+
+    showOrderResultSuccess({ orderId, paymentUrl, width, height, total }) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-error');
+        orderResult.container.classList.add('order-result-success');
+        orderResult.message.textContent = 'Заказ успешно создан.';
+
+        orderResult.details.hidden = false;
+        orderResult.orderId.textContent = orderId;
+        orderResult.paymentLink.href = paymentUrl;
+        orderResult.paymentLink.textContent = paymentUrl;
+        orderResult.meta.hidden = false;
+        orderResult.meta.textContent = `Размер: ${width}×${height} мм • Стоимость: ${total} ₽`;
+        this.lastOrderResult = { orderId, paymentUrl, width, height, total };
+    }
+
+    showOrderResultError(message) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-success');
+        orderResult.container.classList.add('order-result-error');
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+    }
+
+    async copyOrderResult() {
+        const orderResult = UIDom.orderResult;
+        const orderId = orderResult.orderId?.textContent?.trim();
+        const paymentUrl = orderResult.paymentLink?.href;
+
+        if (!orderId || orderId === '—' || !paymentUrl || paymentUrl === '#') {
+            this.showOrderResultError('Нет данных заказа для копирования.');
+            return;
+        }
+
+        const copyPayload = `Order ID: ${orderId}
+Оплата: ${paymentUrl}`;
+
+        try {
+            await navigator.clipboard.writeText(copyPayload);
+            const current = this.lastOrderResult || { orderId, paymentUrl, width: Math.round(this.layment.width), height: Math.round(this.layment.height), total: '—' };
+            this.showOrderResultSuccess(current);
+            UIDom.orderResult.message.textContent = 'Скопировано в буфер обмена.';
+        } catch (err) {
+            console.error(err);
+            this.showOrderResultError('Не удалось скопировать данные заказа.');
+        }
+    }
+
+    async withExportCooldown(action) {
+        if (this.exportInProgress) {
+            return;
+        }
+
+        const exportButton = UIDom.buttons.export;
+        this.exportInProgress = true;
+        const startedAt = Date.now();
+        exportButton.disabled = true;
+        exportButton.textContent = 'Отправка…';
+
+        try {
+            await action();
+        } finally {
+            const elapsed = Date.now() - startedAt;
+            const waitMs = Math.max(0, this.exportCooldownMs - elapsed);
+            if (waitMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, waitMs));
+            }
+            exportButton.disabled = false;
+            exportButton.textContent = this.exportButtonDefaultText;
+            this.exportInProgress = false;
+        }
+    }
+
     async exportData() {
+        this.clearOrderResult();
+
         const valid = this.contourManager.checkCollisionsAndHighlight();
         if (!valid) {
-            alert(Config.MESSAGES.EXPORT_ERROR);
+            this.showOrderResultError(Config.MESSAGES.EXPORT_ERROR);
             return;
         }
 
@@ -939,21 +1042,23 @@ class ContourApp {
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(errorText);
+                throw new Error(errorText || 'Не удалось создать заказ.');
             }
 
             const result = await response.json();
             const orderId = result?.orderId || '—';
-            alert(
-                `Заказ создан!\n\n` +
-                `ID заказа: ${orderId}\n` +
-                `Оплата: pay.html?orderId=${encodeURIComponent(orderId)}\n\n` +
-                `Размер: ${realWidth}×${realHeight} мм\n` +
-                `Стоимость: ${total} ₽`
-            );
+            const paymentUrl = `pay.html?orderId=${encodeURIComponent(orderId)}`;
+
+            this.showOrderResultSuccess({
+                orderId,
+                paymentUrl,
+                width: realWidth,
+                height: realHeight,
+                total: result?.pricePreview?.total ?? total
+            });
         } catch (err) {
             console.error(err);
-            alert('Ошибка при создании заказа: ' + err.message);
+            this.showOrderResultError('Ошибка при создании заказа: ' + err.message);
         }
     }
 }
