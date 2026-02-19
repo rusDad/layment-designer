@@ -3,6 +3,7 @@
 
 window.UIDom = {
   inputs: {
+    laymentPreset: document.getElementById('laymentPreset'),
     laymentWidth: document.getElementById('laymentWidth'),
     laymentHeight: document.getElementById('laymentHeight'),
     workspaceScale: document.getElementById('workspaceScale'),

@@ -6,6 +6,11 @@ window.Config = {
     LAYMENT_DEFAULT_HEIGHT : 375,
     LAYMENT_MIN_SIZE : 100,
     LAYMENT_OFFSET : 20,
+    LAYMENT_PRESETS: {
+        SMALL: { width: 400, height: 300 },
+        MEDIUM: { width: 500, height: 350 },
+        LARGE: { width: 565, height: 375 }
+    },
 
     WORKSPACE_SCALE : {
         DEFAULT: 1.0,

@@ -145,6 +145,25 @@ class ContourApp {
         this.canvas.sendToBack(this.layment);
         this.canvas.layment = this.layment; // для удобства
         this.createSafeAreaRect();
+        this.syncLaymentPresetBySize(width, height);
+    }
+
+    syncLaymentPresetBySize(width, height) {
+        const presetEntry = Object.entries(Config.LAYMENT_PRESETS || {}).find(([, size]) => {
+            return size.width === width && size.height === height;
+        });
+        UIDom.inputs.laymentPreset.value = presetEntry ? presetEntry[0] : 'CUSTOM';
+    }
+
+    applyLaymentPreset(presetName) {
+        const preset = Config.LAYMENT_PRESETS?.[presetName];
+        if (!preset) {
+            return;
+        }
+
+        UIDom.inputs.laymentWidth.value = preset.width;
+        UIDom.inputs.laymentHeight.value = preset.height;
+        this.updateLaymentSize(preset.width, preset.height);
     }
 
     async loadAvailableContours() {
@@ -304,10 +323,15 @@ class ContourApp {
         });
     }
     bindInputEvents() {
+        UIDom.inputs.laymentPreset.addEventListener('change', e => {
+            this.applyLaymentPreset(e.target.value);
+        });
+
         UIDom.inputs.laymentWidth.addEventListener('change', e => {
             let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
             if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
+            UIDom.inputs.laymentPreset.value = 'CUSTOM';
             this.updateLaymentSize(v, this.layment.height);
         });
 
@@ -315,6 +339,7 @@ class ContourApp {
             let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
             if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
+            UIDom.inputs.laymentPreset.value = 'CUSTOM';
             this.updateLaymentSize(this.layment.width, v);
         });
 
@@ -878,6 +903,7 @@ class ContourApp {
 
             UIDom.inputs.laymentWidth.value = width;
             UIDom.inputs.laymentHeight.value = height;
+            this.syncLaymentPresetBySize(width, height);
             this.updateLaymentSize(width, height);
             this.layment.set({ left: offset, top: offset });
             this.layment.setCoords();
