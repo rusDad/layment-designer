@@ -55,7 +55,6 @@ window.UIDom = {
     orderId: document.getElementById('orderResultOrderId'),
     paymentLink: document.getElementById('orderResultPaymentLink'),
     meta: document.getElementById('orderResultMeta'),
-    copyButton: document.getElementById('copyOrderResultButton'),
   },
 
   status: {
