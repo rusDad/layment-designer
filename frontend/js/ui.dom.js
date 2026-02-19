@@ -44,6 +44,17 @@ window.UIDom = {
     searchInput: document.getElementById('catalogSearch'),
   },
 
+
+
+  orderResult: {
+    container: document.getElementById('orderResult'),
+    message: document.getElementById('orderResultMessage'),
+    details: document.getElementById('orderResultDetails'),
+    orderId: document.getElementById('orderResultOrderId'),
+    paymentLink: document.getElementById('orderResultPaymentLink'),
+    meta: document.getElementById('orderResultMeta'),
+  },
+
   status: {
     info: document.getElementById('status-info'),
   }

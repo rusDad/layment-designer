@@ -68,6 +68,18 @@
                     <button id="addCircleButton" class="tool-button">➕ круглая выемка</button>
                 </div>
 
+                <section id="orderResult" class="order-result" hidden aria-live="polite">
+                    <div id="orderResultMessage" class="order-result-message"></div>
+                    <div id="orderResultDetails" class="order-result-details" hidden>
+                        <div><strong>Order ID:</strong> <span id="orderResultOrderId">—</span></div>
+                        <div>
+                            <strong>Оплата:</strong>
+                            <a id="orderResultPaymentLink" href="#" target="_blank" rel="noopener noreferrer"></a>
+                        </div>
+                        <div id="orderResultMeta" hidden></div>
+                    </div>
+                </section>
+
                 <h2>Выемка</h2>
                 <div class="primitive-controls" id="primitiveControls" aria-disabled="true">
                     <div class="primitive-controls-header">
@@ -93,5 +105,4 @@
 </body>
 
 </html>
-
 

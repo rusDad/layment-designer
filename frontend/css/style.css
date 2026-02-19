@@ -393,3 +393,42 @@ body {
     margin-right: 12px;
     font-weight: 600;
 }
+
+.order-result {
+    background: #ffffff;
+    border: 1px solid #d5d8dc;
+    border-left-width: 4px;
+    border-radius: 4px;
+    padding: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+}
+
+.order-result-success {
+    border-left-color: #27ae60;
+}
+
+.order-result-error {
+    border-left-color: #c0392b;
+}
+
+.order-result-message {
+    color: #2c3e50;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.order-result-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    color: #2c3e50;
+    word-break: break-word;
+}
+
+.order-result-details a {
+    color: #2471a3;
+}
+
