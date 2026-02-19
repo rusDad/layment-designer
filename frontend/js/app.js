@@ -757,8 +757,10 @@ class ContourApp {
         const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1);
         const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
 
+        const article = meta.article || '—';
         statusEl.innerHTML = `
-        <strong>${meta.name}</strong>
+        <strong>${meta.name}</strong><br>
+        article: ${article}<br>
         X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°`;
     }
 
