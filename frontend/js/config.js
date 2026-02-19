@@ -38,6 +38,12 @@ window.Config = {
         SAFE_AREA_STROKE_DASH_ARRAY: [6, 4]
     },
 
+    MATERIAL_COLORS: {
+        green: '#208820',
+        blue: '#1f6fd6'
+    },
+    DEFAULT_MATERIAL_COLOR: 'green',
+
     // ==================== ЦЕНЫ И РАСЧЕТЫ ====================
     PRICES : {
         MATERIAL_TECHNICAL_WASTE_K: 1.25,
