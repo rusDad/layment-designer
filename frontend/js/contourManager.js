@@ -100,12 +100,27 @@ class ContourManager {
     }
 
     checkCollisionsAndHighlight() {
+      const emptyResult = {
+        ok: true,
+        issues: {
+            outOfBoundsContours: 0,
+            collisionContours: 0,
+            outOfBoundsPrimitives: 0
+        }
+      };
+
       if (this.app.workspaceScale !== 1) {
         console.warn('Collision check must run with workspace scale=1. Use performWithScaleOne().');
-        return false;
+        return {
+            ...emptyResult,
+            ok: false
+        };
       }
 
       const problematic = new Set();
+      const outOfBoundsContours = new Set();
+      const collisionContours = new Set();
+      const outOfBoundsPrimitives = new Set();
 
        // Сброс цвета у всех контуров
       this.contours.forEach(obj => {
@@ -132,23 +147,24 @@ class ContourManager {
       });
 
       const layment = this.canvas.layment;
-      if (!layment) return true;
+      if (!layment) return emptyResult;
 
       const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
 
       for (let i = 0; i < this.contours.length; i++) {
           const a = this.contours[i];
-           const box = a.getBoundingRect(true);
+          const box = a.getBoundingRect(true);
 
-           // 1. Выход за границы ложемента
-           const lWidth = layment.width * layment.scaleX;
+          // 1. Выход за границы ложемента
+          const lWidth = layment.width * layment.scaleX;
           const lHeight = layment.height * layment.scaleY;
 
-         if (box.left < layment.left + padding ||
+          if (box.left < layment.left + padding ||
             box.top < layment.top + padding ||
             box.left + box.width > layment.left + lWidth - padding ||
             box.top + box.height > layment.top + lHeight - padding) {
             problematic.add(a);
+            outOfBoundsContours.add(a);
           }
 
           // 2. Пересечения с другими контурами
@@ -158,6 +174,8 @@ class ContourManager {
             if (this.intersect(box, boxB) && this.hasPixelOverlap(a, b)) {  // Pixel overlap check
                 problematic.add(a);
                 problematic.add(b);
+                collisionContours.add(a);
+                collisionContours.add(b);
             }
           } 
        }
@@ -173,6 +191,7 @@ class ContourManager {
             box.left + box.width > layment.left + lWidth - padding ||
             box.top + box.height > layment.top + lHeight - padding) {
             problematic.add(obj);
+            outOfBoundsPrimitives.add(obj);
         }
       });
 
@@ -199,7 +218,14 @@ class ContourManager {
        });
 
        this.canvas.renderAll();
-       return problematic.size === 0;
+       return {
+        ok: problematic.size === 0,
+        issues: {
+            outOfBoundsContours: outOfBoundsContours.size,
+            collisionContours: collisionContours.size,
+            outOfBoundsPrimitives: outOfBoundsPrimitives.size
+        }
+       };
     }
 
     intersect(a, b) {

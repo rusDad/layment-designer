@@ -6,6 +6,7 @@ class ContourApp {
     constructor() {
         this.canvas = null;
         this.layment = null;                  
+        this.safeArea = null;
         this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.availableContours = [];
@@ -76,6 +77,49 @@ class ContourApp {
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
     }
 
+    createSafeAreaRect() {
+        if (!this.layment) {
+            return;
+        }
+
+        const padding = Config.GEOMETRY.LAYMENT_PADDING * this.layment.scaleX;
+
+        this.safeArea = new fabric.Rect({
+            width: Math.max(1, this.layment.width * this.layment.scaleX - padding * 2),
+            height: Math.max(1, this.layment.height * this.layment.scaleY - padding * 2),
+            left: this.layment.left + padding,
+            top: this.layment.top + padding,
+            fill: 'transparent',
+            stroke: Config.LAYMENT_STYLE.SAFE_AREA_STROKE,
+            strokeWidth: Config.LAYMENT_STYLE.SAFE_AREA_STROKE_WIDTH,
+            strokeDashArray: Config.LAYMENT_STYLE.SAFE_AREA_STROKE_DASH_ARRAY,
+            selectable: false,
+            evented: false,
+            hasControls: false,
+            hasBorders: false,
+            excludeFromExport: true,
+            name: 'safe-area'
+        });
+
+        this.canvas.add(this.safeArea);
+        this.safeArea.moveTo(1);
+    }
+
+    syncSafeAreaRect() {
+        if (!this.layment || !this.safeArea) {
+            return;
+        }
+
+        const padding = Config.GEOMETRY.LAYMENT_PADDING * this.layment.scaleX;
+        this.safeArea.set({
+            width: Math.max(1, this.layment.width * this.layment.scaleX - padding * 2),
+            height: Math.max(1, this.layment.height * this.layment.scaleY - padding * 2),
+            left: this.layment.left + padding,
+            top: this.layment.top + padding
+        });
+        this.safeArea.setCoords();
+    }
+
     createLayment() {
         const width = parseInt(UIDom.inputs.laymentWidth.value) || Config.LAYMENT_DEFAULT_WIDTH;
         const height = parseInt(UIDom.inputs.laymentHeight.value) || Config.LAYMENT_DEFAULT_HEIGHT;
@@ -100,6 +144,7 @@ class ContourApp {
         this.canvas.add(this.layment);
         this.canvas.sendToBack(this.layment);
         this.canvas.layment = this.layment; // для удобства
+        this.createSafeAreaRect();
     }
 
     async loadAvailableContours() {
@@ -139,6 +184,8 @@ class ContourApp {
 
     updateLaymentSize(width, height) {
         this.layment.set({ width, height });
+        this.layment.setCoords();
+        this.syncSafeAreaRect();
         this.canvas.renderAll();
         this.scheduleWorkspaceSave();
     }
@@ -222,12 +269,20 @@ class ContourApp {
 
         UIDom.buttons.check.onclick =
             () => this.performWithScaleOne(() => {
-              const ok = this.contourManager.checkCollisionsAndHighlight();
-              alert(
-                ok
-                ? Config.MESSAGES.VALID_LAYOUT
-                : Config.MESSAGES.COLLISION_ERROR
-              );
+              const validation = this.contourManager.checkCollisionsAndHighlight();
+              if (validation.ok) {
+                const orderResult = UIDom.orderResult;
+                if (orderResult.container) {
+                    orderResult.container.hidden = false;
+                    orderResult.container.classList.remove('order-result-error');
+                    orderResult.container.classList.add('order-result-success');
+                    orderResult.message.textContent = Config.MESSAGES.VALID_LAYOUT;
+                    orderResult.details.hidden = true;
+                }
+                return;
+              }
+
+              this.showOrderResultError(this.formatLayoutIssuesMessage(validation.issues));
             });
 
         UIDom.orderResult.copyButton?.addEventListener('click', () => this.copyOrderResult());
@@ -743,7 +798,7 @@ class ContourApp {
         if (!obj || this.isRestoringWorkspace) {
             return false;
         }
-        return obj !== this.layment;
+        return obj !== this.layment && obj !== this.safeArea;
     }
 
     scheduleWorkspaceSave() {
@@ -824,6 +879,7 @@ class ContourApp {
             this.updateLaymentSize(width, height);
             this.layment.set({ left: offset, top: offset });
             this.layment.setCoords();
+            this.syncSafeAreaRect();
 
             for (const contour of data.contours || []) {
                 const meta = this.manifest?.[contour.id];
@@ -879,6 +935,25 @@ class ContourApp {
     }
 
 
+    formatLayoutIssuesMessage(issues) {
+        const lines = [];
+        const hasOutOfBounds = (issues.outOfBoundsContours + issues.outOfBoundsPrimitives) > 0;
+        const hasCollision = issues.collisionContours > 0;
+
+        if (hasOutOfBounds) {
+            lines.push(Config.MESSAGES.OUT_OF_BOUNDS_ERROR);
+        }
+        if (hasCollision) {
+            lines.push(Config.MESSAGES.TOO_CLOSE_ERROR);
+        }
+
+        if (lines.length === 0) {
+            return Config.MESSAGES.EXPORT_ERROR;
+        }
+
+        return lines.join('\n');
+    }
+
     clearOrderResult() {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
@@ -920,7 +995,7 @@ class ContourApp {
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success');
         orderResult.container.classList.add('order-result-error');
-        orderResult.message.textContent = message;
+        orderResult.message.innerHTML = message.replace(/\n/g, '<br>');
         orderResult.details.hidden = true;
     }
 
@@ -976,9 +1051,9 @@ class ContourApp {
     async exportData() {
         this.clearOrderResult();
 
-        const valid = this.contourManager.checkCollisionsAndHighlight();
-        if (!valid) {
-            this.showOrderResultError(Config.MESSAGES.EXPORT_ERROR);
+        const validation = this.contourManager.checkCollisionsAndHighlight();
+        if (!validation.ok) {
+            this.showOrderResultError(this.formatLayoutIssuesMessage(validation.issues));
             return;
         }
 
