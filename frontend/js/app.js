@@ -21,6 +21,7 @@ class ContourApp {
         this.exportCooldownMs = 5000;
         this.exportInProgress = false;
         this.lastOrderResult = null;
+        this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
 
         this.init();
     }
@@ -29,6 +30,7 @@ class ContourApp {
         this.initializeCanvas();
         this.initializeServices();
         this.createLayment();
+        this.initializeMaterialColor();
         await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
@@ -145,6 +147,43 @@ class ContourApp {
         this.canvas.sendToBack(this.layment);
         this.canvas.layment = this.layment; // для удобства
         this.createSafeAreaRect();
+    }
+
+    initializeMaterialColor() {
+        const colorInput = UIDom.inputs.baseMaterialColor;
+        if (!colorInput) {
+            this.applyMaterialColorToCutouts();
+            return;
+        }
+
+        if (!Config.MATERIAL_COLORS[this.baseMaterialColor]) {
+            this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
+        }
+
+        colorInput.value = this.baseMaterialColor;
+        this.applyMaterialColorToCutouts();
+    }
+
+    getMaterialColorHex(colorKey = this.baseMaterialColor) {
+        return Config.MATERIAL_COLORS[colorKey] || Config.MATERIAL_COLORS[Config.DEFAULT_MATERIAL_COLOR];
+    }
+
+    applyMaterialColorToCutouts() {
+        const materialHex = this.getMaterialColorHex();
+
+        Config.COLORS.CONTOUR.FILL = materialHex;
+        Config.COLORS.PRIMITIVE.FILL = materialHex;
+
+        this.contourManager?.contours?.forEach(group => {
+            group.set({ fill: materialHex });
+            this.contourManager.resetPropertiesRecursive(group, { fill: materialHex });
+        });
+
+        this.primitiveManager?.primitives?.forEach(primitive => {
+            this.contourManager.resetPropertiesRecursive(primitive, { fill: materialHex });
+        });
+
+        this.canvas?.requestRenderAll();
     }
 
     async loadAvailableContours() {
@@ -316,6 +355,18 @@ class ContourApp {
             if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
             e.target.value = v;
             this.updateLaymentSize(this.layment.width, v);
+        });
+
+        UIDom.inputs.baseMaterialColor?.addEventListener('change', e => {
+            const selectedColor = e.target.value;
+            if (!Config.MATERIAL_COLORS[selectedColor]) {
+                e.target.value = this.baseMaterialColor;
+                return;
+            }
+
+            this.baseMaterialColor = selectedColor;
+            this.applyMaterialColorToCutouts();
+            this.scheduleWorkspaceSave();
         });
 
         UIDom.inputs.workspaceScale.addEventListener('change', e => {
@@ -826,6 +877,7 @@ class ContourApp {
                 offset: layment.left
             },
             workspaceScale: 1,
+            baseMaterialColor: this.baseMaterialColor,
             contours: this.contourManager.getContoursData(),
             primitives: this.contourManager.getPrimitivesData()
         };
@@ -876,6 +928,14 @@ class ContourApp {
             const height = data.layment?.height || Config.LAYMENT_DEFAULT_HEIGHT;
             this.laymentOffset = offset;
 
+            this.baseMaterialColor = Config.MATERIAL_COLORS[data.baseMaterialColor]
+                ? data.baseMaterialColor
+                : Config.DEFAULT_MATERIAL_COLOR;
+            if (UIDom.inputs.baseMaterialColor) {
+                UIDom.inputs.baseMaterialColor.value = this.baseMaterialColor;
+            }
+            this.applyMaterialColorToCutouts();
+
             UIDom.inputs.laymentWidth.value = width;
             UIDom.inputs.laymentHeight.value = height;
             this.updateLaymentSize(width, height);
@@ -919,6 +979,7 @@ class ContourApp {
                 }
             }
 
+            this.applyMaterialColorToCutouts();
             this.canvas.renderAll();
             this.updateButtons();
             this.updateStatusBar();
@@ -1085,6 +1146,9 @@ class ContourApp {
 
         const layoutPng = this.canvas.toDataURL({ format: 'png' });
         const layoutSvg = this.canvas.toSVG();
+        const laymentType = (this.contourManager.contours.length > 0 || this.primitiveManager.primitives.length > 0)
+            ? "with-tools"
+            : "empty";
 
         //  КОНТРАКТ
         const data = {
@@ -1093,6 +1157,8 @@ class ContourApp {
             height: realHeight,
             units: "mm",
             coordinateSystem: "origin-top-left",
+            baseMaterialColor: this.baseMaterialColor,
+            laymentType,
             canvasPng: layoutPng,
             pricePreview: {
                 material: priceMaterial,
