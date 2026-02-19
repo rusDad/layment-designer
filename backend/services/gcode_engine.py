@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
+from typing import Any, List
 
 from domain_store import contour_rotated_nc_path
 from gcode_rotator import generate_rectangle_gcode, offset_gcode
@@ -41,6 +41,124 @@ def apply_offset(lines: List[str], x: float, y: float) -> List[str]:
         raise GCodeEngineError(status_code=422, message=f"Invalid .nc fragment: {exc}") from exc
 
 
+def _to_float(value: Any, field_name: str, primitive_index: int) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise GCodeEngineError(
+            status_code=422,
+            message=f"Primitive #{primitive_index}: invalid {field_name} value '{value}'",
+        ) from exc
+
+
+def generate_rect_pocket_gcode(
+    x0: float,
+    y0: float,
+    width: float,
+    height: float,
+    z_depth: float = -20,
+    tool_dia: float = 6,
+    feed: int = 1000,
+    plunge: int = 500,
+) -> List[str]:
+    if width <= 0 or height <= 0:
+        return []
+
+    half_tool = tool_dia / 2
+    rough_offset = half_tool + 1
+    step = half_tool
+    lines: List[str] = []
+
+    current_min_x = x0 + rough_offset
+    current_min_y = y0 + rough_offset
+    current_max_x = x0 + width - rough_offset
+    current_max_y = y0 + height - rough_offset
+
+    while current_min_x < current_max_x and current_min_y < current_max_y:
+        lines.append("G0 Z20")
+        lines.append(f"G0 X{current_min_x:.3f} Y{current_min_y:.3f}")
+        lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
+        # Черновые проходы CCW
+        lines.append(f"G1 X{current_min_x:.3f} Y{current_max_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_max_x:.3f} Y{current_max_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_max_x:.3f} Y{current_min_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_min_x:.3f} Y{current_min_y:.3f} F{feed}")
+        lines.append("G0 Z20")
+
+        current_min_x += step
+        current_min_y += step
+        current_max_x -= step
+        current_max_y -= step
+
+    finish_min_x = x0 + half_tool
+    finish_min_y = y0 + half_tool
+    finish_max_x = x0 + width - half_tool
+    finish_max_y = y0 + height - half_tool
+
+    if finish_min_x >= finish_max_x or finish_min_y >= finish_max_y:
+        return lines
+
+    lines.append("G0 Z20")
+    lines.append(f"G0 X{finish_min_x:.3f} Y{finish_min_y:.3f}")
+    lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
+    # Чистовой проход CW
+    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_min_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_min_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_min_x:.3f} Y{finish_min_y:.3f} F{feed}")
+    lines.append("G0 Z20")
+
+    return lines
+
+
+def generate_circle_pocket_gcode(
+    cx: float,
+    cy: float,
+    radius: float,
+    z_depth: float = -20,
+    tool_dia: float = 6,
+    feed: int = 1000,
+    plunge: int = 500,
+) -> List[str]:
+    if radius <= 0:
+        return []
+
+    half_tool = tool_dia / 2
+    finish_radius = radius - half_tool
+    if finish_radius <= 0:
+        return []
+
+    lines: List[str] = []
+    start_radius = half_tool
+    rough_limit = radius - 3
+    rough_radius = start_radius
+
+    lines.append("G0 Z20")
+    lines.append(f"G0 X{cx:.3f} Y{cy:.3f}")
+    lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
+
+    while rough_radius <= rough_limit and rough_radius <= finish_radius:
+        start_x = cx + rough_radius
+        start_y = cy
+        lines.append(f"G1 X{start_x:.3f} Y{start_y:.3f} F{feed}")
+        # Черновые проходы CCW (две полуокружности через R)
+        lines.append(f"G3 X{(cx - rough_radius):.3f} Y{cy:.3f} R{rough_radius:.3f} F{feed}")
+        lines.append(f"G3 X{start_x:.3f} Y{start_y:.3f} R{rough_radius:.3f} F{feed}")
+        rough_radius += half_tool
+
+    finish_x = cx + finish_radius
+    finish_y = cy
+    lines.append(f"G0 Z20")
+    lines.append(f"G0 X{finish_x:.3f} Y{finish_y:.3f}")
+    lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
+    # Чистовой проход CW
+    lines.append(f"G2 X{(cx - finish_radius):.3f} Y{cy:.3f} R{finish_radius:.3f} F{feed}")
+    lines.append(f"G2 X{finish_x:.3f} Y{finish_y:.3f} R{finish_radius:.3f} F{feed}")
+    lines.append("G0 Z20")
+
+    return lines
+
+
 def build_final_gcode(order_data) -> List[str]:
     final_gcode = [
         "G0 G17 G90",
@@ -70,6 +188,57 @@ def build_final_gcode(order_data) -> List[str]:
         final_gcode.append(f"G0 X{cnc_x} Y{cnc_y}")
         final_gcode.extend(offset_contour_gcode)
         final_gcode.append("G0 Z20")
+
+    for primitive_index, primitive in enumerate(order_data.primitives or [], start=1):
+        primitive_type = primitive.get("type")
+
+        if primitive_type == "rect":
+            x = _to_float(primitive.get("x"), "x", primitive_index)
+            y = _to_float(primitive.get("y"), "y", primitive_index)
+            width = _to_float(primitive.get("width"), "width", primitive_index)
+            height = _to_float(primitive.get("height"), "height", primitive_index)
+
+            cnc_x = y
+            cnc_y = x
+            cnc_width = height
+            cnc_height = width
+
+            final_gcode.extend(
+                generate_rect_pocket_gcode(
+                    cnc_x,
+                    cnc_y,
+                    cnc_width,
+                    cnc_height,
+                    z_depth=-20,
+                    tool_dia=tool_dia,
+                    feed=feed_rate,
+                )
+            )
+            continue
+
+        if primitive_type == "circle":
+            x = _to_float(primitive.get("x"), "x", primitive_index)
+            y = _to_float(primitive.get("y"), "y", primitive_index)
+            radius = _to_float(primitive.get("radius"), "radius", primitive_index)
+
+            cnc_cx = y
+            cnc_cy = x
+            final_gcode.extend(
+                generate_circle_pocket_gcode(
+                    cnc_cx,
+                    cnc_cy,
+                    radius,
+                    z_depth=-20,
+                    tool_dia=tool_dia,
+                    feed=feed_rate,
+                )
+            )
+            continue
+
+        raise GCodeEngineError(
+            status_code=422,
+            message=f"Primitive #{primitive_index}: unsupported type '{primitive_type}'",
+        )
 
     final_gcode.append("M5")
     final_gcode.append("G49")
