@@ -209,7 +209,8 @@ class ContourManager {
                a.top + a.height > b.top;
     }
 
-    // Pixel overlap check assuming scale=1 during check
+    //OLD  Pixel overlap check assuming scale=1 during check
+    /*
     hasPixelOverlap(a, b) {
         const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
         if (!intersectBox.width || !intersectBox.height) return false;
@@ -274,6 +275,64 @@ class ContourManager {
                 a > Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.MIN_ALPHA) {      
               return true;
             }
+        }
+        return false;
+    }
+    */
+
+    // NEW Pixel overlap check assuming scale=1 during check
+    hasPixelOverlap(a, b) {
+        const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
+        if (!intersectBox.width || !intersectBox.height) return false;
+
+        const paddedWidth = Math.ceil(intersectBox.width + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);
+        const paddedHeight = Math.ceil(intersectBox.height + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);
+
+        const setMaskStyleRecursive = (obj) => {
+            if (obj.type === 'group') {
+            obj.forEachObject(child => setMaskStyleRecursive(child));
+            return;
+            }
+            if (obj.type === 'path' || obj.type === 'polygon' || obj.type === 'polyline' ||
+                obj.type === 'circle' || obj.type === 'rect' || obj.type === 'ellipse') {
+            obj.set({
+                fill: 'rgba(0,0,0,1)',
+                stroke: 'rgba(0,0,0,1)',
+                opacity: 1,
+                // ВАЖНО: clearance=6мм => strokeWidth=6 => наружу +3мм (stroke рисуется по центру)
+                // Так как применяем к обоим контурам — суммарный зазор получится 6мм
+                strokeWidth: Config.GEOMETRY.CLEARANCE_MM,
+                strokeLineJoin: 'round',
+                strokeLineCap: 'round',
+                strokeUniform: true,     // clearance в "мм", не должен масштабироваться вместе с контуром
+                objectCaching: false
+            });
+            }
+        };
+
+        const renderMaskData = (sourceObj) => {
+            const c = new fabric.StaticCanvas(null, { width: paddedWidth, height: paddedHeight });
+
+            const clone = fabric.util.object.clone(sourceObj);
+            clone.set({
+            left: (clone.left - intersectBox.left) + Config.CANVAS_OVERLAP.CENTER_OFFSET,
+            top: (clone.top - intersectBox.top) + Config.CANVAS_OVERLAP.CENTER_OFFSET,
+            objectCaching: false
+            });
+
+            setMaskStyleRecursive(clone);
+            c.add(clone);
+            c.renderAll();
+
+            return c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        };
+
+        const dataA = renderMaskData(a);
+        const dataB = renderMaskData(b);
+
+        const ALPHA_CUTOFF = 10; // чтобы игнорить микрошум антиалиаса
+        for (let i = 3; i < dataA.length; i += 4) {
+            if (dataA[i] > ALPHA_CUTOFF && dataB[i] > ALPHA_CUTOFF) return true;
         }
         return false;
     }
