@@ -12,6 +12,7 @@ const statusEl = document.getElementById('status');
 const confirmBtn = document.getElementById('confirmBtn');
 const producedBtn = document.getElementById('producedBtn');
 const downloadNcLink = document.getElementById('downloadNcLink');
+const downloadSvgLink = document.getElementById('downloadSvgLink');
 
 let ordersCache = [];
 let selectedOrderId = null;
@@ -94,6 +95,18 @@ const updateMeta = (details) => {
 
   const files = details.files || {};
   downloadNcLink.href = files.finalNc || '#';
+
+  if (files.layoutSvg) {
+    downloadSvgLink.href = files.layoutSvg;
+    downloadSvgLink.classList.remove('is-disabled');
+    downloadSvgLink.removeAttribute('aria-disabled');
+    downloadSvgLink.tabIndex = 0;
+  } else {
+    downloadSvgLink.href = '#';
+    downloadSvgLink.classList.add('is-disabled');
+    downloadSvgLink.setAttribute('aria-disabled', 'true');
+    downloadSvgLink.tabIndex = -1;
+  }
 
   layoutWrapEl.innerHTML = '';
   if (files.layoutPng) {
