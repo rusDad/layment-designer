@@ -432,11 +432,3 @@ body {
     color: #2471a3;
 }
 
-.order-result-copy-button {
-    margin-top: 0.2rem;
-    background-color: #2980b9;
-}
-
-.order-result-copy-button:hover:not(:disabled) {
-    background-color: #1f618d;
-}

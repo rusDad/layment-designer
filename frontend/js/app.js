@@ -343,7 +343,6 @@ class ContourApp {
               this.showOrderResultError(this.formatLayoutIssuesMessage(validation.issues));
             });
 
-        UIDom.orderResult.copyButton?.addEventListener('click', () => this.copyOrderResult());
 
         UIDom.buttons.addRect.addEventListener('click', () => {
             const bbox = this.layment.getBoundingRect(true);
@@ -1067,6 +1066,7 @@ class ContourApp {
         orderResult.container.classList.remove('order-result-error');
         orderResult.container.classList.add('order-result-success');
         orderResult.message.textContent = 'Заказ успешно создан.';
+        alert('заказ создан');
 
         orderResult.details.hidden = false;
         orderResult.orderId.textContent = orderId;
@@ -1085,32 +1085,10 @@ class ContourApp {
         orderResult.container.classList.remove('order-result-success');
         orderResult.container.classList.add('order-result-error');
         orderResult.message.innerHTML = message.replace(/\n/g, '<br>');
+        alert(message);
         orderResult.details.hidden = true;
     }
 
-    async copyOrderResult() {
-        const orderResult = UIDom.orderResult;
-        const orderId = orderResult.orderId?.textContent?.trim();
-        const paymentUrl = orderResult.paymentLink?.href;
-
-        if (!orderId || orderId === '—' || !paymentUrl || paymentUrl === '#') {
-            this.showOrderResultError('Нет данных заказа для копирования.');
-            return;
-        }
-
-        const copyPayload = `Order ID: ${orderId}
-Оплата: ${paymentUrl}`;
-
-        try {
-            await navigator.clipboard.writeText(copyPayload);
-            const current = this.lastOrderResult || { orderId, paymentUrl, width: Math.round(this.layment.width), height: Math.round(this.layment.height), total: '—' };
-            this.showOrderResultSuccess(current);
-            UIDom.orderResult.message.textContent = 'Скопировано в буфер обмена.';
-        } catch (err) {
-            console.error(err);
-            this.showOrderResultError('Не удалось скопировать данные заказа.');
-        }
-    }
 
     async withExportCooldown(action) {
         if (this.exportInProgress) {
