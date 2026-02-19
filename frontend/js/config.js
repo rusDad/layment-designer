@@ -27,7 +27,10 @@ window.Config = {
         STROKE: '#000',
         STROKE_WIDTH: 2,
         STROKE_DASH_ARRAY: [10, 5],
-        FILL: '#464746'
+        FILL: '#464746',
+        SAFE_AREA_STROKE: '#f1c40f',
+        SAFE_AREA_STROKE_WIDTH: 1,
+        SAFE_AREA_STROKE_DASH_ARRAY: [6, 4]
     },
 
     // ==================== ЦЕНЫ И РАСЧЕТЫ ====================
@@ -132,6 +135,8 @@ window.Config = {
         LOADING_ERROR: 'Не удалось загрузить список артикулов',
         EXPORT_ERROR: 'Исправьте ошибки перед заказом!',
         COLLISION_ERROR: 'Ошибка: есть пересечения или выход за границы',
+        OUT_OF_BOUNDS_ERROR: 'Элемент вышел за границы ложемента',
+        TOO_CLOSE_ERROR: 'Инструменты слишком близко друг к другу',
         VALID_LAYOUT: 'Раскладка валидна! Можно заказывать',
     }
 };    
