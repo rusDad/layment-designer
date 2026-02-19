@@ -426,20 +426,21 @@ class ContourManager {
         return this.app.primitiveManager.primitives.map(obj => {
             const bbox = obj.getBoundingRect(true);
             const scaleX = obj.scaleX;  // Поскольку scaleY = scaleX для circle
-            
+            const scaleY = obj.scaleY;
+
             return {
                 type: obj.primitiveType,
                 x: obj.primitiveType === 'rect' 
                     ? Math.round((bbox.left - layment.left) / layment.scaleX)
                     : Math.round((obj.left - layment.left) / layment.scaleX),
                 y: obj.primitiveType === 'rect' 
-                    ? Math.round((bbox.top - layment.top) / layment.scaleX)
-                    : Math.round((obj.top - layment.top) / layment.scaleX),
+                    ? Math.round((bbox.top - layment.top) / layment.scaleY)
+                    : Math.round((obj.top - layment.top) / layment.scaleY),
                 width: obj.primitiveType === 'rect'
                     ? Math.round(obj.width * scaleX)
                     : undefined,
                 height: obj.primitiveType === 'rect' 
-                    ? Math.round(obj.height * scaleX) 
+                    ? Math.round(obj.height * scaleY) 
                     : undefined,
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
