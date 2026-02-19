@@ -79,6 +79,55 @@ def _load_order_status(order_dir: Path) -> Dict[str, Any]:
     return _read_json_if_exists(order_dir / "status.json") or {}
 
 
+def _extract_order_number_value(value: Any) -> Optional[int]:
+    if not isinstance(value, str) or not value.startswith("K-"):
+        return None
+    number_part = value[2:]
+    if not number_part.isdigit():
+        return None
+    return int(number_part)
+
+
+def _read_order_number(order_dir: Path) -> Optional[str]:
+    meta = _read_json_if_exists(order_dir / "meta.json") or {}
+    order_number = meta.get("orderNumber")
+    if isinstance(order_number, str) and order_number:
+        return order_number
+
+    order_payload = _read_json_if_exists(order_dir / "order.json") or {}
+    payload_order_number = order_payload.get("orderNumber")
+    if isinstance(payload_order_number, str) and payload_order_number:
+        return payload_order_number
+
+    return None
+
+
+def _next_order_number(orders_dir: Path) -> str:
+    max_number = 0
+    if orders_dir.exists():
+        for order_dir in orders_dir.iterdir():
+            if not order_dir.is_dir() or order_dir.name.startswith("."):
+                continue
+            existing_order_number = _read_order_number(order_dir)
+            numeric_value = _extract_order_number_value(existing_order_number)
+            if numeric_value is not None and numeric_value > max_number:
+                max_number = numeric_value
+    return f"K-{max_number + 1:05d}"
+
+
+def _resolve_order_artifact(order_dir: Path, order_number: Optional[str], extension: str, legacy_name: str) -> Path:
+    if order_number:
+        numbered_artifact = order_dir / f"{order_number}.{extension}"
+        if numbered_artifact.exists() and numbered_artifact.is_file():
+            return numbered_artifact
+
+    legacy_artifact = order_dir / legacy_name
+    if legacy_artifact.exists() and legacy_artifact.is_file():
+        return legacy_artifact
+
+    raise HTTPException(status_code=404, detail=f"{legacy_name} not found")
+
+
 def _update_order_status(order_id: str, *, field: str, timestamp_field: str) -> Dict[str, Any]:
     order_dir = _order_dir(order_id)
     status_path = order_dir / "status.json"
@@ -131,6 +180,7 @@ async def export_layment(payload: Dict[str, Any]):
         order_id = uuid4().hex[:12]
         orders_dir = _orders_dir()
         orders_dir.mkdir(parents=True, exist_ok=True)
+        order_number = _next_order_number(orders_dir)
 
         while (orders_dir / order_id).exists():
             order_id = uuid4().hex[:12]
@@ -146,14 +196,18 @@ async def export_layment(payload: Dict[str, Any]):
 
             created_at = datetime.now(timezone.utc).isoformat()
 
+            stored_payload = dict(payload)
+            stored_payload["orderNumber"] = order_number
+
             with (staging_dir / "order.json").open('w', encoding='utf-8') as order_file:
-                json.dump(payload, order_file, ensure_ascii=False, indent=2)
+                json.dump(stored_payload, order_file, ensure_ascii=False, indent=2)
 
             meta = {
                 "timestamp": created_at,
                 "manifest": {
                     "version": manifest_version,
                 },
+                "orderNumber": order_number,
             }
             if order_data.orderMeta.pricePreview is not None:
                 meta["pricePreview"] = order_data.orderMeta.pricePreview
@@ -172,14 +226,14 @@ async def export_layment(payload: Dict[str, Any]):
             with (staging_dir / "status.json").open('w', encoding='utf-8') as status_file:
                 json.dump(status, status_file, ensure_ascii=False, indent=2)
 
-            with (staging_dir / "final.nc").open('w', encoding='utf-8') as output_file:
+            with (staging_dir / f"{order_number}.nc").open('w', encoding='utf-8') as output_file:
                 output_file.write('\n'.join(final_gcode))
 
             raw_payload = payload
 
             layout_svg = raw_payload.get("layoutSvg") or raw_payload.get("layout_svg")
             if isinstance(layout_svg, str) and layout_svg.strip():
-                with (staging_dir / "layout.svg").open('w', encoding='utf-8') as svg_file:
+                with (staging_dir / f"{order_number}.svg").open('w', encoding='utf-8') as svg_file:
                     svg_file.write(layout_svg)
 
             layout_png = raw_payload.get("layoutPng") or raw_payload.get("layout_png")
@@ -190,11 +244,11 @@ async def export_layment(payload: Dict[str, Any]):
                     encoded_png = raw_png.split(",", 1)[1]
                 try:
                     png_bytes = base64.b64decode(encoded_png, validate=True)
-                    with (staging_dir / "layout.png").open('wb') as png_file:
+                    with (staging_dir / f"{order_number}.png").open('wb') as png_file:
                         png_file.write(png_bytes)
                 except (ValueError, binascii.Error):
                     logger.warning("Failed to decode layoutPng as base64 for order %s", order_id)
-                    with (staging_dir / "layout.png").open('w', encoding='utf-8') as png_file:
+                    with (staging_dir / f"{order_number}.png").open('w', encoding='utf-8') as png_file:
                         png_file.write(layout_png)
 
             os.replace(staging_dir, final_order_dir)
@@ -205,6 +259,7 @@ async def export_layment(payload: Dict[str, Any]):
 
         response: Dict[str, Any] = {
             "orderId": order_id,
+            "orderNumber": order_number,
             "createdAt": created_at,
             "status": status,
         }
@@ -231,6 +286,7 @@ def list_orders():
             continue
 
         status_data = _read_json_if_exists(order_dir / "status.json") or {}
+        order_number = _read_order_number(order_dir)
         order_payload = _read_json_if_exists(order_dir / "order.json") or {}
         order_meta = _order_meta_from_order_json(order_payload)
         created_at = status_data.get("createdAt")
@@ -239,12 +295,13 @@ def list_orders():
 
         orders.append({
             "orderId": order_dir.name,
+            "orderNumber": order_number,
             "createdAt": created_at,
             "confirmed": bool(status_data.get("confirmed", False)),
             "produced": bool(status_data.get("produced", False)),
             "width": order_meta.get("width"),
             "height": order_meta.get("height"),
-            "hasLayoutPng": (order_dir / "layout.png").exists(),
+            "hasLayoutPng": ((order_dir / f"{order_number}.png").exists() if order_number else False) or (order_dir / "layout.png").exists(),
         })
 
     def sort_key(item: Dict[str, Any]) -> datetime:
@@ -266,18 +323,20 @@ def get_order_details(order_id: str):
     order_dir = _order_dir(order_id)
     status_data = _read_json_if_exists(order_dir / "status.json") or {}
     order_payload = _read_json_if_exists(order_dir / "order.json") or {}
+    order_number = _read_order_number(order_dir)
     order_meta = _order_meta_from_order_json(order_payload)
 
     return {
         "orderId": order_id,
+        "orderNumber": order_number,
         "status": status_data,
         "orderMeta": order_meta,
         "contours": order_payload.get("contours") or [],
         "primitives": order_payload.get("primitives") or [],
         "files": {
             "finalNc": f"/admin/api/orders/{order_id}/final.nc",
-            "layoutPng": f"/admin/api/orders/{order_id}/layout.png" if (order_dir / "layout.png").exists() else None,
-            "layoutSvg": f"/admin/api/orders/{order_id}/layout.svg" if (order_dir / "layout.svg").exists() else None,
+            "layoutPng": f"/admin/api/orders/{order_id}/layout.png" if ((order_dir / f"{order_number}.png").exists() if order_number else False) or (order_dir / "layout.png").exists() else None,
+            "layoutSvg": f"/admin/api/orders/{order_id}/layout.svg" if ((order_dir / f"{order_number}.svg").exists() if order_number else False) or (order_dir / "layout.svg").exists() else None,
         },
     }
 
@@ -304,27 +363,35 @@ def _mark_order_status(order_id: str, status_field: str, time_field: str):
     _write_status(order_dir, status_data)
     return {"orderId": order_id, "status": status_data}
 
-def _serve_order_file(order_id: str, filename: str, media_type: Optional[str] = None) -> FileResponse:
+def _serve_order_file(order_id: str, filename: str, media_type: Optional[str] = None, download_name: Optional[str] = None) -> FileResponse:
     order_dir = _order_dir(order_id)
     file_path = order_dir / filename
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail=f"{filename} not found")
-    return FileResponse(file_path, filename=filename, media_type=media_type)
+    return FileResponse(file_path, filename=download_name or filename, media_type=media_type)
+
+
+def _serve_order_artifact(order_id: str, extension: str, legacy_filename: str, media_type: str) -> FileResponse:
+    order_dir = _order_dir(order_id)
+    order_number = _read_order_number(order_dir)
+    artifact_path = _resolve_order_artifact(order_dir, order_number, extension, legacy_filename)
+    download_name = f"{order_number}.{extension}" if order_number else artifact_path.name
+    return FileResponse(artifact_path, filename=download_name, media_type=media_type)
 
 
 @admin_orders_router.get("/orders/{order_id}/final.nc")
 def download_final_nc(order_id: str):
-    return _serve_order_file(order_id, "final.nc", media_type="text/plain")
+    return _serve_order_artifact(order_id, "nc", "final.nc", media_type="text/plain")
 
 
 @admin_orders_router.get("/orders/{order_id}/layout.png")
 def download_layout_png(order_id: str):
-    return _serve_order_file(order_id, "layout.png", media_type="image/png")
+    return _serve_order_artifact(order_id, "png", "layout.png", media_type="image/png")
 
 
 @admin_orders_router.get("/orders/{order_id}/layout.svg")
 def download_layout_svg(order_id: str):
-    return _serve_order_file(order_id, "layout.svg", media_type="image/svg+xml")
+    return _serve_order_artifact(order_id, "svg", "layout.svg", media_type="image/svg+xml")
 
 
 @admin_orders_router.get("/orders/{order_id}/order.json")

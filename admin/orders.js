@@ -55,7 +55,11 @@ const renderOrdersList = () => {
 
     const title = document.createElement('div');
     title.className = 'order-title';
-    title.textContent = order.orderId;
+    title.textContent = order.orderNumber || '—';
+
+    const cipher = document.createElement('div');
+    cipher.className = 'muted';
+    cipher.textContent = `Шифр: ${order.orderId}`;
 
     const dim = document.createElement('div');
     dim.className = 'muted';
@@ -71,6 +75,7 @@ const renderOrdersList = () => {
     statusRow.appendChild(createBadge('produced', Boolean(order.produced)));
 
     card.appendChild(title);
+    card.appendChild(cipher);
     card.appendChild(dim);
     card.appendChild(created);
     card.appendChild(statusRow);
@@ -84,7 +89,8 @@ const updateMeta = (details) => {
   const orderMeta = details.orderMeta || {};
 
   orderMetaEl.innerHTML = `
-    <div><strong>ID:</strong> ${details.orderId}</div>
+    <div><strong>Номер заказа:</strong> ${details.orderNumber || '—'}</div>
+    <div><strong>Шифр (orderId):</strong> ${details.orderId}</div>
     <div><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
     <div><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
     <div><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
