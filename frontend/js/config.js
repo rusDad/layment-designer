@@ -20,6 +20,11 @@ window.Config = {
         STEP_CTRL: 0.05
     },
 
+    LABELS: {
+        FONT_SIZE_MM: 4,
+        DEFAULT_OFFSET: { x: 6, y: 0 }
+    },
+
     // ==================== UI ====================
     UI : {
         PANEL_WIDTH: 320,

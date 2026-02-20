@@ -77,6 +77,7 @@ class ContourApp {
     initializeServices() {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
+        this.labelManager = new LabelManager(this.canvas, this, this.contourManager);
     }
 
     createSafeAreaRect() {
@@ -241,6 +242,9 @@ class ContourApp {
             this.workspaceScale,
             item
         );
+
+        const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
+        this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
         this.scheduleWorkspaceSave();
     }
 
@@ -371,19 +375,33 @@ class ContourApp {
 
         if (active.type === 'activeSelection') {
             active.getObjects().forEach(obj => {
+                if (!obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea) {
+                    obj._lastLeft = obj.left;
+                    obj._lastTop = obj.top;
+                }
                 obj.set({
                     left: obj.left + dx,
                     top: obj.top + dy
                 });
                 obj.setCoords();
+                if (!obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea) {
+                    this.labelManager.onContourMoving(obj);
+                }
             });
             active.setCoords();
         } else {
+            if (!active.primitiveType && !active.isLabel && active !== this.layment && active !== this.safeArea) {
+                active._lastLeft = active.left;
+                active._lastTop = active.top;
+            }
             active.set({
                 left: active.left + dx,
                 top: active.top + dy
             });
             active.setCoords();
+            if (!active.primitiveType && !active.isLabel && active !== this.layment && active !== this.safeArea) {
+                this.labelManager.onContourMoving(active);
+            }
         }
 
         this.canvas.requestRenderAll();
@@ -411,12 +429,20 @@ class ContourApp {
             this.syncPrimitiveControlsFromSelection();
         });
 
-        this.canvas.on('object:moving', () => {
+        this.canvas.on('object:moving', event => {
+            const target = event.target;
+            if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
+                this.labelManager.onContourMoving(target);
+            }
             this.updateStatusBar();
         });
 
         this.canvas.on('object:modified', event => {
-            if (this.shouldAutosaveForObject(event.target)) {
+            const target = event.target;
+            if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
+                this.labelManager.onContourModified(target);
+            }
+            if (this.shouldAutosaveForObject(target)) {
                 this.scheduleWorkspaceSave();
             }
             this.syncPrimitiveControlsFromSelection();
@@ -1142,16 +1168,22 @@ class ContourApp {
         if (!obj) return;
         if (obj.type === 'activeSelection') {
             obj.forEachObject(o => {
-                if (o.primitiveType) {
+                if (o.isLabel) {
+                    this.labelManager.removeLabel(o);
+                } else if (o.primitiveType) {
                     this.primitiveManager.removePrimitive(o);
                 } else {
+                    this.labelManager.removeLabelsForContourId(o.contourId);
                     this.contourManager.removeContour(o);
                 }
             });
         } else {
-            if (obj.primitiveType) {
+            if (obj.isLabel) {
+                this.labelManager.removeLabel(obj);
+            } else if (obj.primitiveType) {
                 this.primitiveManager.removePrimitive(obj);
             } else {
+                this.labelManager.removeLabelsForContourId(obj.contourId);
                 this.contourManager.removeContour(obj);
             }
         }
@@ -1163,7 +1195,7 @@ class ContourApp {
 
     rotateSelected() {
         const obj = this.canvas.getActiveObject();
-        if (!obj || obj.primitiveType) return;  // Нет поворота для примитивов
+        if (!obj || obj.primitiveType || obj.isLabel) return;  // Нет поворота для примитивов и labels
         const next = (obj.angle + 90) % 360;
         this.contourManager.rotateContour(obj, next);
         this.scheduleWorkspaceSave();
@@ -1201,7 +1233,8 @@ class ContourApp {
             workspaceScale: 1,
             baseMaterialColor: this.baseMaterialColor,
             contours: this.contourManager.getContoursData(),
-            primitives: this.contourManager.getPrimitivesData()
+            primitives: this.contourManager.getPrimitivesData(),
+            labels: this.labelManager.getWorkspaceLabelsData()
         };
     }
 
@@ -1244,6 +1277,7 @@ class ContourApp {
             this.canvas.discardActiveObject();
             this.contourManager.clearContours();
             this.primitiveManager.clearPrimitives();
+            this.labelManager.clearLabels();
 
             const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
             const width = data.layment?.width || Config.LAYMENT_DEFAULT_WIDTH;
@@ -1290,6 +1324,27 @@ class ContourApp {
                     top: added.top + (targetY - tl.y)
                 });
                 added.setCoords();
+            }
+
+            if (Array.isArray(data.labels)) {
+                for (const labelData of data.labels) {
+                    const contour = this.contourManager.contours.find(c => c.contourId === labelData.contourId);
+                    if (!contour) {
+                        continue;
+                    }
+                    this.labelManager.createLabel({
+                        contourId: labelData.contourId,
+                        text: labelData.text,
+                        left: this.layment.left + labelData.x,
+                        top: this.layment.top + labelData.y,
+                        fontSize: labelData.fontSizeMm
+                    });
+                }
+            } else {
+                for (const contour of this.contourManager.contours) {
+                    const meta = this.contourManager.metadataMap.get(contour);
+                    this.labelManager.ensureDefaultLabelForContour(contour, meta?.defaultLabel);
+                }
             }
 
             for (const primitive of data.primitives || []) {
