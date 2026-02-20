@@ -103,6 +103,39 @@ def _write_circle(lines: List[str], layer: str, *, x: float, y: float, radius: f
     ])
 
 
+def _sanitize_text(text: Any) -> str:
+    normalized = str(text or "")
+    sanitized = normalized.replace("\r\n", " ").replace("\n", " ").replace("\t", " ").strip()
+    return sanitized
+
+
+def _write_text(lines: List[str], layer: str, *, x: float, y: float, text: str, height: float, order_height: float) -> None:
+    if not text or height <= 0:
+        return
+
+    y_dxf = order_height - y - height
+    lines.extend([
+        "0",
+        "TEXT",
+        "8",
+        layer,
+        "10",
+        _format_number(x),
+        "20",
+        _format_number(y_dxf),
+        "40",
+        _format_number(height),
+        "1",
+        text,
+    ])
+
+
+def _value_from_obj_or_dict(item: Any, key: str, default: Any = None) -> Any:
+    if isinstance(item, dict):
+        return item.get(key, default)
+    return getattr(item, key, default)
+
+
 def _load_contour_geometry(contour_id: str) -> Tuple[float, float, List[Dict[str, float]]] | None:
     geometry_path = contour_geometry_path(contour_id)
     if not geometry_path.exists() or not geometry_path.is_file():
@@ -214,6 +247,26 @@ def generate_order_layout_dxf(order_data: Any) -> Tuple[str, List[str]]:
                 radius=_to_float(primitive.get("radius")),
                 order_height=order_height,
             )
+
+    for label in (getattr(order_data, "labels", None) or []):
+        text = _sanitize_text(_value_from_obj_or_dict(label, "text", ""))
+        if not text:
+            continue
+
+        x = _to_float(_value_from_obj_or_dict(label, "x"))
+        y = _to_float(_value_from_obj_or_dict(label, "y"))
+        font_size = _to_float(_value_from_obj_or_dict(label, "fontSizeMm", 4.0), 4.0)
+        height = font_size if font_size > 0 else 4.0
+
+        _write_text(
+            lines,
+            "LABELS",
+            x=x,
+            y=y,
+            text=text,
+            height=height,
+            order_height=order_height,
+        )
 
     lines.extend(["0", "ENDSEC", "0", "EOF"])
     unique_missing = sorted(set(missing_contours))
