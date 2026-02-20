@@ -1447,11 +1447,11 @@ class ContourApp {
 
             const result = await response.json();
             const orderId = result?.orderId || '—';
-            const paymentUrl = `pay.html?orderId=${encodeURIComponent(orderId)}`;
+            const statusUrl = `status.html?orderId=${encodeURIComponent(orderId)}`;
 
             this.showOrderResultSuccess({
                 orderId,
-                paymentUrl,
+                paymentUrl: statusUrl,
                 width: realWidth,
                 height: realHeight,
                 total: result?.pricePreview?.total ?? total
