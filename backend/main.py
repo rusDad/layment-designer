@@ -157,6 +157,31 @@ def _order_meta_from_order_json(order_payload: Optional[Dict[str, Any]]) -> Dict
     return nested_meta if isinstance(nested_meta, dict) else {}
 
 
+def _derive_order_state(status_data: Dict[str, Any]) -> str:
+    if status_data.get("produced") is True:
+        return "produced"
+    if status_data.get("confirmed") is True:
+        return "confirmed"
+    return "created"
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _max_iso_timestamp(*values: Any) -> Optional[str]:
+    timestamps = [candidate for candidate in (_parse_iso_datetime(value) for value in values) if candidate is not None]
+    if not timestamps:
+        return None
+    return max(timestamps).isoformat()
+
+
 @public_router.get("/contours/manifest")
 def get_contours_manifest():
     if not MANIFEST_PATH.exists():
@@ -272,6 +297,42 @@ async def export_layment(payload: Dict[str, Any]):
         raise HTTPException(status_code=e.status_code, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@public_router.get("/orders/{order_id}")
+def get_order_status(order_id: str):
+    order_dir = _order_dir(order_id)
+    status_data = _load_order_status(order_dir)
+    order_number = _read_order_number(order_dir)
+    meta = _read_json_if_exists(order_dir / "meta.json") or {}
+
+    created_at = status_data.get("createdAt")
+    if not isinstance(created_at, str) or not created_at:
+        created_at = datetime.fromtimestamp(order_dir.stat().st_mtime, timezone.utc).isoformat()
+
+    confirmed_at = status_data.get("confirmedAt") if isinstance(status_data.get("confirmedAt"), str) else None
+    produced_at = status_data.get("producedAt") if isinstance(status_data.get("producedAt"), str) else None
+    updated_at = _max_iso_timestamp(created_at, confirmed_at, produced_at)
+
+    response: Dict[str, Any] = {
+        "orderId": order_id,
+        "orderNumber": order_number,
+        "state": _derive_order_state(status_data),
+        "createdAt": created_at,
+        "confirmedAt": confirmed_at,
+        "producedAt": produced_at,
+        "updatedAt": updated_at,
+    }
+
+    price_preview = meta.get("pricePreview")
+    if isinstance(price_preview, dict):
+        response["price"] = {
+            "material": price_preview.get("material"),
+            "cutting": price_preview.get("cutting"),
+            "total": price_preview.get("total"),
+        }
+
+    return response
 
 
 @admin_orders_router.get("/orders")
