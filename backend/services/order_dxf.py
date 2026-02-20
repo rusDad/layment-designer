@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+from typing import Any, Dict, Iterable, List, Tuple
+import math
+
+from domain_store import contour_geometry_path
+
+
+def _to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_number(value: float) -> str:
+    text = f"{value:.6f}".rstrip("0").rstrip(".")
+    return text if text else "0"
+
+
+def _parse_vertices(raw_vertices: Any) -> List[Dict[str, float]]:
+    vertices: List[Dict[str, float]] = []
+    if not isinstance(raw_vertices, list):
+        return vertices
+
+    for vertex in raw_vertices:
+        if isinstance(vertex, dict):
+            x = _to_float(vertex.get("x"))
+            y = _to_float(vertex.get("y"))
+            bulge = _to_float(vertex.get("bulge"), 0.0)
+        elif isinstance(vertex, (list, tuple)) and len(vertex) >= 2:
+            x = _to_float(vertex[0])
+            y = _to_float(vertex[1])
+            bulge = _to_float(vertex[2], 0.0) if len(vertex) > 2 else 0.0
+        else:
+            continue
+
+        vertices.append({"x": x, "y": y, "bulge": bulge})
+
+    return vertices
+
+
+def _rotate_vertices(vertices: List[Dict[str, float]], width: float, height: float, angle_deg: float) -> List[Dict[str, float]]:
+    cx = width / 2.0
+    cy = height / 2.0
+    angle_rad = math.radians(angle_deg)
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    rotated: List[Dict[str, float]] = []
+    for vertex in vertices:
+        dx = vertex["x"] - cx
+        dy = vertex["y"] - cy
+        rotated_x = cx + dx * cos_a - dy * sin_a
+        rotated_y = cy + dx * sin_a + dy * cos_a
+        rotated.append({"x": rotated_x, "y": rotated_y, "bulge": vertex["bulge"]})
+
+    return rotated
+
+
+def _write_lwpolyline(lines: List[str], layer: str, vertices: Iterable[Dict[str, float]], *, closed: bool = True, order_height: float) -> None:
+    points = list(vertices)
+    if len(points) < 2:
+        return
+
+    lines.extend([
+        "0",
+        "LWPOLYLINE",
+        "8",
+        layer,
+        "90",
+        str(len(points)),
+        "70",
+        "1" if closed else "0",
+    ])
+
+    for vertex in points:
+        lines.extend([
+            "10",
+            _format_number(vertex["x"]),
+            "20",
+            _format_number(order_height - vertex["y"]),
+        ])
+        bulge = -vertex.get("bulge", 0.0)
+        if abs(bulge) > 1e-12:
+            lines.extend(["42", _format_number(bulge)])
+
+
+def _write_circle(lines: List[str], layer: str, *, x: float, y: float, radius: float, order_height: float) -> None:
+    if radius <= 0:
+        return
+    lines.extend([
+        "0",
+        "CIRCLE",
+        "8",
+        layer,
+        "10",
+        _format_number(x),
+        "20",
+        _format_number(order_height - y),
+        "40",
+        _format_number(radius),
+    ])
+
+
+def _load_contour_geometry(contour_id: str) -> Tuple[float, float, List[Dict[str, float]]] | None:
+    geometry_path = contour_geometry_path(contour_id)
+    if not geometry_path.exists() or not geometry_path.is_file():
+        return None
+
+    import json
+
+    with geometry_path.open("r", encoding="utf-8") as geometry_file:
+        geometry_data = json.load(geometry_file)
+
+    vertices = _parse_vertices(geometry_data.get("vertices"))
+    bbox = geometry_data.get("bbox") if isinstance(geometry_data, dict) else None
+    width = _to_float((bbox or {}).get("width"), 0.0)
+    height = _to_float((bbox or {}).get("height"), 0.0)
+
+    if not vertices:
+        return None
+
+    if width <= 0:
+        width = max(point["x"] for point in vertices) - min(point["x"] for point in vertices)
+    if height <= 0:
+        height = max(point["y"] for point in vertices) - min(point["y"] for point in vertices)
+
+    return width, height, vertices
+
+
+def generate_order_layout_dxf(order_data: Any) -> Tuple[str, List[str]]:
+    order_width = float(order_data.orderMeta.width)
+    order_height = float(order_data.orderMeta.height)
+
+    lines: List[str] = [
+        "0",
+        "SECTION",
+        "2",
+        "HEADER",
+        "0",
+        "ENDSEC",
+        "0",
+        "SECTION",
+        "2",
+        "TABLES",
+        "0",
+        "ENDSEC",
+        "0",
+        "SECTION",
+        "2",
+        "ENTITIES",
+    ]
+
+    _write_lwpolyline(
+        lines,
+        "LAYMENT",
+        [
+            {"x": 0.0, "y": 0.0, "bulge": 0.0},
+            {"x": order_width, "y": 0.0, "bulge": 0.0},
+            {"x": order_width, "y": order_height, "bulge": 0.0},
+            {"x": 0.0, "y": order_height, "bulge": 0.0},
+        ],
+        order_height=order_height,
+    )
+
+    missing_contours: List[str] = []
+    for contour in order_data.contours:
+        geometry = _load_contour_geometry(contour.id)
+        if geometry is None:
+            missing_contours.append(contour.id)
+            continue
+
+        width, height, vertices = geometry
+        rotated = _rotate_vertices(vertices, width, height, float(contour.angle))
+
+        min_x = min(point["x"] for point in rotated)
+        min_y = min(point["y"] for point in rotated)
+        dx = float(contour.x) - min_x
+        dy = float(contour.y) - min_y
+
+        placed = [
+            {
+                "x": point["x"] + dx,
+                "y": point["y"] + dy,
+                "bulge": point.get("bulge", 0.0),
+            }
+            for point in rotated
+        ]
+        _write_lwpolyline(lines, "CONTOURS", placed, order_height=order_height)
+
+    for primitive in (order_data.primitives or []):
+        primitive_type = primitive.get("type") if isinstance(primitive, dict) else None
+        if primitive_type == "rect":
+            x = _to_float(primitive.get("x"))
+            y = _to_float(primitive.get("y"))
+            width = _to_float(primitive.get("width"))
+            height = _to_float(primitive.get("height"))
+            if width <= 0 or height <= 0:
+                continue
+            rect_vertices = [
+                {"x": x, "y": y, "bulge": 0.0},
+                {"x": x + width, "y": y, "bulge": 0.0},
+                {"x": x + width, "y": y + height, "bulge": 0.0},
+                {"x": x, "y": y + height, "bulge": 0.0},
+            ]
+            _write_lwpolyline(lines, "PRIMITIVES", rect_vertices, order_height=order_height)
+        elif primitive_type == "circle":
+            _write_circle(
+                lines,
+                "PRIMITIVES",
+                x=_to_float(primitive.get("x")),
+                y=_to_float(primitive.get("y")),
+                radius=_to_float(primitive.get("radius")),
+                order_height=order_height,
+            )
+
+    lines.extend(["0", "ENDSEC", "0", "EOF"])
+    unique_missing = sorted(set(missing_contours))
+    return "\n".join(lines) + "\n", unique_missing
