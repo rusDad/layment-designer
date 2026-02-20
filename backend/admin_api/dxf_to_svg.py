@@ -66,6 +66,67 @@ def read_lwpolyline(path: Path):
     return verts
 
 
+def read_circle(path: Path):
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+
+    i = 0
+    while i < len(lines) - 1:
+        if lines[i] == "0" and lines[i + 1] == "CIRCLE":
+            i += 2
+            cx = None
+            cy = None
+            r = None
+
+            while i < len(lines) - 1:
+                code = lines[i]
+                val = lines[i + 1]
+
+                if code == "0":
+                    break
+                if code == "10":
+                    cx = float(val)
+                elif code == "20":
+                    cy = float(val)
+                elif code == "40":
+                    r = float(val)
+
+                i += 2
+
+            if cx is None or cy is None or r is None:
+                raise ValueError("Invalid CIRCLE entity")
+            if r <= 0:
+                raise ValueError("CIRCLE radius must be > 0")
+
+            return {"cx": cx, "cy": cy, "r": r}
+
+        i += 2
+
+    raise ValueError("No CIRCLE found in DXF")
+
+
+def circle_to_lwpolyline_vertices(cx, cy, r):
+    b = math.sqrt(2.0) - 1.0
+    return [
+        {"x": cx + r, "y": cy, "bulge": b},
+        {"x": cx, "y": cy + r, "bulge": b},
+        {"x": cx - r, "y": cy, "bulge": b},
+        {"x": cx, "y": cy - r, "bulge": b},
+    ]
+
+
+def read_supported_geometry(path: Path):
+    try:
+        return read_lwpolyline(path)
+    except ValueError:
+        pass
+
+    try:
+        circle = read_circle(path)
+        return circle_to_lwpolyline_vertices(circle["cx"], circle["cy"], circle["r"])
+    except ValueError as exc:
+        raise ValueError("No supported geometry found (LWPOLYLINE or CIRCLE)") from exc
+
+
 # ---------------------------
 # GEOMETRY
 # ---------------------------
@@ -213,7 +274,7 @@ def write_svg(path_d, bbox, out_path: Path):
 # ---------------------------
 
 def convert(dxf_path: Path, svg_path: Path):
-    verts = read_lwpolyline(dxf_path)
+    verts = read_supported_geometry(dxf_path)
     verts = invert_y(verts)
     path_d = polyline_to_svg_path(verts)
     bbox = compute_bbox(verts)
@@ -240,6 +301,12 @@ def _selftest_arc_direction():
     )
 
 
+def _selftest_circle_as_arcs():
+    verts = circle_to_lwpolyline_vertices(cx=0.0, cy=0.0, r=10.0)
+    path_d = polyline_to_svg_path(invert_y(verts))
+    assert path_d.count("A ") == 4, f"Expected 4 arc commands, got: {path_d}"
+
+
 # ---------------------------
 # CLI
 # ---------------------------
@@ -247,6 +314,7 @@ def _selftest_arc_direction():
 def main():
     if os.getenv("DXF_TO_SVG_SELFTEST") == "1":
         _selftest_arc_direction()
+        _selftest_circle_as_arcs()
 
     if len(sys.argv) != 3:
         print("Usage: dxf_to_svg.py input.dxf output.svg")
