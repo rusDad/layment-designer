@@ -27,6 +27,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 CATEGORY_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+DEFAULT_LABEL_MAX_LENGTH = 32
 
 
 def _sorted_categories(categories: dict) -> List[Dict[str, str]]:
@@ -69,6 +70,21 @@ def _normalize_asset_path(asset_path: Optional[str]) -> Optional[str]:
     return asset_path.lstrip("/")
 
 
+def _normalize_default_label(default_label: Optional[str]) -> Optional[str]:
+    if default_label is None:
+        return None
+
+    normalized = default_label.strip()
+    if not normalized:
+        return None
+    if len(normalized) > DEFAULT_LABEL_MAX_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"defaultLabel must be <= {DEFAULT_LABEL_MAX_LENGTH} characters"
+        )
+    return normalized
+
+
 class PreviewIdRequest(BaseModel):
     article: str
 
@@ -88,6 +104,7 @@ class CreateItemRequest(BaseModel):
     scaleOverride: Optional[float] = 1.0
     cuttingLengthMeters: float
     enabled: bool = True
+    defaultLabel: Optional[str] = None
 
 
 class UpsertCategoryRequest(BaseModel):
@@ -133,6 +150,7 @@ def upsert_category(data: UpsertCategoryRequest):
 @router.post("/items")
 def create_item(data: CreateItemRequest):
     item_id = generate_id(data.article)
+    default_label = _normalize_default_label(data.defaultLabel)
 
     manifest = load_manifest()
     category_slug = (data.category or "").strip()
@@ -158,6 +176,10 @@ def create_item(data: CreateItemRequest):
         existing_item["scaleOverride"] = data.scaleOverride
         existing_item["cuttingLengthMeters"] = data.cuttingLengthMeters
         existing_item["enabled"] = data.enabled
+        if default_label is None:
+            existing_item.pop("defaultLabel", None)
+        else:
+            existing_item["defaultLabel"] = default_label
         mode = "updated"
     else:
         new_item = {
@@ -170,6 +192,8 @@ def create_item(data: CreateItemRequest):
             "cuttingLengthMeters": data.cuttingLengthMeters,
             "enabled": data.enabled
         }
+        if default_label is not None:
+            new_item["defaultLabel"] = default_label
         manifest["items"].append(new_item)
         mode = "created"
 
@@ -474,6 +498,7 @@ def list_items():
                 "scaleOverride": i.get("scaleOverride", 1.0),
                 "cuttingLengthMeters": i.get("cuttingLengthMeters", 0),
                 "enabled": i.get("enabled", True),
+                "defaultLabel": i.get("defaultLabel"),
                 "assets": i.get("assets"),
                 "files": _item_files_status(i, preview_dir),
                 "previewUrl": _item_preview_url(i, preview_dir)
