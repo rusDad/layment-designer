@@ -13,6 +13,7 @@ const confirmBtn = document.getElementById('confirmBtn');
 const producedBtn = document.getElementById('producedBtn');
 const downloadNcLink = document.getElementById('downloadNcLink');
 const downloadSvgLink = document.getElementById('downloadSvgLink');
+const downloadDxfLink = document.getElementById('downloadDxfLink');
 
 let ordersCache = [];
 let selectedOrderId = null;
@@ -112,6 +113,18 @@ const updateMeta = (details) => {
     downloadSvgLink.classList.add('is-disabled');
     downloadSvgLink.setAttribute('aria-disabled', 'true');
     downloadSvgLink.tabIndex = -1;
+  }
+
+  if (files.layoutDxf) {
+    downloadDxfLink.href = files.layoutDxf;
+    downloadDxfLink.classList.remove('is-disabled');
+    downloadDxfLink.removeAttribute('aria-disabled');
+    downloadDxfLink.tabIndex = 0;
+  } else {
+    downloadDxfLink.href = '#';
+    downloadDxfLink.classList.add('is-disabled');
+    downloadDxfLink.setAttribute('aria-disabled', 'true');
+    downloadDxfLink.tabIndex = -1;
   }
 
   layoutWrapEl.innerHTML = '';

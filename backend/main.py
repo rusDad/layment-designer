@@ -15,6 +15,7 @@ import shutil
 import os
 import json
 from services.gcode_engine import GCodeEngineError, build_final_gcode
+from services.order_dxf import generate_order_layout_dxf
 
 
 app = FastAPI()
@@ -254,6 +255,16 @@ async def export_layment(payload: Dict[str, Any]):
             with (staging_dir / f"{order_number}.nc").open('w', encoding='utf-8') as output_file:
                 output_file.write('\n'.join(final_gcode))
 
+            dxf_content, missing_contours = generate_order_layout_dxf(order_data)
+            with (staging_dir / f"{order_number}.dxf").open('w', encoding='utf-8') as dxf_file:
+                dxf_file.write(dxf_content)
+            meta["dxf"] = {
+                "generated": len(missing_contours) == 0,
+                "missingContours": missing_contours,
+            }
+            with (staging_dir / "meta.json").open('w', encoding='utf-8') as meta_file:
+                json.dump(meta, meta_file, ensure_ascii=False, indent=2)
+
             raw_payload = payload
 
             layout_svg = raw_payload.get("layoutSvg") or raw_payload.get("layout_svg")
@@ -398,6 +409,7 @@ def get_order_details(order_id: str):
             "finalNc": f"/admin/api/orders/{order_id}/final.nc",
             "layoutPng": f"/admin/api/orders/{order_id}/layout.png" if ((order_dir / f"{order_number}.png").exists() if order_number else False) or (order_dir / "layout.png").exists() else None,
             "layoutSvg": f"/admin/api/orders/{order_id}/layout.svg" if ((order_dir / f"{order_number}.svg").exists() if order_number else False) or (order_dir / "layout.svg").exists() else None,
+            "layoutDxf": f"/admin/api/orders/{order_id}/layout.dxf" if ((order_dir / f"{order_number}.dxf").exists() if order_number else False) or (order_dir / "layout.dxf").exists() else None,
         },
     }
 
@@ -453,6 +465,11 @@ def download_layout_png(order_id: str):
 @admin_orders_router.get("/orders/{order_id}/layout.svg")
 def download_layout_svg(order_id: str):
     return _serve_order_artifact(order_id, "svg", "layout.svg", media_type="image/svg+xml")
+
+
+@admin_orders_router.get("/orders/{order_id}/layout.dxf")
+def download_layout_dxf(order_id: str):
+    return _serve_order_artifact(order_id, "dxf", "layout.dxf", media_type="application/dxf")
 
 
 @admin_orders_router.get("/orders/{order_id}/order.json")

@@ -20,6 +20,10 @@ def contour_rotated_nc_path(contour_id: str, rotation: str) -> Path:
     return CONTOURS_DIR / "nc" / contour_id / f"rotated_{rotation}.nc"
 
 
+def contour_geometry_path(contour_id: str) -> Path:
+    return CONTOURS_DIR / "geometry" / f"{contour_id}.json"
+
+
 def start_gcode_path() -> Path:
     return START_GCODE_PATH
 
