@@ -453,6 +453,19 @@ class ContourApp {
             this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
             this.scheduleWorkspaceSave();
         });
+
+        UIDom.buttons.alignLeft.onclick = () => this.alignSelected('left');
+        UIDom.buttons.alignCenterX.onclick = () => this.alignSelected('center-x');
+        UIDom.buttons.alignRight.onclick = () => this.alignSelected('right');
+        UIDom.buttons.alignTop.onclick = () => this.alignSelected('top');
+        UIDom.buttons.alignCenterY.onclick = () => this.alignSelected('center-y');
+        UIDom.buttons.alignBottom.onclick = () => this.alignSelected('bottom');
+        UIDom.buttons.distributeHorizontalGaps.onclick = () => this.distributeSelected('horizontal-gaps');
+        UIDom.buttons.distributeVerticalGaps.onclick = () => this.distributeSelected('vertical-gaps');
+        UIDom.buttons.snapLeft.onclick = () => this.snapSelectedToSide('left');
+        UIDom.buttons.snapRight.onclick = () => this.snapSelectedToSide('right');
+        UIDom.buttons.snapTop.onclick = () => this.snapSelectedToSide('top');
+        UIDom.buttons.snapBottom.onclick = () => this.snapSelectedToSide('bottom');
     }
     bindInputEvents() {
         UIDom.inputs.laymentPreset.addEventListener('change', e => {
@@ -543,11 +556,157 @@ class ContourApp {
         return result;
     }
 
-    updateButtons() {
-        const has = !!this.canvas.getActiveObject();
-        UIDom.buttons.delete.disabled = !has;
+    getArrangeSelectionObjects() {
         const active = this.canvas.getActiveObject();
+        if (!active) {
+            return [];
+        }
+        if (active.type === 'activeSelection') {
+            return active.getObjects().filter(obj => this.shouldAutosaveForObject(obj));
+        }
+        return this.shouldAutosaveForObject(active) ? [active] : [];
+    }
+
+    applyDeltaToObject(obj, deltaX, deltaY) {
+        obj.set({
+            left: obj.left + deltaX,
+            top: obj.top + deltaY
+        });
+        obj.setCoords();
+    }
+
+    finalizeArrangeOperation() {
+        this.canvas.requestRenderAll();
+        this.updateStatusBar();
+        this.scheduleWorkspaceSave();
+    }
+
+    alignSelected(mode) {
+        const selected = this.getArrangeSelectionObjects();
+        if (selected.length < 2) {
+            return;
+        }
+
+        const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
+        const minLeft = Math.min(...boxes.map(item => item.bbox.left));
+        const maxRight = Math.max(...boxes.map(item => item.bbox.left + item.bbox.width));
+        const minTop = Math.min(...boxes.map(item => item.bbox.top));
+        const maxBottom = Math.max(...boxes.map(item => item.bbox.top + item.bbox.height));
+        const centerX = minLeft + ((maxRight - minLeft) / 2);
+        const centerY = minTop + ((maxBottom - minTop) / 2);
+
+        for (const item of boxes) {
+            let targetLeft = item.bbox.left;
+            let targetTop = item.bbox.top;
+
+            if (mode === 'left') targetLeft = minLeft;
+            if (mode === 'center-x') targetLeft = centerX - (item.bbox.width / 2);
+            if (mode === 'right') targetLeft = maxRight - item.bbox.width;
+            if (mode === 'top') targetTop = minTop;
+            if (mode === 'center-y') targetTop = centerY - (item.bbox.height / 2);
+            if (mode === 'bottom') targetTop = maxBottom - item.bbox.height;
+
+            const deltaX = targetLeft - item.bbox.left;
+            const deltaY = targetTop - item.bbox.top;
+            this.applyDeltaToObject(item.obj, deltaX, deltaY);
+        }
+
+        this.finalizeArrangeOperation();
+    }
+
+    distributeSelected(mode) {
+        const selected = this.getArrangeSelectionObjects();
+        if (selected.length < 3) {
+            return;
+        }
+
+        const axis = mode === 'horizontal-gaps' ? 'x' : 'y';
+        const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
+        const sorted = boxes.sort((a, b) => axis === 'x' ? a.bbox.left - b.bbox.left : a.bbox.top - b.bbox.top);
+
+        if (axis === 'x') {
+            const totalWidth = sorted.reduce((sum, item) => sum + item.bbox.width, 0);
+            const span = (sorted[sorted.length - 1].bbox.left + sorted[sorted.length - 1].bbox.width) - sorted[0].bbox.left;
+            const gap = (span - totalWidth) / (sorted.length - 1);
+            let cursor = sorted[0].bbox.left + sorted[0].bbox.width + gap;
+
+            for (let i = 1; i < sorted.length - 1; i += 1) {
+                const targetLeft = cursor;
+                const deltaX = targetLeft - sorted[i].bbox.left;
+                this.applyDeltaToObject(sorted[i].obj, deltaX, 0);
+                cursor += sorted[i].bbox.width + gap;
+            }
+        } else {
+            const totalHeight = sorted.reduce((sum, item) => sum + item.bbox.height, 0);
+            const span = (sorted[sorted.length - 1].bbox.top + sorted[sorted.length - 1].bbox.height) - sorted[0].bbox.top;
+            const gap = (span - totalHeight) / (sorted.length - 1);
+            let cursor = sorted[0].bbox.top + sorted[0].bbox.height + gap;
+
+            for (let i = 1; i < sorted.length - 1; i += 1) {
+                const targetTop = cursor;
+                const deltaY = targetTop - sorted[i].bbox.top;
+                this.applyDeltaToObject(sorted[i].obj, 0, deltaY);
+                cursor += sorted[i].bbox.height + gap;
+            }
+        }
+
+        this.finalizeArrangeOperation();
+    }
+
+    snapSelectedToSide(side) {
+        const selected = this.getArrangeSelectionObjects();
+        if (selected.length < 1) {
+            return;
+        }
+
+        const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
+        for (const obj of selected) {
+            const bbox = obj.getBoundingRect(true);
+            let deltaX = 0;
+            let deltaY = 0;
+
+            if (side === 'left') {
+                deltaX = targetArea.left - bbox.left;
+            } else if (side === 'right') {
+                deltaX = (targetArea.left + targetArea.width - bbox.width) - bbox.left;
+            } else if (side === 'top') {
+                deltaY = targetArea.top - bbox.top;
+            } else if (side === 'bottom') {
+                deltaY = (targetArea.top + targetArea.height - bbox.height) - bbox.top;
+            }
+
+            this.applyDeltaToObject(obj, deltaX, deltaY);
+        }
+
+        this.finalizeArrangeOperation();
+    }
+
+    updateButtons() {
+        const selected = this.getArrangeSelectionObjects();
+        const selectedCount = selected.length;
+        const active = this.canvas.getActiveObject();
+        const has = !!active;
+
+        UIDom.buttons.delete.disabled = !has;
         UIDom.buttons.rotate.disabled = !has || !!active?.primitiveType;
+
+        const alignDisabled = selectedCount < 2;
+        UIDom.buttons.alignLeft.disabled = alignDisabled;
+        UIDom.buttons.alignCenterX.disabled = alignDisabled;
+        UIDom.buttons.alignRight.disabled = alignDisabled;
+        UIDom.buttons.alignTop.disabled = alignDisabled;
+        UIDom.buttons.alignCenterY.disabled = alignDisabled;
+        UIDom.buttons.alignBottom.disabled = alignDisabled;
+
+        const distributeDisabled = selectedCount < 3;
+        UIDom.buttons.distributeHorizontalGaps.disabled = distributeDisabled;
+        UIDom.buttons.distributeVerticalGaps.disabled = distributeDisabled;
+
+        const snapDisabled = selectedCount < 1;
+        UIDom.buttons.snapLeft.disabled = snapDisabled;
+        UIDom.buttons.snapRight.disabled = snapDisabled;
+        UIDom.buttons.snapTop.disabled = snapDisabled;
+        UIDom.buttons.snapBottom.disabled = snapDisabled;
     }
 
     getSingleSelectedPrimitive() {

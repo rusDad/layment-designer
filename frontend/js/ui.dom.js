@@ -22,6 +22,18 @@ window.UIDom = {
     loadWorkspace: document.getElementById('loadWorkspaceButton'),
     export: document.getElementById('exportButton'),
     check: document.getElementById('checkLayoutButton'),
+    alignLeft: document.getElementById('alignLeftButton'),
+    alignCenterX: document.getElementById('alignCenterXButton'),
+    alignRight: document.getElementById('alignRightButton'),
+    alignTop: document.getElementById('alignTopButton'),
+    alignCenterY: document.getElementById('alignCenterYButton'),
+    alignBottom: document.getElementById('alignBottomButton'),
+    distributeHorizontalGaps: document.getElementById('distributeHorizontalGapsButton'),
+    distributeVerticalGaps: document.getElementById('distributeVerticalGapsButton'),
+    snapLeft: document.getElementById('snapLeftButton'),
+    snapRight: document.getElementById('snapRightButton'),
+    snapTop: document.getElementById('snapTopButton'),
+    snapBottom: document.getElementById('snapBottomButton'),
   },
 
   panels: {

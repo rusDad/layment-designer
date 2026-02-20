@@ -432,3 +432,35 @@ body {
     color: #2471a3;
 }
 
+
+.arrange-panel {
+    background: #fff;
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+.arrange-panel summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.arrange-panel[open] summary {
+    margin-bottom: 0.6rem;
+}
+
+.tool-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.35rem;
+}
+
+.tool-grid .tool-button {
+    padding: 0.45rem;
+    font-size: 0.85rem;
+}
+
+.tool-grid-spacer {
+    min-height: 1px;
+}

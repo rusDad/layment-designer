@@ -83,6 +83,25 @@
                     <button id="addCircleButton" class="tool-button">➕ круглая выемка</button>
                 </div>
 
+                <details class="arrange-panel" open>
+                    <summary>Расположение</summary>
+                    <div class="tool-grid">
+                        <button id="alignLeftButton" class="tool-button" disabled>L</button>
+                        <button id="alignCenterXButton" class="tool-button" disabled>CX</button>
+                        <button id="alignRightButton" class="tool-button" disabled>R</button>
+                        <button id="alignTopButton" class="tool-button" disabled>T</button>
+                        <button id="alignCenterYButton" class="tool-button" disabled>CY</button>
+                        <button id="alignBottomButton" class="tool-button" disabled>B</button>
+                        <button id="distributeHorizontalGapsButton" class="tool-button" disabled>H-gap</button>
+                        <button id="distributeVerticalGapsButton" class="tool-button" disabled>V-gap</button>
+                        <span class="tool-grid-spacer" aria-hidden="true"></span>
+                        <button id="snapLeftButton" class="tool-button" disabled>Snap L</button>
+                        <button id="snapRightButton" class="tool-button" disabled>Snap R</button>
+                        <button id="snapTopButton" class="tool-button" disabled>Snap T</button>
+                        <button id="snapBottomButton" class="tool-button" disabled>Snap B</button>
+                    </div>
+                </details>
+
                 <section id="orderResult" class="order-result" hidden aria-live="polite">
                     <div id="orderResultMessage" class="order-result-message"></div>
                     <div id="orderResultDetails" class="order-result-details" hidden>
