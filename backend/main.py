@@ -45,10 +45,19 @@ class ContourPlacement(BaseModel):
     scaleOverride: Optional[float] = None
 
 
+class LabelPlacement(BaseModel):
+    contourId: str
+    text: str
+    x: float
+    y: float
+    fontSizeMm: Optional[float] = None
+
+
 class ExportRequest(BaseModel):
     orderMeta: OrderMeta
     contours: List[ContourPlacement]
     primitives: Optional[List[Dict[str, Any]]] = None
+    labels: Optional[List[LabelPlacement]] = None
 
 
 def _orders_dir() -> Path:

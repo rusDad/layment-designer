@@ -261,4 +261,30 @@ class LabelManager {
             })
             .filter(Boolean);
     }
+
+    getExportLabelsData() {
+        const layment = this.canvas.layment;
+        if (!layment) {
+            return [];
+        }
+
+        const workspaceScale = this.app.workspaceScale || 1;
+
+        return this.labels
+            .map(label => {
+                if (!label?.aCoords?.tl) {
+                    return null;
+                }
+
+                const tl = label.aCoords.tl;
+                return {
+                    contourId: label.labelForContourId,
+                    text: label.text,
+                    x: Math.round((tl.x - layment.left) / workspaceScale),
+                    y: Math.round((tl.y - layment.top) / workspaceScale),
+                    fontSizeMm: Number(label.fontSize) || Config.LABELS.FONT_SIZE_MM
+                };
+            })
+            .filter(Boolean);
+    }
 }

@@ -1661,7 +1661,8 @@ class ContourApp {
             layoutSvg,
 
             contours: this.contourManager.getContoursData(),
-            primitives: this.contourManager.getPrimitivesData()
+            primitives: this.contourManager.getPrimitivesData(),
+            labels: this.labelManager.getExportLabelsData()
         };
 
         console.log('Заказ:', data);
