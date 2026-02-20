@@ -50,14 +50,6 @@ window.Config = {
     },
     DEFAULT_MATERIAL_COLOR: 'green',
 
-    // ==================== ЦЕНЫ И РАСЧЕТЫ ====================
-    PRICES : {
-        MATERIAL_TECHNICAL_WASTE_K: 1.25,
-        MATERIAL_PRICE_PER_M2: 2500,
-        CUTTING_PRICE_PER_METER: 14,
-        RRC_PRICE_MULTIPLIER: 2.25
-    },
-
     CONVERSION : {
         MM_TO_METERS: 0.001,
         MM2_TO_M2: 1e-6,
