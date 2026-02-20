@@ -16,6 +16,7 @@ import os
 import json
 from services.gcode_engine import GCodeEngineError, build_final_gcode
 from services.order_dxf import generate_order_layout_dxf
+from services.pricing import calculate_price_preview
 
 
 app = FastAPI()
@@ -205,6 +206,7 @@ def get_contours_manifest():
 async def export_layment(payload: Dict[str, Any]):
     try:
         order_data = ExportRequest.model_validate(payload)
+        price_preview = calculate_price_preview(order_data)
         final_gcode = build_final_gcode(order_data)
 
         manifest_version = None
@@ -233,6 +235,9 @@ async def export_layment(payload: Dict[str, Any]):
 
             stored_payload = dict(payload)
             stored_payload["orderNumber"] = order_number
+            stored_payload_order_meta = stored_payload.get("orderMeta")
+            if isinstance(stored_payload_order_meta, dict):
+                stored_payload_order_meta["pricePreview"] = price_preview
 
             with (staging_dir / "order.json").open('w', encoding='utf-8') as order_file:
                 json.dump(stored_payload, order_file, ensure_ascii=False, indent=2)
@@ -244,8 +249,7 @@ async def export_layment(payload: Dict[str, Any]):
                 },
                 "orderNumber": order_number,
             }
-            if order_data.orderMeta.pricePreview is not None:
-                meta["pricePreview"] = order_data.orderMeta.pricePreview
+            meta["pricePreview"] = price_preview
 
             with (staging_dir / "meta.json").open('w', encoding='utf-8') as meta_file:
                 json.dump(meta, meta_file, ensure_ascii=False, indent=2)
@@ -308,8 +312,7 @@ async def export_layment(payload: Dict[str, Any]):
             "createdAt": created_at,
             "status": status,
         }
-        if order_data.orderMeta.pricePreview is not None:
-            response["pricePreview"] = order_data.orderMeta.pricePreview
+        response["pricePreview"] = price_preview
         return response
     except HTTPException:
         raise
