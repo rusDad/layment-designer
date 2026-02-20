@@ -1,6 +1,7 @@
 const article = document.getElementById('article');
 const name = document.getElementById('name');
 const brand = document.getElementById('brand');
+const defaultLabel = document.getElementById('defaultLabel');
 const categorySelect = document.getElementById('categorySelect');
 const newCategorySlug = document.getElementById('newCategorySlug');
 const newCategoryLabel = document.getElementById('newCategoryLabel');
@@ -140,6 +141,7 @@ const resetItemForm = () => {
   article.value = '';
   name.value = '';
   brand.value = '';
+  defaultLabel.value = '';
   setCategoryValue('');
   scaleOverride.value = 1.0;
   cuttingLengthMeters.value = 0;
@@ -157,6 +159,7 @@ const fillItemForm = (item) => {
   article.value = item.article || '';
   name.value = item.name || '';
   brand.value = item.brand || '';
+  defaultLabel.value = item.defaultLabel || '';
   setCategoryValue(item.category || '');
   scaleOverride.value = item.scaleOverride ?? 1.0;
   cuttingLengthMeters.value = item.cuttingLengthMeters ?? 0;
@@ -263,6 +266,7 @@ createBtn.addEventListener('click', async () => {
     article: article.value.trim(),
     name: name.value.trim(),
     brand: brand.value.trim(),
+    defaultLabel: defaultLabel.value.trim(),
     category: categorySelect.value.trim(),
     scaleOverride: parseFloat(scaleOverride.value || 1.0),
     cuttingLengthMeters: parseFloat(cuttingLengthMeters.value || 0),
