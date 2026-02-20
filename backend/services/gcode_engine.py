@@ -211,11 +211,12 @@ def build_final_gcode(order_data) -> List[str]:
     width = order_data.orderMeta.width
     height = order_data.orderMeta.height
 
-    z_depth = -30.0
+    z_depth = -18.0
     tool_dia = 6.0
-    feed_rate = 1000
-    rectangle_gcode = generate_rectangle_gcode(0, 0, height, width, z_depth, tool_dia, feed_rate)
-    final_gcode.extend(rectangle_gcode)
+    feed_rate = 2000
+
+    final_gcode.extend(generate_rectangle_gcode(-3, -3, height + 3, width + 3, z_depth, tool_dia, feed_rate))
+    final_gcode.extend(generate_rectangle_gcode(0, 0, height, width, z_depth, tool_dia, feed_rate))
     final_gcode.append("G0 Z20")
 
     for contour in order_data.contours:
@@ -288,6 +289,13 @@ def build_final_gcode(order_data) -> List[str]:
     if primitives:
         final_gcode.append("' PRIMITIVES END")
 
+    z_depth = -35.0
+    deep_rect = generate_rectangle_gcode(0, 0, height, width, z_depth, tool_dia, feed_rate)
+
+    final_gcode.extend(deep_rect)
+    final_gcode.extend(deep_rect)
+    final_gcode.append("G0 Z20")
+    
     final_gcode.extend(_load_gcode_template(end_gcode_path, DEFAULT_END_GCODE))
 
     return final_gcode
