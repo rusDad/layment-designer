@@ -13,11 +13,12 @@ from admin_api.file_validation import (
 )
 from admin_api.dxf_to_svg import convert as convert_dxf_to_svg
 from gcode_rotator import rotate_gcode_for_contour
-from domain_store import CONTOURS_DIR
+from domain_store import CONTOURS_DIR, contour_geometry_path
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 import logging
+import json
 import os
 import shutil
 import uuid
@@ -348,15 +349,22 @@ def upload_dxf_convert_to_svg(
     staging_root = CONTOURS_DIR / ".staging" / f"{item_id}_{staging_token}"
     staging_dxf = staging_root / "input" / f"{item_id}.dxf"
     staging_svg = staging_root / "svg" / f"{item_id}.svg"
+    geometry_final = contour_geometry_path(item_id)
+    staging_geometry = staging_root / "geometry" / geometry_final.name
 
     staging_root.mkdir(parents=True, exist_ok=True)
     staging_svg.parent.mkdir(parents=True, exist_ok=True)
+    staging_geometry.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("Uploading DXF to staging %s", staging_root)
     save_upload_file(dxf, staging_dxf)
 
     try:
-        convert_dxf_to_svg(staging_dxf, staging_svg)
+        geometry_payload = convert_dxf_to_svg(staging_dxf, staging_svg)
+        staging_geometry.write_text(
+            json.dumps(geometry_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
     except Exception as exc:
         shutil.rmtree(staging_root, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"DXF conversion failed: {exc}")
@@ -369,6 +377,7 @@ def upload_dxf_convert_to_svg(
         raise HTTPException(status_code=400, detail="DXF conversion failed: invalid SVG output")
 
     svg_final = DIRS["svg"] / f"{item_id}.svg"
+    geometry_final.parent.mkdir(parents=True, exist_ok=True)
 
     if not force and svg_final.exists():
         shutil.rmtree(staging_root, ignore_errors=True)
@@ -380,7 +389,9 @@ def upload_dxf_convert_to_svg(
     backup_dir = staging_root / "backup"
     backup_dir.mkdir(parents=True, exist_ok=True)
     svg_backup = None
-    created_new = False
+    geometry_backup = None
+    created_new_svg = False
+    created_new_geometry = False
 
     try:
         if svg_final.exists():
@@ -388,10 +399,18 @@ def upload_dxf_convert_to_svg(
             os.replace(svg_final, svg_backup)
             logger.info("Backed up %s to %s", svg_final, svg_backup)
         else:
-            created_new = True
+            created_new_svg = True
+
+        if geometry_final.exists():
+            geometry_backup = backup_dir / f"{geometry_final.name}.bak_{staging_token}"
+            os.replace(geometry_final, geometry_backup)
+            logger.info("Backed up %s to %s", geometry_final, geometry_backup)
+        else:
+            created_new_geometry = True
 
         os.replace(staging_svg, svg_final)
-        logger.info("Replaced %s from staged DXF conversion", svg_final)
+        os.replace(staging_geometry, geometry_final)
+        logger.info("Replaced %s and %s from staged DXF conversion", svg_final, geometry_final)
     except Exception as exc:
         logger.warning("DXF upload failed, rolling back files for %s", item_id, exc_info=True)
         if svg_backup and svg_backup.exists():
@@ -400,10 +419,22 @@ def upload_dxf_convert_to_svg(
                 os.replace(svg_final, rollback_path)
             os.replace(svg_backup, svg_final)
             logger.info("Restored %s from backup", svg_final)
-        elif created_new and svg_final.exists():
+        elif created_new_svg and svg_final.exists():
             rollback_path = backup_dir / f"{svg_final.name}.rollback_{staging_token}"
             os.replace(svg_final, rollback_path)
             logger.info("Moved new file %s to rollback stash", svg_final)
+
+        if geometry_backup and geometry_backup.exists():
+            if geometry_final.exists():
+                rollback_path = backup_dir / f"{geometry_final.name}.rollback_{staging_token}"
+                os.replace(geometry_final, rollback_path)
+            os.replace(geometry_backup, geometry_final)
+            logger.info("Restored %s from backup", geometry_final)
+        elif created_new_geometry and geometry_final.exists():
+            rollback_path = backup_dir / f"{geometry_final.name}.rollback_{staging_token}"
+            os.replace(geometry_final, rollback_path)
+            logger.info("Moved new file %s to rollback stash", geometry_final)
+
         shutil.rmtree(staging_root, ignore_errors=True)
         raise HTTPException(status_code=400, detail=str(exc))
     else:
@@ -421,7 +452,11 @@ def upload_dxf_convert_to_svg(
     manifest["version"] = manifest.get("version", 1) + 1
     save_manifest_atomic(manifest)
 
-    return {"status": "ok", "svg": f"svg/{item_id}.svg"}
+    return {
+        "status": "ok",
+        "svg": f"svg/{item_id}.svg",
+        "geometry": f"geometry/{item_id}.json"
+    }
 
 @router.get("/items")
 def list_items():

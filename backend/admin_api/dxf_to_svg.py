@@ -167,6 +167,33 @@ def compute_bbox(verts):
     return min(xs), min(ys), max(xs), max(ys)
 
 
+def normalize_vertices_to_bbox(verts, bbox):
+    min_x, min_y, _, _ = bbox
+    normalized = []
+    for v in verts:
+        normalized.append({
+            "x": v["x"] - min_x,
+            "y": v["y"] - min_y,
+            "bulge": v["bulge"],
+        })
+    return normalized
+
+
+def build_geometry_payload(verts, bbox):
+    min_x, min_y, max_x, max_y = bbox
+    normalized_vertices = normalize_vertices_to_bbox(verts, bbox)
+    return {
+        "version": 1,
+        "units": "mm",
+        "coordinateSystem": "origin-top-left",
+        "bbox": {
+            "width": max_x - min_x,
+            "height": max_y - min_y,
+        },
+        "vertices": normalized_vertices,
+    }
+
+
 def write_svg(path_d, bbox, out_path: Path):
     min_x, min_y, max_x, max_y = bbox
     w = max_x - min_x
@@ -191,6 +218,7 @@ def convert(dxf_path: Path, svg_path: Path):
     path_d = polyline_to_svg_path(verts)
     bbox = compute_bbox(verts)
     write_svg(path_d, bbox, svg_path)
+    return build_geometry_payload(verts, bbox)
 
 
 def _selftest_arc_direction():

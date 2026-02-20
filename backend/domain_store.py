@@ -2,6 +2,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 CONTOURS_DIR = BASE_DIR / "domain" / "contours"
+CONTOURS_GEOMETRY_DIR = CONTOURS_DIR / "geometry"
 GCODE_DIR = BASE_DIR / "domain" / "gcode"
 MANIFEST_PATH = CONTOURS_DIR / "manifest.json"
 START_GCODE_PATH = GCODE_DIR / "start_gcode.nc"
@@ -14,6 +15,10 @@ def contour_svg_path(contour_id: str) -> Path:
 
 def contour_nc_path(contour_id: str) -> Path:
     return CONTOURS_DIR / "nc" / f"{contour_id}.nc"
+
+
+def contour_geometry_path(contour_id: str) -> Path:
+    return CONTOURS_GEOMETRY_DIR / f"{contour_id}.json"
 
 
 def contour_rotated_nc_path(contour_id: str, rotation: str) -> Path:
