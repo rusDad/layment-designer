@@ -1630,27 +1630,6 @@ class ContourApp {
         const realWidth = Math.round(this.layment.width);
         const realHeight = Math.round(this.layment.height);
 
-        //  Расчёт цены (оставляем пока здесь)
-        const OUTER_CONTOUR_PASSES = 3;
-        const areaM2 = (realWidth * realHeight) / 1_000_000;
-        const perimeterM = ((realWidth + realHeight) * 2) / 1000;
-        const cuttingM = OUTER_CONTOUR_PASSES * perimeterM + this.getTotalCuttingLength();
-
-        const priceMaterial = Math.round(
-            areaM2 *
-            Config.PRICES.MATERIAL_TECHNICAL_WASTE_K *
-            Config.PRICES.MATERIAL_PRICE_PER_M2
-        );
-
-        const priceCutting = Math.round(
-            cuttingM * Config.PRICES.CUTTING_PRICE_PER_METER
-        );
-
-        const total = Math.round(
-            (priceMaterial + priceCutting) *
-            Config.PRICES.RRC_PRICE_MULTIPLIER
-        );
-
         const layoutPng = this.canvas.toDataURL({ format: 'png' });
         const layoutSvg = this.canvas.toSVG();
         const laymentType = (this.contourManager.contours.length > 0 || this.primitiveManager.primitives.length > 0)
@@ -1667,11 +1646,6 @@ class ContourApp {
             baseMaterialColor: this.baseMaterialColor,
             laymentType,
             canvasPng: layoutPng,
-            pricePreview: {
-                material: priceMaterial,
-                cutting: priceCutting,
-                total
-            },
             workspaceSnapshot: this.buildWorkspaceSnapshot()
             },
             layoutPng,
@@ -1705,7 +1679,7 @@ class ContourApp {
                 paymentUrl: statusUrl,
                 width: realWidth,
                 height: realHeight,
-                total: result?.pricePreview?.total ?? total
+                total: result?.pricePreview?.total ?? '—'
             });
         } catch (err) {
             console.error(err);
