@@ -22,7 +22,8 @@ window.Config = {
 
     LABELS: {
         FONT_SIZE_MM: 4,
-        DEFAULT_OFFSET: { x: 6, y: 0 }
+        DEFAULT_OFFSET: { x: 6, y: 0 },
+        BOUNDS_PAD_MM: 2
     },
 
     // ==================== UI ====================

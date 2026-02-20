@@ -9,12 +9,98 @@ class LabelManager {
         this.labels = [];
     }
 
+    getBoundsPadMm() {
+        if (Number.isFinite(Config.LABELS?.BOUNDS_PAD_MM)) {
+            return Config.LABELS.BOUNDS_PAD_MM;
+        }
+        return Config.GEOMETRY.CLEARANCE_MM;
+    }
+
+    getContourById(contourId) {
+        if (!contourId) {
+            return null;
+        }
+        return this.contourManager.contours.find(contour => contour.contourId === contourId) || null;
+    }
+
+    getAllowedRectForContour(contour) {
+        if (!contour) {
+            return null;
+        }
+        const rect = contour.getBoundingRect(true, true);
+        const pad = this.getBoundsPadMm();
+        return {
+            left: rect.left - pad,
+            top: rect.top - pad,
+            right: rect.left + rect.width + pad,
+            bottom: rect.top + rect.height + pad
+        };
+    }
+
+    clampLabelToContourBounds(labelObj) {
+        if (!labelObj?.isLabel) {
+            return;
+        }
+
+        const contour = this.getContourById(labelObj.labelForContourId);
+        if (!contour) {
+            return;
+        }
+
+        const allowedRect = this.getAllowedRectForContour(contour);
+        if (!allowedRect) {
+            return;
+        }
+
+        labelObj.setCoords();
+        const labelRect = labelObj.getBoundingRect(true, true);
+
+        let nextLeft = labelObj.left;
+        let nextTop = labelObj.top;
+
+        if (labelRect.left < allowedRect.left) {
+            nextLeft += allowedRect.left - labelRect.left;
+        }
+        if (labelRect.top < allowedRect.top) {
+            nextTop += allowedRect.top - labelRect.top;
+        }
+
+        const labelRight = labelRect.left + labelRect.width;
+        const labelBottom = labelRect.top + labelRect.height;
+
+        if (labelRight > allowedRect.right) {
+            nextLeft -= labelRight - allowedRect.right;
+        }
+        if (labelBottom > allowedRect.bottom) {
+            nextTop -= labelBottom - allowedRect.bottom;
+        }
+
+        labelObj.set({
+            left: nextLeft,
+            top: nextTop,
+            angle: 0
+        });
+        labelObj.setCoords();
+        this.canvas.requestRenderAll();
+    }
+
+    attachLabelEvents(label) {
+        label.on('moving', () => {
+            this.clampLabelToContourBounds(label);
+        });
+
+        label.on('modified', () => {
+            this.clampLabelToContourBounds(label);
+            this.app.scheduleWorkspaceSave();
+        });
+    }
+
     createLabel({ contourId, text, left, top, fontSize }) {
-        if (!contourId || !text) {
+        if (!contourId) {
             return null;
         }
 
-        const label = new fabric.IText(text, {
+        const label = new fabric.IText(text ?? '', {
             left,
             top,
             originX: 'left',
@@ -35,25 +121,27 @@ class LabelManager {
         label.labelForContourId = contourId;
         label.excludeFromExport = true;
 
+        this.attachLabelEvents(label);
         this.labels.push(label);
         this.canvas.add(label);
         label.setCoords();
+        this.clampLabelToContourBounds(label);
 
         return label;
     }
 
-    ensureDefaultLabelForContour(contourObj, defaultLabelText) {
-        if (!contourObj || !defaultLabelText) {
+    createOrUpdateLabelForContour(contourObj, text = '') {
+        if (!contourObj?.contourId) {
             return null;
         }
 
         const contourId = contourObj.contourId;
-        if (!contourId) {
-            return null;
-        }
-
         const existing = this.getLabelByContourId(contourId);
         if (existing) {
+            existing.set({ text, angle: 0 });
+            existing.dirty = true;
+            existing.setCoords();
+            this.clampLabelToContourBounds(existing);
             return existing;
         }
 
@@ -66,11 +154,18 @@ class LabelManager {
 
         return this.createLabel({
             contourId,
-            text: defaultLabelText,
+            text,
             left,
             top,
             fontSize: Config.LABELS.FONT_SIZE_MM
         });
+    }
+
+    ensureDefaultLabelForContour(contourObj, defaultLabelText) {
+        if (!contourObj || !defaultLabelText) {
+            return null;
+        }
+        return this.createOrUpdateLabelForContour(contourObj, defaultLabelText);
     }
 
     getLabelByContourId(contourId) {
@@ -122,6 +217,7 @@ class LabelManager {
                 angle: 0
             });
             label.setCoords();
+            this.clampLabelToContourBounds(label);
         }
 
         contour._lastLeft = contour.left;
@@ -139,6 +235,7 @@ class LabelManager {
         if (label) {
             label.set({ angle: 0 });
             label.setCoords();
+            this.clampLabelToContourBounds(label);
         }
     }
 
