@@ -1,6 +1,6 @@
 // app.js
 
-const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v1';
+const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v2';
 
 class ContourApp {
     constructor() {
@@ -639,11 +639,21 @@ class ContourApp {
     }
 
     applyDeltaToObject(obj, deltaX, deltaY) {
+        const isContour = !obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea;
+        if (isContour) {
+            obj._lastLeft = obj.left;
+            obj._lastTop = obj.top;
+        }
+
         obj.set({
             left: obj.left + deltaX,
             top: obj.top + deltaY
         });
         obj.setCoords();
+
+        if (isContour) {
+            this.labelManager.onContourMoving(obj);
+        }
     }
 
     finalizeArrangeOperation() {
@@ -911,7 +921,7 @@ class ContourApp {
             return;
         }
 
-        const label = this.labelManager.getLabelByContourId(contour.contourId);
+        const label = this.labelManager.getLabelByPlacementId(contour.placementId);
         const meta = this.contourManager.metadataMap.get(contour);
         if (UIDom.labels.textInput) {
             UIDom.labels.textInput.value = label ? (label.text || '') : (meta?.defaultLabel || '');
@@ -923,7 +933,7 @@ class ContourApp {
     applyLabelTextFromInput(value) {
         const selectedLabel = this.getSelectedLabelObject();
         const contour = this.getSelectedContourForLabel();
-        const targetLabel = selectedLabel || (contour ? this.labelManager.getLabelByContourId(contour.contourId) : null);
+        const targetLabel = selectedLabel || (contour ? this.labelManager.getLabelByPlacementId(contour.placementId) : null);
 
         if (!targetLabel) {
             return;
@@ -971,7 +981,7 @@ class ContourApp {
             return;
         }
 
-        const label = this.labelManager.getLabelByContourId(contour.contourId);
+        const label = this.labelManager.getLabelByPlacementId(contour.placementId);
         if (!label) {
             return;
         }
@@ -1304,7 +1314,7 @@ class ContourApp {
                 } else if (o.primitiveType) {
                     this.primitiveManager.removePrimitive(o);
                 } else {
-                    this.labelManager.removeLabelsForContourId(o.contourId);
+                    this.labelManager.removeLabelsForPlacementId(o.placementId);
                     this.contourManager.removeContour(o);
                 }
             });
@@ -1314,7 +1324,7 @@ class ContourApp {
             } else if (obj.primitiveType) {
                 this.primitiveManager.removePrimitive(obj);
             } else {
-                this.labelManager.removeLabelsForContourId(obj.contourId);
+                this.labelManager.removeLabelsForPlacementId(obj.placementId);
                 this.contourManager.removeContour(obj);
             }
         }
@@ -1355,7 +1365,7 @@ class ContourApp {
     buildWorkspaceSnapshot() {
         const layment = this.canvas.layment;
         return {
-            schemaVersion: 1,
+            schemaVersion: 2,
             savedAt: new Date().toISOString(),
             layment: {
                 width: Math.round(layment.width),
@@ -1364,7 +1374,7 @@ class ContourApp {
             },
             workspaceScale: 1,
             baseMaterialColor: this.baseMaterialColor,
-            contours: this.contourManager.getContoursData(),
+            contours: this.contourManager.getWorkspaceContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
             labels: this.labelManager.getWorkspaceLabelsData()
         };
@@ -1395,7 +1405,7 @@ class ContourApp {
             return;
         }
 
-        if (data.schemaVersion !== 1) {
+        if (data.schemaVersion !== 2) {
             console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
             return;
         }
@@ -1446,6 +1456,7 @@ class ContourApp {
                     metadata
                 );
                 const added = this.contourManager.contours[this.contourManager.contours.length - 1];
+                added.placementId = contour.placementId;
                 added.angle = contour.angle || 0;
                 added.setCoords();
                 const targetX = this.layment.left + contour.x;
@@ -1458,14 +1469,20 @@ class ContourApp {
                 added.setCoords();
             }
 
+            const placementIds = this.contourManager.contours
+                .map(c => c.placementId)
+                .filter(id => Number.isFinite(id));
+            const maxPlacementId = placementIds.length ? Math.max(...placementIds) : 0;
+            this.contourManager.nextPlacementSeq = maxPlacementId + 1;
+
             if (Array.isArray(data.labels)) {
                 for (const labelData of data.labels) {
-                    const contour = this.contourManager.contours.find(c => c.contourId === labelData.contourId);
+                    const contour = this.contourManager.contours.find(c => c.placementId === labelData.placementId);
                     if (!contour) {
                         continue;
                     }
                     this.labelManager.createLabel({
-                        contourId: labelData.contourId,
+                        placementId: labelData.placementId,
                         text: labelData.text,
                         left: this.layment.left + labelData.x,
                         top: this.layment.top + labelData.y,

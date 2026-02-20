@@ -16,11 +16,11 @@ class LabelManager {
         return Config.GEOMETRY.CLEARANCE_MM;
     }
 
-    getContourById(contourId) {
-        if (!contourId) {
+    getContourByPlacementId(placementId) {
+        if (!placementId) {
             return null;
         }
-        return this.contourManager.contours.find(contour => contour.contourId === contourId) || null;
+        return this.contourManager.contours.find(contour => contour.placementId === placementId) || null;
     }
 
     getAllowedRectForContour(contour) {
@@ -28,7 +28,8 @@ class LabelManager {
             return null;
         }
         const rect = contour.getBoundingRect(true, true);
-        const pad = this.getBoundsPadMm();
+        const workspaceScale = this.app.workspaceScale || 1;
+        const pad = this.getBoundsPadMm() * workspaceScale;
         return {
             left: rect.left - pad,
             top: rect.top - pad,
@@ -42,7 +43,7 @@ class LabelManager {
             return;
         }
 
-        const contour = this.getContourById(labelObj.labelForContourId);
+        const contour = this.getContourByPlacementId(labelObj.labelForPlacementId);
         if (!contour) {
             return;
         }
@@ -95,8 +96,8 @@ class LabelManager {
         });
     }
 
-    createLabel({ contourId, text, left, top, fontSize }) {
-        if (!contourId) {
+    createLabel({ placementId, text, left, top, fontSize }) {
+        if (!placementId) {
             return null;
         }
 
@@ -106,6 +107,8 @@ class LabelManager {
             originX: 'left',
             originY: 'top',
             fontSize: fontSize ?? Config.LABELS.FONT_SIZE_MM,
+            scaleX: this.app.workspaceScale || 1,
+            scaleY: this.app.workspaceScale || 1,
             fill: '#000000',
             angle: 0,
             selectable: true,
@@ -118,7 +121,7 @@ class LabelManager {
         });
 
         label.isLabel = true;
-        label.labelForContourId = contourId;
+        label.labelForPlacementId = placementId;
         label.excludeFromExport = true;
 
         this.attachLabelEvents(label);
@@ -131,12 +134,12 @@ class LabelManager {
     }
 
     createOrUpdateLabelForContour(contourObj, text = '') {
-        if (!contourObj?.contourId) {
+        if (!contourObj?.placementId) {
             return null;
         }
 
-        const contourId = contourObj.contourId;
-        const existing = this.getLabelByContourId(contourId);
+        const placementId = contourObj.placementId;
+        const existing = this.getLabelByPlacementId(placementId);
         if (existing) {
             existing.set({ text, angle: 0 });
             existing.dirty = true;
@@ -153,7 +156,7 @@ class LabelManager {
         contourObj._lastTop = contourObj.top;
 
         return this.createLabel({
-            contourId,
+            placementId,
             text,
             left,
             top,
@@ -168,8 +171,8 @@ class LabelManager {
         return this.createOrUpdateLabelForContour(contourObj, defaultLabelText);
     }
 
-    getLabelByContourId(contourId) {
-        return this.labels.find(label => label.labelForContourId === contourId) || null;
+    getLabelByPlacementId(placementId) {
+        return this.labels.find(label => label.labelForPlacementId === placementId) || null;
     }
 
     removeLabel(labelObj) {
@@ -180,11 +183,11 @@ class LabelManager {
         this.canvas.remove(labelObj);
     }
 
-    removeLabelsForContourId(contourId) {
-        if (!contourId) {
+    removeLabelsForPlacementId(placementId) {
+        if (!placementId) {
             return;
         }
-        const toRemove = this.labels.filter(label => label.labelForContourId === contourId);
+        const toRemove = this.labels.filter(label => label.labelForPlacementId === placementId);
         toRemove.forEach(label => this.removeLabel(label));
     }
 
@@ -194,11 +197,11 @@ class LabelManager {
     }
 
     onContourMoving(contour) {
-        if (!contour || !contour.contourId) {
+        if (!contour || !contour.placementId) {
             return;
         }
 
-        const label = this.getLabelByContourId(contour.contourId);
+        const label = this.getLabelByPlacementId(contour.placementId);
         if (!label) {
             contour._lastLeft = contour.left;
             contour._lastTop = contour.top;
@@ -225,13 +228,13 @@ class LabelManager {
     }
 
     onContourModified(contour) {
-        if (!contour || !contour.contourId) {
+        if (!contour || !contour.placementId) {
             return;
         }
         contour._lastLeft = contour.left;
         contour._lastTop = contour.top;
 
-        const label = this.getLabelByContourId(contour.contourId);
+        const label = this.getLabelByPlacementId(contour.placementId);
         if (label) {
             label.set({ angle: 0 });
             label.setCoords();
@@ -252,7 +255,7 @@ class LabelManager {
                 }
                 const tl = label.aCoords.tl;
                 return {
-                    contourId: label.labelForContourId,
+                    placementId: label.labelForPlacementId,
                     text: label.text,
                     x: Math.round((tl.x - layment.left) / layment.scaleX),
                     y: Math.round((tl.y - layment.top) / layment.scaleY),
@@ -278,7 +281,7 @@ class LabelManager {
 
                 const tl = label.aCoords.tl;
                 return {
-                    contourId: label.labelForContourId,
+                    contourId: String(label.labelForPlacementId),
                     text: label.text,
                     x: Math.round((tl.x - layment.left) / workspaceScale),
                     y: Math.round((tl.y - layment.top) / workspaceScale),
