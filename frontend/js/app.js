@@ -91,6 +91,8 @@ class ContourApp {
             height: Math.max(1, this.layment.height * this.layment.scaleY - padding * 2),
             left: this.layment.left + padding,
             top: this.layment.top + padding,
+            scaleX: 1,
+            scaleY: 1,
             fill: 'transparent',
             stroke: Config.LAYMENT_STYLE.SAFE_AREA_STROKE,
             strokeWidth: Config.LAYMENT_STYLE.SAFE_AREA_STROKE_WIDTH,
@@ -117,7 +119,9 @@ class ContourApp {
             width: Math.max(1, this.layment.width * this.layment.scaleX - padding * 2),
             height: Math.max(1, this.layment.height * this.layment.scaleY - padding * 2),
             left: this.layment.left + padding,
-            top: this.layment.top + padding
+            top: this.layment.top + padding,
+            scaleX: 1,
+            scaleY: 1
         });
         this.safeArea.setCoords();
     }
@@ -251,10 +255,15 @@ class ContourApp {
     updateWorkspaceScale(newScale) {
         if (newScale < Config.WORKSPACE_SCALE.MIN || newScale > Config.WORKSPACE_SCALE.MAX) return;
 
+        const saved = this.temporarilyUngroupActiveSelection();
         const ratio = newScale / this.workspaceScale;
         this.workspaceScale = newScale;
 
         this.canvas.getObjects().forEach(obj => {
+            if (obj === this.safeArea) {
+                return;
+            }
+
             obj.set({
                 left: obj.left * ratio,
                 top: obj.top * ratio,
@@ -263,6 +272,8 @@ class ContourApp {
             });
             obj.setCoords();
         });
+
+        this.syncSafeAreaRect();
 
         // рассчитываем bounding box всех объектов и устанавливаем размер canvas
         const allObjects = this.canvas.getObjects();
@@ -277,6 +288,7 @@ class ContourApp {
 
         this.canvas.renderAll();
         this.updateStatusBar();
+        this.restoreActiveSelection(saved.objects);
     }
 
     setupEventListeners() {
@@ -567,6 +579,29 @@ class ContourApp {
         return this.shouldAutosaveForObject(active) ? [active] : [];
     }
 
+    temporarilyUngroupActiveSelection() {
+        const active = this.canvas.getActiveObject();
+        if (!active || active.type !== 'activeSelection') {
+            return { objects: null };
+        }
+
+        const objects = active.getObjects();
+        this.canvas.discardActiveObject();
+        this.canvas.requestRenderAll();
+        return { objects };
+    }
+
+    restoreActiveSelection(objects) {
+        if (!objects || !objects.length) {
+            return;
+        }
+
+        const selection = new fabric.ActiveSelection(objects, { canvas: this.canvas });
+        this.canvas.setActiveObject(selection);
+        selection.setCoords();
+        this.canvas.requestRenderAll();
+    }
+
     applyDeltaToObject(obj, deltaX, deltaY) {
         obj.set({
             left: obj.left + deltaX,
@@ -654,31 +689,41 @@ class ContourApp {
     }
 
     snapSelectedToSide(side) {
+        const saved = this.temporarilyUngroupActiveSelection();
         const selected = this.getArrangeSelectionObjects();
         if (selected.length < 1) {
+            this.restoreActiveSelection(saved.objects);
             return;
         }
 
         const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
+        const clearanceMm = 3;
+        const clearancePx = clearanceMm * (this.workspaceScale || 1);
+
         for (const obj of selected) {
             const bbox = obj.getBoundingRect(true);
             let deltaX = 0;
             let deltaY = 0;
 
             if (side === 'left') {
-                deltaX = targetArea.left - bbox.left;
+                const targetLeft = targetArea.left + clearancePx;
+                deltaX = targetLeft - bbox.left;
             } else if (side === 'right') {
-                deltaX = (targetArea.left + targetArea.width - bbox.width) - bbox.left;
+                const targetLeft = targetArea.left + targetArea.width - clearancePx - bbox.width;
+                deltaX = targetLeft - bbox.left;
             } else if (side === 'top') {
-                deltaY = targetArea.top - bbox.top;
+                const targetTop = targetArea.top + clearancePx;
+                deltaY = targetTop - bbox.top;
             } else if (side === 'bottom') {
-                deltaY = (targetArea.top + targetArea.height - bbox.height) - bbox.top;
+                const targetTop = targetArea.top + targetArea.height - clearancePx - bbox.height;
+                deltaY = targetTop - bbox.top;
             }
 
             this.applyDeltaToObject(obj, deltaX, deltaY);
         }
 
         this.finalizeArrangeOperation();
+        this.restoreActiveSelection(saved.objects);
     }
 
     updateButtons() {
