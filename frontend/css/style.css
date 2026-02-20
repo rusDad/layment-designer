@@ -464,3 +464,44 @@ body {
 .tool-grid-spacer {
     min-height: 1px;
 }
+
+.status-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.status-page-content {
+    width: 100%;
+    max-width: 720px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.status-search-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.status-search-row {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.status-search-row input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.5rem;
+    border: 1px solid #bdc3c7;
+    border-radius: 4px;
+}
+
+.status-search-row .tool-button {
+    width: auto;
+    min-width: 120px;
+    margin: 0;
+}

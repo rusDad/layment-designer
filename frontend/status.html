@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Статус заказа</title>
+    <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+    <div class="status-page">
+        <header class="app-header">
+            <div class="project-bar">
+                <h1 class="project-title">Проверка статуса заказа</h1>
+            </div>
+        </header>
+
+        <main class="status-page-content">
+            <section class="size-controls status-search-panel">
+                <label for="orderIdInput">Order ID</label>
+                <div class="status-search-row">
+                    <input id="orderIdInput" type="text" placeholder="Введите order_id" autocomplete="off">
+                    <button id="checkOrderButton" class="tool-button" type="button">Проверить</button>
+                </div>
+            </section>
+
+            <section id="statusResult" class="order-result" hidden>
+                <div id="statusMessage" class="order-result-message"></div>
+                <div id="statusDetails" class="order-result-details" hidden>
+                    <div><strong>Номер заказа:</strong> <span id="statusOrderNumber">—</span></div>
+                    <div><strong>Order ID:</strong> <span id="statusOrderId">—</span></div>
+                    <div><strong>Статус:</strong> <span id="statusState">—</span></div>
+                    <div><strong>Стоимость:</strong> <span id="statusPrice">—</span></div>
+                    <div><strong>Создан:</strong> <span id="statusCreatedAt">—</span></div>
+                    <div><strong>Подтверждён:</strong> <span id="statusConfirmedAt">—</span></div>
+                    <div><strong>Изготовлен:</strong> <span id="statusProducedAt">—</span></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="./js/status.js"></script>
+</body>
+</html>
