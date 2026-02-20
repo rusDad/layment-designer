@@ -284,6 +284,100 @@ class ContourApp {
         this.bindUIButtonEvents();
         this.bindInputEvents();
         this.bindCatalogEvents();
+        this.bindKeyboardShortcuts();
+    }
+
+    bindKeyboardShortcuts() {
+        document.addEventListener('keydown', event => {
+            if (event.defaultPrevented || this.shouldIgnoreKeyboardShortcut(event)) {
+                return;
+            }
+
+            const step = event.shiftKey ? 10 : 1;
+
+            switch (event.key) {
+                case 'ArrowUp':
+                    if (this.moveSelectedBy(0, -step)) {
+                        event.preventDefault();
+                    }
+                    break;
+                case 'ArrowDown':
+                    if (this.moveSelectedBy(0, step)) {
+                        event.preventDefault();
+                    }
+                    break;
+                case 'ArrowLeft':
+                    if (this.moveSelectedBy(-step, 0)) {
+                        event.preventDefault();
+                    }
+                    break;
+                case 'ArrowRight':
+                    if (this.moveSelectedBy(step, 0)) {
+                        event.preventDefault();
+                    }
+                    break;
+                case 'Delete':
+                    if (this.canvas.getActiveObject()) {
+                        event.preventDefault();
+                        this.deleteSelected();
+                    }
+                    break;
+                case 'Escape':
+                    if (this.canvas.getActiveObject()) {
+                        event.preventDefault();
+                        this.canvas.discardActiveObject();
+                        this.canvas.requestRenderAll();
+                        this.updateButtons();
+                        this.updateStatusBar();
+                        this.syncPrimitiveControlsFromSelection();
+                    }
+                    break;
+                default:
+                    break;
+            }
+        });
+    }
+
+    shouldIgnoreKeyboardShortcut(event) {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+            return false;
+        }
+
+        if (target.isContentEditable) {
+            return true;
+        }
+
+        return !!target.closest('input, textarea, select');
+    }
+
+    moveSelectedBy(dx, dy) {
+        const active = this.canvas.getActiveObject();
+        if (!active) {
+            return false;
+        }
+
+        if (active.type === 'activeSelection') {
+            active.getObjects().forEach(obj => {
+                obj.set({
+                    left: obj.left + dx,
+                    top: obj.top + dy
+                });
+                obj.setCoords();
+            });
+            active.setCoords();
+        } else {
+            active.set({
+                left: active.left + dx,
+                top: active.top + dy
+            });
+            active.setCoords();
+        }
+
+        this.canvas.requestRenderAll();
+        this.updateStatusBar();
+        this.scheduleWorkspaceSave();
+        return true;
     }
 
     bindCanvasEvents() {
