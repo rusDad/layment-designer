@@ -289,6 +289,8 @@ def build_final_gcode(order_data) -> List[str]:
     if primitives:
         final_gcode.append("' PRIMITIVES END")
 
+    width = order_data.orderMeta.width 
+    height = order_data.orderMeta.height
     z_depth = -35.0
     deep_rect = generate_rectangle_gcode(0, 0, height, width, z_depth, tool_dia, feed_rate)
 
