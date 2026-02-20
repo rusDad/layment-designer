@@ -42,6 +42,15 @@ window.UIDom = {
     primitiveControls: document.getElementById('primitiveControls'),
   },
 
+
+
+  labels: {
+    panel: document.getElementById('labelControls'),
+    textInput: document.getElementById('labelText'),
+    addBtn: document.getElementById('addLabelBtn'),
+    deleteBtn: document.getElementById('deleteLabelBtn'),
+  },
+
   primitive: {
     typeLabel: document.getElementById('primitiveTypeLabel'),
     widthRow: document.getElementById('primitiveWidthRow'),

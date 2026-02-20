@@ -34,6 +34,7 @@ class ContourApp {
         await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
+        this.syncLabelControlsFromSelection();
         await this.loadWorkspaceFromStorage();
     }
 
@@ -346,6 +347,7 @@ class ContourApp {
                         this.updateButtons();
                         this.updateStatusBar();
                         this.syncPrimitiveControlsFromSelection();
+                        this.syncLabelControlsFromSelection();
                     }
                     break;
                 default:
@@ -415,18 +417,21 @@ class ContourApp {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
+            this.syncLabelControlsFromSelection();
         });
 
         this.canvas.on('selection:updated', () => {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
+            this.syncLabelControlsFromSelection();
         });
 
         this.canvas.on('selection:cleared', () => {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
+            this.syncLabelControlsFromSelection();
         });
 
         this.canvas.on('object:moving', event => {
@@ -446,6 +451,7 @@ class ContourApp {
                 this.scheduleWorkspaceSave();
             }
             this.syncPrimitiveControlsFromSelection();
+            this.syncLabelControlsFromSelection();
             this.updateStatusBar();
         });
     }    
@@ -565,6 +571,10 @@ class ContourApp {
         UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
+
+        UIDom.labels.textInput?.addEventListener('input', event => this.applyLabelTextFromInput(event.target.value));
+        UIDom.labels.addBtn?.addEventListener('click', () => this.addLabelForSelection());
+        UIDom.labels.deleteBtn?.addEventListener('click', () => this.deleteLabelForSelection());
     }
 
     bindCatalogEvents() {
@@ -849,6 +859,127 @@ class ContourApp {
 
         this.setPrimitiveControlsEnabled(true);
         this.isSyncingPrimitiveControls = false;
+    }
+
+
+    getSelectedContourForLabel() {
+        const active = this.canvas.getActiveObject();
+        if (!active || active.type === 'activeSelection' || active.primitiveType || active.isLabel || active === this.layment || active === this.safeArea) {
+            return null;
+        }
+        return active;
+    }
+
+    getSelectedLabelObject() {
+        const active = this.canvas.getActiveObject();
+        if (!active || active.type === 'activeSelection') {
+            return null;
+        }
+        return active.isLabel ? active : null;
+    }
+
+    setLabelPanelEnabled(enabled) {
+        const panel = UIDom.labels.panel;
+        if (!panel) {
+            return;
+        }
+        panel.hidden = !enabled;
+        panel.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+        if (UIDom.labels.textInput) UIDom.labels.textInput.disabled = !enabled;
+        if (!enabled) {
+            if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = true;
+            if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = true;
+        }
+    }
+
+    syncLabelControlsFromSelection() {
+        const contour = this.getSelectedContourForLabel();
+        const selectedLabel = this.getSelectedLabelObject();
+
+        if (!contour && !selectedLabel) {
+            this.setLabelPanelEnabled(false);
+            if (UIDom.labels.textInput) UIDom.labels.textInput.value = '';
+            return;
+        }
+
+        this.setLabelPanelEnabled(true);
+
+        if (selectedLabel) {
+            if (UIDom.labels.textInput) UIDom.labels.textInput.value = selectedLabel.text || '';
+            if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = true;
+            if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = false;
+            return;
+        }
+
+        const label = this.labelManager.getLabelByContourId(contour.contourId);
+        const meta = this.contourManager.metadataMap.get(contour);
+        if (UIDom.labels.textInput) {
+            UIDom.labels.textInput.value = label ? (label.text || '') : (meta?.defaultLabel || '');
+        }
+        if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = Boolean(label);
+        if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = !label;
+    }
+
+    applyLabelTextFromInput(value) {
+        const selectedLabel = this.getSelectedLabelObject();
+        const contour = this.getSelectedContourForLabel();
+        const targetLabel = selectedLabel || (contour ? this.labelManager.getLabelByContourId(contour.contourId) : null);
+
+        if (!targetLabel) {
+            return;
+        }
+
+        targetLabel.set({ text: value });
+        targetLabel.dirty = true;
+        targetLabel.setCoords();
+        this.canvas.requestRenderAll();
+        this.scheduleWorkspaceSave();
+        this.syncLabelControlsFromSelection();
+    }
+
+    addLabelForSelection() {
+        const contour = this.getSelectedContourForLabel();
+        if (!contour) {
+            return;
+        }
+
+        const text = UIDom.labels.textInput?.value ?? '';
+        const label = this.labelManager.createOrUpdateLabelForContour(contour, text);
+        if (!label) {
+            return;
+        }
+
+        this.canvas.setActiveObject(label);
+        this.canvas.requestRenderAll();
+        this.syncLabelControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    deleteLabelForSelection() {
+        const selectedLabel = this.getSelectedLabelObject();
+        if (selectedLabel) {
+            this.labelManager.removeLabel(selectedLabel);
+            this.canvas.discardActiveObject();
+            this.canvas.requestRenderAll();
+            this.syncLabelControlsFromSelection();
+            this.scheduleWorkspaceSave();
+            return;
+        }
+
+        const contour = this.getSelectedContourForLabel();
+        if (!contour) {
+            return;
+        }
+
+        const label = this.labelManager.getLabelByContourId(contour.contourId);
+        if (!label) {
+            return;
+        }
+
+        this.labelManager.removeLabel(label);
+        this.canvas.requestRenderAll();
+        this.syncLabelControlsFromSelection();
+        this.scheduleWorkspaceSave();
     }
 
     applyPrimitiveDimensionsFromInputs() {
@@ -1190,6 +1321,7 @@ class ContourApp {
         this.canvas.discardActiveObject();
         this.canvas.renderAll();
         this.updateButtons();
+        this.syncLabelControlsFromSelection();
         this.scheduleWorkspaceSave();
     }
 
@@ -1362,6 +1494,7 @@ class ContourApp {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
+            this.syncLabelControlsFromSelection();
         });
         this.isRestoringWorkspace = false;
         UIDom.inputs.workspaceScale.value = this.workspaceScale;
