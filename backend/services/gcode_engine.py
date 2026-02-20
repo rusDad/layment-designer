@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List
 
-from domain_store import contour_rotated_nc_path
+from domain_store import contour_rotated_nc_path, end_gcode_path, start_gcode_path
 from gcode_rotator import generate_rectangle_gcode, offset_gcode
 
 
@@ -14,6 +14,52 @@ class GCodeEngineError(Exception):
 
     def __str__(self) -> str:
         return self.message
+
+DEFAULT_START_GCODE = [
+    "G0 G17 G90",
+    "G0 G40 G49 G80",
+    "G21",
+    "T1",
+    "S15000 M3",
+    "G54",
+]
+
+DEFAULT_END_GCODE = [
+    "M5",
+    "G49",
+    "M30",
+]
+
+
+def _load_gcode_template(path_getter, fallback: List[str]) -> List[str]:
+    template_path = path_getter()
+    if template_path.exists():
+        with template_path.open("r", encoding="utf-8") as source:
+            return source.read().splitlines()
+    return fallback.copy()
+
+
+def _format_contour_comment(contour_id: str, angle: float) -> str:
+    return f"' CONTOUR id={contour_id} angle={angle}"
+
+
+def _format_primitive_comment(primitive_index: int, primitive: dict[str, Any]) -> str:
+    primitive_type = primitive.get("type")
+
+    if primitive_type == "rect":
+        return (
+            f"' PRIMITIVE #{primitive_index} type=rect "
+            f"x={primitive.get('x')} y={primitive.get('y')} "
+            f"width={primitive.get('width')} height={primitive.get('height')}"
+        )
+
+    if primitive_type == "circle":
+        return (
+            f"' PRIMITIVE #{primitive_index} type=circle "
+            f"x={primitive.get('x')} y={primitive.get('y')} radius={primitive.get('radius')}"
+        )
+
+    return f"' PRIMITIVE #{primitive_index} type={primitive_type}"
 
 
 def load_rotated_fragment(contour_id: str, angle: float) -> List[str]:
@@ -160,14 +206,7 @@ def generate_circle_pocket_gcode(
 
 
 def build_final_gcode(order_data) -> List[str]:
-    final_gcode = [
-        "G0 G17 G90",
-        "G0 G40 G49 G80",
-        "G21",
-        "T1",
-        "S15000 M3",
-        "G54",
-    ]
+    final_gcode = _load_gcode_template(start_gcode_path, DEFAULT_START_GCODE)
 
     width = order_data.orderMeta.width
     height = order_data.orderMeta.height
@@ -180,6 +219,7 @@ def build_final_gcode(order_data) -> List[str]:
     final_gcode.append("G0 Z20")
 
     for contour in order_data.contours:
+        final_gcode.append(_format_contour_comment(contour.id, contour.angle))
         contour_lines = load_rotated_fragment(contour.id, contour.angle)
         cnc_x, cnc_y = contour.y, contour.x  # приведение системы координат фронтенда к координатам станка
         offset_contour_gcode = apply_offset(contour_lines, cnc_x, cnc_y)
@@ -189,7 +229,12 @@ def build_final_gcode(order_data) -> List[str]:
         final_gcode.extend(offset_contour_gcode)
         final_gcode.append("G0 Z20")
 
-    for primitive_index, primitive in enumerate(order_data.primitives or [], start=1):
+    primitives = order_data.primitives or []
+    if primitives:
+        final_gcode.append("' PRIMITIVES START")
+
+    for primitive_index, primitive in enumerate(primitives, start=1):
+        final_gcode.append(_format_primitive_comment(primitive_index, primitive))
         primitive_type = primitive.get("type")
 
         if primitive_type == "rect":
@@ -240,8 +285,9 @@ def build_final_gcode(order_data) -> List[str]:
             message=f"Primitive #{primitive_index}: unsupported type '{primitive_type}'",
         )
 
-    final_gcode.append("M5")
-    final_gcode.append("G49")
-    final_gcode.append("M30")
+    if primitives:
+        final_gcode.append("' PRIMITIVES END")
+
+    final_gcode.extend(_load_gcode_template(end_gcode_path, DEFAULT_END_GCODE))
 
     return final_gcode
