@@ -17,6 +17,7 @@ class ContourManager {
         this.contours = [];
         this.metadataMap = new WeakMap();
         this.allowedAngles = Config.GEOMETRY.ALLOWED_ANGLES;
+        this.nextPlacementSeq = 1;
         
         fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);   //Отдельный конфиг для группы 
     }
@@ -49,6 +50,7 @@ class ContourManager {
 
         this.metadataMap.set(group, metadata);
         group.contourId = metadata.id;
+        group.placementId = this.nextPlacementSeq++;
 
         group.on('rotating', () => this.snapToAllowedAngle(group));
         group.on('modified', () => this.snapToAllowedAngle(group));
@@ -416,6 +418,25 @@ class ContourManager {
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: obj.angle,
                 scaleOverride: meta.scaleOverride ?? 1
+            };
+        });
+    }
+
+    getWorkspaceContoursData() {
+       const layment = this.canvas.layment;
+
+       return this.contours.map(obj => {
+            const meta = this.metadataMap.get(obj);
+            const tl = obj.aCoords.tl;
+
+            return {
+                id: meta.id,
+                article: meta.article,
+                x: Math.round((tl.x - layment.left)/layment.scaleX),
+                y: Math.round((tl.y - layment.top)/layment.scaleY),
+                angle: obj.angle,
+                scaleOverride: meta.scaleOverride ?? 1,
+                placementId: obj.placementId
             };
         });
     }
