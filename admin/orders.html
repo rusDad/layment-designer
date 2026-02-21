@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Admin — Заказы</title>
+  <title>Панель управления заказами</title>
   <style>
     body {
       font-family: sans-serif;
@@ -148,20 +148,20 @@
         <div id="orderMeta"></div>
 
         <div class="actions">
-          <button id="confirmBtn" type="button">Mark confirmed</button>
-          <button id="producedBtn" type="button">Mark produced</button>
-          <a id="downloadNcLink" href="#" download>Download final.nc</a>
-          <a id="downloadSvgLink" href="#" download>Download layout.svg</a>
-          <a id="downloadDxfLink" href="#" download>Download layout.dxf</a>
+          <button id="confirmBtn" type="button">Подтвердить</button>
+          <button id="producedBtn" type="button">Произведен</button>
+          <a id="downloadNcLink" href="#" download>Скачать G-code файл</a>
+          <a id="downloadSvgLink" href="#" download>Скачать svg заказа</a>
+          <a id="downloadDxfLink" href="#" download>Скачать DXF маркировки</a>
         </div>
 
         <div class="details-grid">
           <div>
-            <h3>Snapshot (layout.png)</h3>
+            <h3>Снимок заказа</h3>
             <div id="layoutWrap"></div>
           </div>
           <div>
-            <h3>Contours</h3>
+            <h3>Состав</h3>
             <pre id="contoursPre">[]</pre>
           </div>
         </div>
