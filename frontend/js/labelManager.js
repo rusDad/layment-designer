@@ -110,6 +110,8 @@ class LabelManager {
             scaleX: this.app.workspaceScale || 1,
             scaleY: this.app.workspaceScale || 1,
             fill: '#000000',
+            // FIX: валидное значение CanvasTextBaseline
+            textBaseline: 'alphabetic',
             angle: 0,
             selectable: true,
             evented: true,

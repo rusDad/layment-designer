@@ -22,6 +22,8 @@ import json
 import os
 import shutil
 import uuid
+import io
+from admin_api.nc_sanitizer import sanitize_fusion_nc_text
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -225,6 +227,31 @@ def upload_files(
     if svg:
         validate_svg(svg)
     if nc:
+        # читаем 1 раз
+        raw_bytes = nc.file.read()
+        nc.file.seek(0)
+
+        # если не UTF-8 — пусть штатная validate_nc даст понятную ошибку
+        try:
+             raw_text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+             validate_nc(nc)
+        else:
+             # 1) пробуем принять как есть
+             nc.file = io.BytesIO(raw_bytes)
+             try:
+                 validate_nc(nc)
+             except HTTPException:
+                 # 2) не прошло — пробуем “fusion sanitize”
+                 try:
+                     sanitized = sanitize_fusion_nc_text(raw_text)
+                 except Exception as exc:
+                     raise HTTPException(status_code=400, detail=f"NC sanitize failed: {exc}") from exc
+
+                 nc.file = io.BytesIO(sanitized.encode("utf-8"))
+                 validate_nc(nc)  # должно пройти
+             finally:
+                 nc.file.seek(0)
         validate_nc(nc)
     if preview:
         validate_preview(preview)
