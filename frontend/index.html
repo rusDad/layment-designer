@@ -13,12 +13,6 @@
         <header class="app-header">
             <div class="project-bar">
                 <h1 class="project-title">Конструктор ложемента</h1>
-                <div class="project-actions">
-                    <button id="saveWorkspaceButton" class="tool-button" data-hint="Сохранить раскладку">Save</button>
-                    <button id="loadWorkspaceButton" class="tool-button" data-hint="Загрузить сохранённую раскладку">Load</button>
-                    <button id="exportButton" class="tool-button export-button" data-hint="Создать заказ">Завершить</button>
-                    <button id="checkLayoutButton" class="tool-button check-button" data-hint="Проверить границы и пересечения">Проверить раскладку</button>
-                </div>
             </div>
         </header>
         
@@ -46,6 +40,15 @@
 
             <main class="workspace">
                 <div class="workspace-toolbar" aria-label="Расположение и масштаб">
+                    <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Основные действия">
+                        <button id="saveWorkspaceButton" class="tool-button toolbar-action-button" data-hint="Сохранить раскладку">Save</button>
+                        <button id="loadWorkspaceButton" class="tool-button toolbar-action-button" data-hint="Загрузить сохранённую раскладку">Load</button>
+                        <button id="checkLayoutButton" class="tool-button toolbar-action-button check-button" data-hint="Проверить границы и пересечения">Проверить</button>
+                    </div>
+                    <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Действия с выделением">
+                        <button id="deleteButton" class="tool-button toolbar-action-button" disabled data-hint="Удалить выделенное">Удалить</button>
+                        <button id="rotateButton" class="tool-button toolbar-action-button" disabled data-hint="Повернуть выделенное на 90°">Повернуть</button>
+                    </div>
                     <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
                         <button id="alignLeftButton" class="tool-button icon-button" disabled data-hint="Выровнять по левому обьекту">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M4 4h8M4 8h6M4 12h9"/></svg>
@@ -110,43 +113,53 @@
             <aside class="tool-panel">
                 <h2>Габариты ложемента</h2>
                 <div class="size-controls">
-                    <label>
-                        Размер:
+                    <div class="form-row">
+                        <label for="laymentPreset">Размер:</label>
                         <select id="laymentPreset">
                             <option value="SMALL">маленький</option>
                             <option value="MEDIUM">средний</option>
                             <option value="LARGE">большой</option>
                             <option value="CUSTOM">пользовательский</option>
                         </select>
-                    </label>
-                    <label>Ширина: <input type="number" id="laymentWidth" value="565"></label>
-                    <label>Высота: <input type="number" id="laymentHeight" value="375"></label>
-                    <label>Цвет основы:
+                    </div>
+                    <div class="form-row">
+                        <label for="laymentWidth">Ширина:</label>
+                        <input type="number" id="laymentWidth" value="565">
+                    </div>
+                    <div class="form-row">
+                        <label for="laymentHeight">Высота:</label>
+                        <input type="number" id="laymentHeight" value="375">
+                    </div>
+                    <div class="form-row">
+                        <label for="baseMaterialColor">Цвет основы:</label>
                         <select id="baseMaterialColor">
                             <option value="green">зелёный</option>
                             <option value="blue">синий</option>
                         </select>
-                    </label>
+                    </div>
                 </div>
 
                 <h2>Инструменты</h2>
                 <div class="tool-buttons">
-                    <button id="deleteButton" class="tool-button" disabled data-hint="Удалить выделенный объект">Удалить выделенное</button>
-                    <button id="rotateButton" class="tool-button" disabled data-hint="Повернуть выделенный объект на 90°">Повернуть на 90°</button>
                     <button id="addRectButton" class="tool-button" data-hint="Добавить прямоугольную выемку">➕ прямоугольная выемка</button>
                     <button id="addCircleButton" class="tool-button" data-hint="Добавить круглую выемку">➕ круглая выемка</button>
                 </div>
 
-                <section id="orderResult" class="order-result" hidden aria-live="polite">
-                    <div id="orderResultMessage" class="order-result-message"></div>
-                    <div id="orderResultDetails" class="order-result-details" hidden>
-                        <div><strong>Order ID:</strong> <span id="orderResultOrderId">—</span></div>
-                        <div>
-                            <strong>Статус заказа:</strong>
-                            <a id="orderResultPaymentLink" href="#" target="_blank" rel="noopener noreferrer"></a>
+                <section class="order-panel" aria-label="Заказ">
+                    <h2>Заказ</h2>
+                    <button id="exportButton" class="tool-button export-button" data-hint="Создать заказ">Создать заказ</button>
+
+                    <section id="orderResult" class="order-result" hidden aria-live="polite">
+                        <div id="orderResultMessage" class="order-result-message"></div>
+                        <div id="orderResultDetails" class="order-result-details" hidden>
+                            <div><strong>Order ID:</strong> <span id="orderResultOrderId">—</span></div>
+                            <div>
+                                <strong>Статус заказа:</strong>
+                                <a id="orderResultPaymentLink" href="#" target="_blank" rel="noopener noreferrer"></a>
+                            </div>
+                            <div id="orderResultMeta" hidden></div>
                         </div>
-                        <div id="orderResultMeta" hidden></div>
-                    </div>
+                    </section>
                 </section>
 
                 <h2>Подпись контура</h2>
