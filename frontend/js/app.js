@@ -292,6 +292,7 @@ class ContourApp {
         }
 
         this.canvas.renderAll();
+        this.syncWorkspaceScaleInput();
         this.updateStatusBar();
         this.restoreActiveSelection(saved.objects);
     }
@@ -301,7 +302,9 @@ class ContourApp {
         this.bindUIButtonEvents();
         this.bindInputEvents();
         this.bindCatalogEvents();
+        this.bindStatusHintEvents();
         this.bindKeyboardShortcuts();
+        this.syncWorkspaceScaleInput();
     }
 
     bindKeyboardShortcuts() {
@@ -545,26 +548,29 @@ class ContourApp {
         });
 
         UIDom.inputs.workspaceScale.addEventListener('change', e => {
-            const s = parseFloat(e.target.value);
-            if (s >= Config.WORKSPACE_SCALE.MIN && s <= Config.WORKSPACE_SCALE.MAX) {
-            this.updateWorkspaceScale(s);
+            const percent = parseFloat(e.target.value);
+            const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
+            const maxPercent = Math.round(Config.WORKSPACE_SCALE.MAX * 100);
+            if (Number.isFinite(percent) && percent >= minPercent && percent <= maxPercent) {
+                this.updateWorkspaceScale(percent / 100);
+                this.syncWorkspaceScaleInput();
             } else {
-            e.target.value = this.workspaceScale;
+                this.syncWorkspaceScaleInput();
             }
         });
 
         // зум колёсиком
         const scaleInput = UIDom.inputs.workspaceScale;
         this.canvas.wrapperEl.addEventListener('wheel', e => {
-           e.preventDefault();
-           const step = e.ctrlKey ? 0.05 : 0.1;        // с Ctrl — мелкий шаг
-           const delta = e.deltaY > 0 ? -step : step;
-            let val = parseFloat(scaleInput.value) || 1;
+            e.preventDefault();
+            const step = e.ctrlKey ? 2 : 10;
+            const delta = e.deltaY > 0 ? -step : step;
+            const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
+            const maxPercent = Math.round(Config.WORKSPACE_SCALE.MAX * 100);
+            let val = parseFloat(scaleInput.value) || Math.round(this.workspaceScale * 100);
 
-            val = Math.max(0.5, Math.min(10, val + delta));
-            val = Math.round(val * 100) / 100;
-
-            scaleInput.value = val;
+            val = Math.max(minPercent, Math.min(maxPercent, val + delta));
+            scaleInput.value = Math.round(val);
             scaleInput.dispatchEvent(new Event('change'));
         }, { passive: false });
 
@@ -575,6 +581,35 @@ class ContourApp {
         UIDom.labels.textInput?.addEventListener('input', event => this.applyLabelTextFromInput(event.target.value));
         UIDom.labels.addBtn?.addEventListener('click', () => this.addLabelForSelection());
         UIDom.labels.deleteBtn?.addEventListener('click', () => this.deleteLabelForSelection());
+    }
+
+
+    syncWorkspaceScaleInput() {
+        if (!UIDom.inputs.workspaceScale) {
+            return;
+        }
+        UIDom.inputs.workspaceScale.value = Math.round(this.workspaceScale * 100);
+    }
+
+    bindStatusHintEvents() {
+        const statusHint = UIDom.status.hint;
+        if (!statusHint) {
+            return;
+        }
+
+        document.querySelectorAll('[data-hint]').forEach(element => {
+            const showHint = () => {
+                statusHint.textContent = element.dataset.hint || '';
+            };
+            const clearHint = () => {
+                statusHint.textContent = '';
+            };
+
+            element.addEventListener('mouseenter', showHint);
+            element.addEventListener('focus', showHint);
+            element.addEventListener('mouseleave', clearHint);
+            element.addEventListener('blur', clearHint);
+        });
     }
 
     bindCatalogEvents() {
@@ -1268,17 +1303,13 @@ class ContourApp {
                 const bbox = active.getBoundingRect(true);
                 const realX = ((bbox.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
                 const realY = ((bbox.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
-                statusEl.innerHTML = `
-                <strong>Выемка: Прямоугольная</strong>
-                X: ${realX} мм  Y: ${realY} мм  W: ${dimensions.width} мм  H: ${dimensions.height} мм`;
+                statusEl.innerHTML = `<strong>Выемка: Прямоугольная</strong> X: ${realX} мм Y: ${realY} мм W: ${dimensions.width} мм H: ${dimensions.height} мм`;
                 return;
             }
 
             const realX = ((active.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
             const realY = ((active.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
-            statusEl.innerHTML = `
-            <strong>Выемка: Круглая</strong>
-            X: ${realX} мм  Y: ${realY} мм  R: ${dimensions.radius} мм`;
+            statusEl.innerHTML = `<strong>Выемка: Круглая</strong> X: ${realX} мм Y: ${realY} мм R: ${dimensions.radius} мм`;
             return;
         }
 
@@ -1298,10 +1329,7 @@ class ContourApp {
         const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
 
         const article = meta.article || '—';
-        statusEl.innerHTML = `
-        <strong>${meta.name}</strong><br>
-        article: ${article}<br>
-        X: ${realX} мм  Y: ${realY} мм  Угол: ${contour.angle}°`;
+        statusEl.innerHTML = `<strong>${meta.name}</strong> article: ${article} X: ${realX} мм Y: ${realY} мм Угол: ${contour.angle}°`;
     }
 
     deleteSelected() {
@@ -1522,7 +1550,7 @@ class ContourApp {
             this.syncLabelControlsFromSelection();
         });
         this.isRestoringWorkspace = false;
-        UIDom.inputs.workspaceScale.value = this.workspaceScale;
+        this.syncWorkspaceScaleInput();
     }
 
     getTotalCuttingLength() {
