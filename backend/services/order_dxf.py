@@ -57,6 +57,19 @@ def _rotate_vertices(vertices: List[Dict[str, float]], width: float, height: flo
 
     return rotated
 
+def _rotate_point(x: float, y: float, width: float, height: float, angle_deg: float) -> tuple[float, float]:
+    cx = width / 2.0
+    cy = height / 2.0
+    angle_rad = math.radians(angle_deg)
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    dx = x - cx
+    dy = y - cy
+
+    rx = cx + dx * cos_a - dy * sin_a
+    ry = cy + dx * sin_a + dy * cos_a
+    return rx, ry
 
 def _write_lwpolyline(lines: List[str], layer: str, vertices: Iterable[Dict[str, float]], *, closed: bool = True, order_height: float) -> None:
     points = list(vertices)
@@ -316,11 +329,17 @@ def generate_order_layout_dxf(order_data: Any) -> Tuple[str, List[str]]:
 
         width, height, vertices = geometry
         rotated = _rotate_vertices(vertices, width, height, float(contour.angle))
+ 
+        #min_x = min(point["x"] for point in rotated)
+        #min_y = min(point["y"] for point in rotated)
+        #dx = float(contour.x) - min_x
+        #dy = float(contour.y) - min_y
+ 
+        ref_x, ref_y = _rotate_point(0.0, 0.0, width, height, float(contour.angle)) if float(contour.angle) else (0.0, 0.0)
 
-        min_x = min(point["x"] for point in rotated)
-        min_y = min(point["y"] for point in rotated)
-        dx = float(contour.x) - min_x
-        dy = float(contour.y) - min_y
+        dx = float(contour.x) - ref_x
+        dy = float(contour.y) - ref_y
+
 
         placed = [
             {
