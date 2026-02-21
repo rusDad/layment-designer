@@ -80,5 +80,6 @@ window.UIDom = {
 
   status: {
     info: document.getElementById('status-info'),
+    hint: document.getElementById('status-hint'),
   }
 };

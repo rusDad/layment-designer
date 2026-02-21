@@ -14,10 +14,10 @@
             <div class="project-bar">
                 <h1 class="project-title">Конструктор ложемента</h1>
                 <div class="project-actions">
-                    <button id="saveWorkspaceButton" class="tool-button">Save</button>
-                    <button id="loadWorkspaceButton" class="tool-button">Load</button>
-                    <button id="exportButton" class="tool-button export-button">Завершить</button>
-                    <button id="checkLayoutButton" class="tool-button check-button">Проверить раскладку</button>
+                    <button id="saveWorkspaceButton" class="tool-button" data-hint="Сохранить раскладку">Save</button>
+                    <button id="loadWorkspaceButton" class="tool-button" data-hint="Загрузить сохранённую раскладку">Load</button>
+                    <button id="exportButton" class="tool-button export-button" data-hint="Создать заказ">Завершить</button>
+                    <button id="checkLayoutButton" class="tool-button check-button" data-hint="Проверить границы и пересечения">Проверить раскладку</button>
                 </div>
             </div>
         </header>
@@ -45,11 +45,66 @@
             </aside>
 
             <main class="workspace">
+                <div class="workspace-toolbar" aria-label="Расположение и масштаб">
+                    <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
+                        <button id="alignLeftButton" class="tool-button icon-button" disabled data-hint="Выровнять по левому обьекту">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M4 4h8M4 8h6M4 12h9"/></svg>
+                        </button>
+                        <button id="alignCenterXButton" class="tool-button icon-button" disabled data-hint="Центровать по горизонтали">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M3 4h10M5 8h6M2 12h12"/></svg>
+                        </button>
+                        <button id="alignRightButton" class="tool-button icon-button" disabled data-hint="Выровнять по правому обьекту">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4h8M6 8h8M3 12h11"/></svg>
+                        </button>
+                        <button id="alignTopButton" class="tool-button icon-button" disabled data-hint="Выровнять по верхнему обьекту">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 4v9M8 4v7M12 4v10"/></svg>
+                        </button>
+                        <button id="alignCenterYButton" class="tool-button icon-button" disabled data-hint="Центровать по вертикали">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12M4 3v10M8 5v6M12 2v12"/></svg>
+                        </button>
+                        <button id="alignBottomButton" class="tool-button icon-button" disabled data-hint="Выровнять по нижнему обьекту">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 3v11M8 5v9M12 2v12"/></svg>
+                        </button>
+                    </div>
+                    <div class="workspace-toolbar-group" role="group" aria-label="Распределение">
+                        <button id="distributeHorizontalGapsButton" class="tool-button icon-button" disabled data-hint="Распределить по горизонтали)">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2v12M15 2v12M5 4h2v8H5zM9 4h2v8H9z"/></svg>
+                        </button>
+                        <button id="distributeVerticalGapsButton" class="tool-button icon-button" disabled data-hint="Распределить по вертикали">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1h12M2 15h12M4 5h8v2H4zM4 9h8v2H4z"/></svg>
+                        </button>
+                    </div>
+                    <div class="workspace-toolbar-group" role="group" aria-label="Прикрепление к краю">
+                        <button id="snapLeftButton" class="tool-button icon-button" disabled data-hint="К левому краю ложемента ">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M12 4l-4 4 4 4M14 4v8"/></svg>
+                        </button>
+                        <button id="snapRightButton" class="tool-button icon-button" disabled data-hint="К правому краю ложемента">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4l4 4-4 4M2 4v8"/></svg>
+                        </button>
+                        <button id="snapTopButton" class="tool-button icon-button" disabled data-hint="К верхнему краю ложемента">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 12l4-4 4 4M4 14h8"/></svg>
+                        </button>
+                        <button id="snapBottomButton" class="tool-button icon-button" disabled data-hint="К нижнему краю ложемента">
+                            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 4l4 4 4-4M4 2h8"/></svg>
+                        </button>
+                    </div>
+                    <label class="workspace-scale-control" data-hint="Масштаб отображения">
+                        <span>Масштаб</span>
+                        <div class="workspace-scale-input-wrap">
+                            <input type="number" id="workspaceScale" value="100" step="5" min="10" max="1000" data-hint="Масштаб отображения">
+                            <span>%</span>
+                        </div>
+                    </label>
+                </div>
                 <div class="canvas-scroll-container">
                     <div class="canvas-container">
                         <canvas id="workspaceCanvas"></canvas>
                     </div>
                 </div>
+                <footer class="status-bar">
+                    <span id="status-info">Выделите контур для просмотра информации</span>
+                    <span id="status-hint"></span>
+                </footer>
             </main>
 
             <aside class="tool-panel">
@@ -72,35 +127,15 @@
                             <option value="blue">синий</option>
                         </select>
                     </label>
-                    <label>Масштаб: <input type="number" id="workspaceScale" value="1.0" step="0.1" min="0.1" max="10.0"></label>
                 </div>
 
                 <h2>Инструменты</h2>
                 <div class="tool-buttons">
-                    <button id="deleteButton" class="tool-button" disabled>Удалить выделенное</button>
-                    <button id="rotateButton" class="tool-button" disabled>Повернуть на 90°</button>
-                    <button id="addRectButton" class="tool-button">➕ прямоугольная выемка</button>
-                    <button id="addCircleButton" class="tool-button">➕ круглая выемка</button>
+                    <button id="deleteButton" class="tool-button" disabled data-hint="Удалить выделенный объект">Удалить выделенное</button>
+                    <button id="rotateButton" class="tool-button" disabled data-hint="Повернуть выделенный объект на 90°">Повернуть на 90°</button>
+                    <button id="addRectButton" class="tool-button" data-hint="Добавить прямоугольную выемку">➕ прямоугольная выемка</button>
+                    <button id="addCircleButton" class="tool-button" data-hint="Добавить круглую выемку">➕ круглая выемка</button>
                 </div>
-
-                <details class="arrange-panel" open>
-                    <summary>Расположение</summary>
-                    <div class="tool-grid">
-                        <button id="alignLeftButton" class="tool-button" disabled>L</button>
-                        <button id="alignCenterXButton" class="tool-button" disabled>CX</button>
-                        <button id="alignRightButton" class="tool-button" disabled>R</button>
-                        <button id="alignTopButton" class="tool-button" disabled>T</button>
-                        <button id="alignCenterYButton" class="tool-button" disabled>CY</button>
-                        <button id="alignBottomButton" class="tool-button" disabled>B</button>
-                        <button id="distributeHorizontalGapsButton" class="tool-button" disabled>H-gap</button>
-                        <button id="distributeVerticalGapsButton" class="tool-button" disabled>V-gap</button>
-                        <span class="tool-grid-spacer" aria-hidden="true"></span>
-                        <button id="snapLeftButton" class="tool-button" disabled>Snap L</button>
-                        <button id="snapRightButton" class="tool-button" disabled>Snap R</button>
-                        <button id="snapTopButton" class="tool-button" disabled>Snap T</button>
-                        <button id="snapBottomButton" class="tool-button" disabled>Snap B</button>
-                    </div>
-                </details>
 
                 <section id="orderResult" class="order-result" hidden aria-live="polite">
                     <div id="orderResultMessage" class="order-result-message"></div>
@@ -136,9 +171,6 @@
             </aside>
         </div>
 
-        <footer class="status-bar">
-            <span id="status-info">Выделите контур для просмотра информации</span>
-        </footer>
     </div>
     <script src="./js/config.js"></script>
     <script src="./js/svgLoader.js"></script>
