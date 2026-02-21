@@ -77,10 +77,10 @@ class ContourManager {
         }
     }
 
-    removeContour(obj) {
+    removeContour(obj, render = true) {
         this.contours = this.contours.filter(c => c !== obj);
         this.canvas.remove(obj);
-        this.canvas.renderAll();
+        if (render) this.canvas.requestRenderAll();
     }
 
     clearContours() {
@@ -182,20 +182,20 @@ class ContourManager {
           } 
        }
 
-      // Проверка выхода за ложемент для примитивов
-      this.app.primitiveManager.primitives.forEach(obj => {
-        const box = obj.getBoundingRect(true);
-        const lWidth = layment.width * layment.scaleX;
-        const lHeight = layment.height * layment.scaleY;
-
-        if (box.left < layment.left + padding ||
-            box.top < layment.top + padding ||
-            box.left + box.width > layment.left + lWidth - padding ||
-            box.top + box.height > layment.top + lHeight - padding) {
-            problematic.add(obj);
-            outOfBoundsPrimitives.add(obj);
-        }
-      });
+        // Проверка выхода за ложемент для примитивов
+        this.app.primitiveManager.primitives.forEach(obj => {
+          const box = obj.getBoundingRect(true);
+          const lWidth = layment.width * layment.scaleX;
+          const lHeight = layment.height * layment.scaleY;
+  
+          if (box.left < layment.left + padding ||
+              box.top < layment.top + padding ||
+              box.left + box.width > layment.left + lWidth - padding ||
+              box.top + box.height > layment.top + lHeight - padding) {
+              problematic.add(obj);
+              outOfBoundsPrimitives.add(obj);
+          }
+        });
 
        // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
        problematic.forEach(obj => {
@@ -658,10 +658,10 @@ class PrimitiveManager {
         return false;
     }
 
-    removePrimitive(obj) {
+    removePrimitive(obj, render = true) {
         this.primitives = this.primitives.filter(p => p !== obj);
         this.canvas.remove(obj);
-        this.canvas.renderAll();
+        if (render) this.canvas.requestRenderAll();
     }
 
     clearPrimitives() {

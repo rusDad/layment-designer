@@ -1305,34 +1305,42 @@ class ContourApp {
     }
 
     deleteSelected() {
-        const obj = this.canvas.getActiveObject();
-        if (!obj) return;
-        if (obj.type === 'activeSelection') {
-            obj.forEachObject(o => {
-                if (o.isLabel) {
-                    this.labelManager.removeLabel(o);
-                } else if (o.primitiveType) {
-                    this.primitiveManager.removePrimitive(o);
-                } else {
-                    this.labelManager.removeLabelsForPlacementId(o.placementId);
-                    this.contourManager.removeContour(o);
-                }
-            });
-        } else {
-            if (obj.isLabel) {
-                this.labelManager.removeLabel(obj);
-            } else if (obj.primitiveType) {
-                this.primitiveManager.removePrimitive(obj);
-            } else {
-                this.labelManager.removeLabelsForPlacementId(obj.placementId);
-                this.contourManager.removeContour(obj);
-            }
-        }
+        const active = this.canvas.getActiveObject();
+        if (!active) return;
+
+        const objects = (active.type === 'activeSelection')
+        ? active.getObjects().slice()
+        : [active];
+        // КРИТИЧНО: сначала убираем activeSelection, потом удаляем объекты
         this.canvas.discardActiveObject();
-        this.canvas.renderAll();
-        this.updateButtons();
-        this.syncLabelControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        for (const o of objects) {
+          if (!o) continue;
+          if (o.isLabel) {
+            this.labelManager.removeLabel(o);
+            continue;
+          }
+
+          if (o.primitiveType) {
+            this.primitiveManager.removePrimitive(o, false);
+            continue;
+          }
+          // contour
+          if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
+            this.labelManager.removeLabelsForPlacementId(o.placementId);
+          } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
+            // на случай старой схемы
+            this.labelManager.removeLabelsForContourId(o.contourId);
+          }
+
+          this.contourManager.removeContour(o, false);
+        }
+
+      this.canvas.requestRenderAll();
+      this.updateButtons();
+      this.updateStatusBar?.();
+      this.syncPrimitiveControlsFromSelection();
+      this.syncLabelControlsFromSelection();
+      this.scheduleWorkspaceSave();
     }
 
     rotateSelected() {
