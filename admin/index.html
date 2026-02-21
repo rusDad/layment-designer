@@ -122,38 +122,38 @@
       <h2>1. Метаданные артикула</h2>
 
       <label>
-        Article
+        Артикул
         <input id="article" />
       </label>
 
       <label>
-        Name
+        Наименование
         <input id="name" />
       </label>
 
       <label>
-        Brand
+        Бренд
         <input id="brand" />
       </label>
 
       <label>
-        Default label (optional)
+        Маркировка (optional)
         <input id="defaultLabel" placeholder="e.g. 10" />
       </label>
 
       <label>
-        Category
+        Категория
         <select id="categorySelect"></select>
       </label>
 
       <div>
         <label>
-          New category slug
+           Транслит ( slug) новой категории
           <input id="newCategorySlug" placeholder="new-category-slug" />
         </label>
 
         <label>
-          New category label
+          Название новой категории
           <input id="newCategoryLabel" placeholder="Label на русском" />
         </label>
 
@@ -161,12 +161,12 @@
       </div>
 
       <label>
-        Scale override
+        Дополнительное маштабирование (для проблемных svg)
         <input id="scaleOverride" type="number" step="0.01" value="1.0" />
       </label>
 
       <label>
-        Cutting length (meters)
+        Длина прохода фрезы (в метрах)
         <input id="cuttingLengthMeters" type="number" step="0.01" value="0" />
       </label>
 
@@ -181,7 +181,7 @@
     </div>
 
     <div class="section">
-      <h2>2. Файлы (только для существующего id)</h2>
+      <h2>2. Загрузка файлов для существующего id</h2>
 
       <label>
         ID артикула
@@ -189,26 +189,26 @@
       </label>
 
       <label>
-        SVG (обязательно)
+        SVG 
         <input id="svg" type="file" accept=".svg" />
       </label>
       <label>
-        DXF (опционально, для конверсии в SVG)
+        DXF (для конверсии в SVG)
         <input id="dxf" type="file" accept=".dxf" />
       </label>
 
       <button id="uploadDxfBtn" disabled>
-        Upload DXF -> SVG
+        Конвертировать DXF в SVG
       </button>
 
 
       <label>
-        NC (обязательно)
+        NC (gcode)
         <input id="nc" type="file" accept=".nc" />
       </label>
 
       <label>
-        Preview (опционально)
+        Фото превью
         <input id="preview" type="file" accept="image/*" />
       </label>
 
