@@ -15,7 +15,7 @@ import shutil
 import os
 import json
 from services.gcode_engine import GCodeEngineError, build_final_gcode
-from services.order_dxf import generate_order_layout_dxf
+from services.order_dxf import generate_order_layout_dxf, generate_order_layout_dxf_cad
 from services.pricing import calculate_price_preview
 
 
@@ -269,11 +269,18 @@ async def export_layment(payload: Dict[str, Any]):
                 output_file.write('\n'.join(final_gcode))
 
             dxf_content, missing_contours = generate_order_layout_dxf(order_data)
+            dxf_cad_content, missing_contours_cad = generate_order_layout_dxf_cad(order_data, include_labels=True)
             with (staging_dir / f"{order_number}.dxf").open('w', encoding='utf-8') as dxf_file:
                 dxf_file.write(dxf_content)
+            with (staging_dir / f"{order_number}_labels.dxf").open('w', encoding='utf-8') as dxf_labels_file:
+                dxf_labels_file.write(dxf_cad_content)
             meta["dxf"] = {
                 "generated": len(missing_contours) == 0,
                 "missingContours": missing_contours,
+                "minimalFile": f"{order_number}.dxf",
+                "cadFile": f"{order_number}_labels.dxf",
+                "cadGenerated": len(missing_contours_cad) == 0,
+                "cadMissingContours": missing_contours_cad,
             }
             with (staging_dir / "meta.json").open('w', encoding='utf-8') as meta_file:
                 json.dump(meta, meta_file, ensure_ascii=False, indent=2)
