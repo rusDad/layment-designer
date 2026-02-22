@@ -40,19 +40,9 @@ class ContourApp {
 
     initializeCanvas() {
         const container = document.querySelector('.canvas-scroll-container');
-        const getCanvasSize = () => {
-            if (!container) {
-                return {
-                    width: window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING,
-                    height: window.innerHeight - Config.UI.HEADER_HEIGHT
-                };
-            }
-            const rect = container.getBoundingClientRect();
-            return {
-                width: Math.max(0, Math.floor(rect.width)),
-                height: Math.max(0, Math.floor(rect.height))
-            };
-        };
+        this.canvasScrollContainer = container;
+
+        const getCanvasSize = () => this.getViewportSize();
 
         const initialSize = getCanvasSize();
         this.canvas = new fabric.Canvas('workspaceCanvas', {
@@ -67,12 +57,54 @@ class ContourApp {
             const size = getCanvasSize();
             if (size.width > 0 && size.height > 0) {
                 this.canvas.setDimensions({ width: size.width, height: size.height });
+                this.resizeCanvasToContent();
                 this.canvas.renderAll();
             }
         };
 
         window.addEventListener('resize', resizeCanvas);
         requestAnimationFrame(resizeCanvas);
+    }
+
+    getViewportSize() {
+        if (!this.canvasScrollContainer) {
+            return {
+                width: this.canvas?.width || Math.max(0, window.innerWidth - Config.UI.PANEL_WIDTH - Config.UI.CANVAS_PADDING),
+                height: this.canvas?.height || Math.max(0, window.innerHeight - Config.UI.HEADER_HEIGHT)
+            };
+        }
+
+        return {
+            width: Math.max(0, this.canvasScrollContainer.clientWidth || this.canvas?.width || 0),
+            height: Math.max(0, this.canvasScrollContainer.clientHeight || this.canvas?.height || 0)
+        };
+    }
+
+    resizeCanvasToContent() {
+        if (!this.canvas) {
+            return;
+        }
+
+        const viewport = this.getViewportSize();
+        const margin = 100;
+        const objectsForBounds = this.canvas.getObjects().filter(obj => obj !== this.safeArea && obj?.aCoords);
+
+        let contentRight = 0;
+        let contentBottom = 0;
+
+        if (objectsForBounds.length > 0) {
+            const points = objectsForBounds.flatMap(obj => Object.values(obj.aCoords).filter(Boolean));
+            if (points.length > 0) {
+                const boundingRect = fabric.util.makeBoundingBoxFromPoints(points);
+                contentRight = boundingRect.left + boundingRect.width;
+                contentBottom = boundingRect.top + boundingRect.height;
+            }
+        }
+
+        const width = Math.max(viewport.width, Math.ceil(contentRight + margin));
+        const height = Math.max(viewport.height, Math.ceil(contentBottom + margin));
+
+        this.canvas.setDimensions({ width, height });
     }
 
     initializeServices() {
@@ -279,17 +311,7 @@ class ContourApp {
         });
 
         this.syncSafeAreaRect();
-
-        // рассчитываем bounding box всех объектов и устанавливаем размер canvas
-        const allObjects = this.canvas.getObjects();
-        if (allObjects.length > 0) {
-          const boundingRect = fabric.util.makeBoundingBoxFromPoints(
-             allObjects.flatMap(obj => Object.values(obj.aCoords))
-            );
-          const newWidth = Math.max(this.canvas.width, boundingRect.left + boundingRect.width + 100); // +100 для запаса
-          const newHeight = Math.max(this.canvas.height, boundingRect.top + boundingRect.height + 100);
-          this.canvas.setDimensions({ width: newWidth, height: newHeight });
-        }
+        this.resizeCanvasToContent();
 
         this.canvas.renderAll();
         this.syncWorkspaceScaleInput();
@@ -1666,7 +1688,7 @@ class ContourApp {
         const realWidth = Math.round(this.layment.width);
         const realHeight = Math.round(this.layment.height);
 
-        const layoutPng = this.canvas.toDataURL({ format: 'png' });
+        const layoutPng = this.createLaymentPreviewPng(16);
         const layoutSvg = this.canvas.toSVG();
         const laymentType = (this.contourManager.contours.length > 0 || this.primitiveManager.primitives.length > 0)
             ? "with-tools"
@@ -1721,6 +1743,26 @@ class ContourApp {
             console.error(err);
             this.showOrderResultError('Ошибка при создании заказа: ' + err.message);
         }
+    }
+
+    createLaymentPreviewPng(padPx = 16) {
+        if (!this.layment) {
+            return this.canvas.toDataURL({ format: 'png' });
+        }
+
+        const rect = this.layment.getBoundingRect(true, true);
+        const left = Math.max(0, rect.left - padPx);
+        const top = Math.max(0, rect.top - padPx);
+        const width = Math.ceil(rect.width + padPx * 2);
+        const height = Math.ceil(rect.height + padPx * 2);
+
+        return this.canvas.toDataURL({
+            format: 'png',
+            left,
+            top,
+            width,
+            height
+        });
     }
 }
 
