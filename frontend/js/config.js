@@ -7,8 +7,8 @@ window.Config = {
     LAYMENT_MIN_SIZE : 100,
     LAYMENT_OFFSET : 20,
     LAYMENT_PRESETS: {
-        SMALL: { width: 400, height: 300 },
-        MEDIUM: { width: 500, height: 350 },
+        SMALL: { width: 190, height: 375 },
+        MEDIUM: { width: 380, height: 375 },
         LARGE: { width: 565, height: 375 }
     },
 
@@ -21,7 +21,7 @@ window.Config = {
     },
 
     LABELS: {
-        FONT_SIZE_MM: 4,
+        FONT_SIZE_MM: 5,
         DEFAULT_OFFSET: { x: 6, y: 0 },
         BOUNDS_PAD_MM: 3
     },
@@ -37,7 +37,7 @@ window.Config = {
     LAYMENT_STYLE : {
         STROKE: '#000',
         STROKE_WIDTH: 2,
-        STROKE_DASH_ARRAY: [10, 5],
+        // STROKE_DASH_ARRAY: [10, 5],
         FILL: '#464746',
         SAFE_AREA_STROKE: '#f1c40f',
         SAFE_AREA_STROKE_WIDTH: 1,
@@ -91,7 +91,7 @@ window.Config = {
             ERROR_CORNER: '#c0392b'
         },
         PRIMITIVE: {
-            STROKE: '#00ff00',  // Зеленый для примитивов
+            STROKE: '#20ff00',  // Зеленый для примитивов
             FILL: '#208820',
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
@@ -129,10 +129,10 @@ window.Config = {
             lockRotation: false,
             cornerColor: '#3498db',
             borderColor: '#3498db',
-            transparentCorners: false
+            transparentCorners: true
         },
         CONTROLS_VISIBILITY: {
-            tl: true, tr: false, br: false, bl: false,
+            tl: false, tr: false, br: false, bl: false,
             ml: false, mt: false, mr: false, mb: false,
             mtr: true
         }
