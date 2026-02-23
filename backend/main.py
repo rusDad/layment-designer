@@ -191,6 +191,65 @@ def _max_iso_timestamp(*values: Any) -> Optional[str]:
     return max(timestamps).isoformat()
 
 
+def _order_preview_png_path(order_dir: Path, order_number: Optional[str]) -> Optional[Path]:
+    if order_number:
+        numbered_preview = order_dir / f"{order_number}.png"
+        if numbered_preview.exists() and numbered_preview.is_file():
+            return numbered_preview
+
+    legacy_preview = order_dir / "layout.png"
+    if legacy_preview.exists() and legacy_preview.is_file():
+        return legacy_preview
+
+    return None
+
+
+def _build_order_contents(order_payload: Dict[str, Any]) -> List[Dict[str, str]]:
+    contours = order_payload.get("contours") if isinstance(order_payload, dict) else None
+    if not isinstance(contours, list) or not contours:
+        return []
+
+    manifest_items_by_id: Dict[str, Dict[str, Any]] = {}
+    if MANIFEST_PATH.exists():
+        try:
+            with MANIFEST_PATH.open("r", encoding="utf-8") as manifest_file:
+                manifest = json.load(manifest_file)
+            items = manifest.get("items")
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    item_id = item.get("id")
+                    if isinstance(item_id, str) and item_id:
+                        manifest_items_by_id[item_id] = item
+        except (OSError, json.JSONDecodeError):
+            logger.warning("Failed to read manifest for order contents", exc_info=True)
+
+    composition: List[Dict[str, str]] = []
+    for contour in contours:
+        if not isinstance(contour, dict):
+            continue
+
+        contour_id = contour.get("id")
+        if not isinstance(contour_id, str) or not contour_id:
+            continue
+
+        manifest_item = manifest_items_by_id.get(contour_id)
+        if manifest_item:
+            article = manifest_item.get("article")
+            name = manifest_item.get("name")
+        else:
+            article = contour.get("article")
+            name = "(не найдено в каталоге)"
+
+        composition.append({
+            "article": article if isinstance(article, str) and article else contour_id,
+            "name": name if isinstance(name, str) and name else "(не найдено в каталоге)",
+        })
+
+    return composition
+
+
 @public_router.get("/contours/manifest")
 def get_contours_manifest():
     if not MANIFEST_PATH.exists():
@@ -333,6 +392,7 @@ def get_order_status(order_id: str):
     status_data = _load_order_status(order_dir)
     order_number = _read_order_number(order_dir)
     meta = _read_json_if_exists(order_dir / "meta.json") or {}
+    order_payload = _read_json_if_exists(order_dir / "order.json") or {}
 
     created_at = status_data.get("createdAt")
     if not isinstance(created_at, str) or not created_at:
@@ -350,7 +410,11 @@ def get_order_status(order_id: str):
         "confirmedAt": confirmed_at,
         "producedAt": produced_at,
         "updatedAt": updated_at,
+        "contents": _build_order_contents(order_payload),
     }
+
+    preview_path = _order_preview_png_path(order_dir, order_number)
+    response["previewPngUrl"] = f"/api/orders/{order_id}/preview.png" if preview_path else None
 
     price_preview = meta.get("pricePreview")
     if isinstance(price_preview, dict):
@@ -361,6 +425,16 @@ def get_order_status(order_id: str):
         }
 
     return response
+
+
+@public_router.get("/orders/{order_id}/preview.png")
+def get_order_preview_png(order_id: str):
+    order_dir = _order_dir(order_id)
+    order_number = _read_order_number(order_dir)
+    preview_path = _order_preview_png_path(order_dir, order_number)
+    if preview_path is None:
+        raise HTTPException(status_code=404, detail="preview.png not found")
+    return FileResponse(preview_path, media_type="image/png", filename="preview.png")
 
 
 @admin_orders_router.get("/orders")
