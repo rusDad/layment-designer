@@ -76,6 +76,9 @@
       grid-template-columns: 1fr 1fr;
       gap: 16px;
     }
+    .details-full-width {
+      margin-top: 16px;
+    }
     .actions {
       display: flex;
       flex-wrap: wrap;
@@ -162,8 +165,12 @@
           </div>
           <div>
             <h3>Состав</h3>
-            <pre id="contoursPre">[]</pre>
+            <pre id="contoursSummaryPre">[]</pre>
           </div>
+        </div>
+        <div class="details-full-width">
+          <h3>Подробности состава</h3>
+          <pre id="contoursDetailsPre">[]</pre>
         </div>
       </div>
     </section>
