@@ -5,7 +5,8 @@ const reloadBtn = document.getElementById('reloadBtn');
 const detailsEmptyEl = document.getElementById('detailsEmpty');
 const detailsEl = document.getElementById('details');
 const orderMetaEl = document.getElementById('orderMeta');
-const contoursPreEl = document.getElementById('contoursPre');
+const contoursSummaryPreEl = document.getElementById('contoursSummaryPre');
+const contoursDetailsPreEl = document.getElementById('contoursDetailsPre');
 const layoutWrapEl = document.getElementById('layoutWrap');
 const statusEl = document.getElementById('status');
 
@@ -18,6 +19,8 @@ const downloadDxfLink = document.getElementById('downloadDxfLink');
 let ordersCache = [];
 let selectedOrderId = null;
 let selectedOrderDetails = null;
+let itemsById = null;
+let itemsLoadPromise = null;
 
 const fmt = (value) => {
   if (!value) {
@@ -35,6 +38,64 @@ const createBadge = (label, active) => {
   span.className = `badge${active ? ' ok' : ''}`;
   span.textContent = `${label}: ${active ? 'yes' : 'no'}`;
   return span;
+};
+
+const ensureItemsLoaded = async () => {
+  if (itemsById) {
+    return itemsById;
+  }
+  if (itemsLoadPromise) {
+    return itemsLoadPromise;
+  }
+
+  itemsLoadPromise = (async () => {
+    try {
+      const res = await fetch('/admin/api/items');
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+
+      const payload = JSON.parse(text) || {};
+      const list = Array.isArray(payload.items) ? payload.items : [];
+      itemsById = list.reduce((acc, item) => {
+        if (item && item.id) {
+          acc[item.id] = {
+            article: item.article || '',
+            name: item.name || ''
+          };
+        }
+        return acc;
+      }, {});
+    } catch (err) {
+      console.warn('Failed to load items catalog for order composition summary', err);
+      itemsById = {};
+    } finally {
+      itemsLoadPromise = null;
+    }
+
+    return itemsById;
+  })();
+
+  return itemsLoadPromise;
+};
+
+const formatContourSummaryLine = (contour) => {
+  const contourId = contour && contour.id ? contour.id : '—';
+  const item = itemsById && contourId ? itemsById[contourId] : null;
+
+  if (!item) {
+    return contourId;
+  }
+
+  const article = item.article || '';
+  const name = item.name || '';
+
+  if (article && name) {
+    return `${article} - ${name}`;
+  }
+
+  return article || name || contourId;
 };
 
 const renderOrdersList = () => {
@@ -98,7 +159,9 @@ const updateMeta = (details) => {
     <div><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
   `;
 
-  contoursPreEl.textContent = JSON.stringify(details.contours || [], null, 2);
+  const contours = Array.isArray(details.contours) ? details.contours : [];
+  contoursSummaryPreEl.textContent = contours.map(formatContourSummaryLine).join('\n') || '[]';
+  contoursDetailsPreEl.textContent = JSON.stringify(contours, null, 2);
 
   const files = details.files || {};
   if (files.gcodeNc) {
@@ -189,7 +252,8 @@ const selectOrder = async (orderId, options = {}) => {
   detailsEmptyEl.hidden = true;
   detailsEl.hidden = false;
   orderMetaEl.textContent = 'Загрузка деталей…';
-  contoursPreEl.textContent = '[]';
+  contoursSummaryPreEl.textContent = '[]';
+  contoursDetailsPreEl.textContent = '[]';
   layoutWrapEl.textContent = '';
 
   try {
@@ -200,6 +264,7 @@ const selectOrder = async (orderId, options = {}) => {
     }
 
     selectedOrderDetails = JSON.parse(text);
+    await ensureItemsLoaded();
     updateMeta(selectedOrderDetails);
   } catch (err) {
     statusEl.textContent = err.toString();
