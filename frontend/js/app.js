@@ -792,12 +792,12 @@ class ContourApp {
     }
 
     snapSelectedToSide(side) {
-        const saved = this.temporarilyUngroupActiveSelection();
         const selected = this.getArrangeSelectionObjects();
         if (selected.length < 1) {
-            this.restoreActiveSelection(saved.objects);
             return;
         }
+         // важно: разгруппировать ПОСЛЕ того, как мы получили список объектов
+        const saved = this.temporarilyUngroupActiveSelection();        
 
         const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
         const clearanceMm = 3;
