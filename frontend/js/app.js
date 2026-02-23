@@ -1,6 +1,8 @@
 // app.js
 
 const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v2';
+const WORKSPACE_MANUAL_KEY = 'laymentDesigner.workspace.v2.manual';
+const AUTOSAVE_DEBOUNCE_MS = 5000;
 
 class ContourApp {
     constructor() {
@@ -483,8 +485,14 @@ class ContourApp {
     bindUIButtonEvents() {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
-        UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace();
-        UIDom.buttons.loadWorkspace.onclick = () => this.loadWorkspaceFromStorage();
+        UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
+        UIDom.buttons.loadWorkspace.onclick = async () => {
+            this.cancelAutosave();
+            const okManual = await this.loadWorkspaceFromStorage('manual');
+            if (!okManual) {
+                await this.loadWorkspaceFromStorage('autosave');
+            }
+        };
 
         UIDom.buttons.export.onclick = () => this.withExportCooldown(() => this.performWithScaleOne(() => this.exportData()));
 
@@ -655,10 +663,21 @@ class ContourApp {
 
     async performWithScaleOne(action) {
         const oldScale = this.workspaceScale;
+        const sc = this.canvasScrollContainer;
+        const savedScroll = sc ? { left: sc.scrollLeft, top: sc.scrollTop } : null;
+
         this.updateWorkspaceScale(1);
-        const result = await action();
-        this.updateWorkspaceScale(oldScale);
-        return result;
+        try {
+            return await action();
+        } finally {
+            this.updateWorkspaceScale(oldScale);
+            if (sc && savedScroll) {
+                requestAnimationFrame(() => {
+                    sc.scrollLeft = savedScroll.left;
+                    sc.scrollTop = savedScroll.top;
+                });
+            }
+        }
     }
 
     getArrangeSelectionObjects() {
@@ -1408,16 +1427,22 @@ class ContourApp {
         return obj !== this.layment && obj !== this.safeArea;
     }
 
+    cancelAutosave() {
+        if (this.autosaveTimer) {
+            clearTimeout(this.autosaveTimer);
+            this.autosaveTimer = null;
+        }
+    }
+
     scheduleWorkspaceSave() {
         if (this.isRestoringWorkspace) {
             return;
         }
-        if (this.autosaveTimer) {
-            clearTimeout(this.autosaveTimer);
-        }
+        this.cancelAutosave();
         this.autosaveTimer = setTimeout(() => {
-            this.saveWorkspace();
-        }, 400);
+            this.autosaveTimer = null;
+            this.saveWorkspace('autosave');
+        }, AUTOSAVE_DEBOUNCE_MS);
     }
 
     buildWorkspaceSnapshot() {
@@ -1438,21 +1463,24 @@ class ContourApp {
         };
     }
 
-    async saveWorkspace() {
+    async saveWorkspace(mode = 'autosave') {
+        const key = mode === 'manual' ? WORKSPACE_MANUAL_KEY : WORKSPACE_STORAGE_KEY;
         try {
             await this.performWithScaleOne(() => {
                 const payload = this.buildWorkspaceSnapshot();
-                localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(payload));
+                localStorage.setItem(key, JSON.stringify(payload));
             });
         } catch (err) {
             console.error('Ошибка сохранения workspace', err);
         }
     }
 
-    async loadWorkspaceFromStorage() {
-        const raw = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    async loadWorkspaceFromStorage(mode = 'autosave') {
+        this.cancelAutosave();
+        const key = mode === 'manual' ? WORKSPACE_MANUAL_KEY : WORKSPACE_STORAGE_KEY;
+        const raw = localStorage.getItem(key);
         if (!raw) {
-            return;
+            return false;
         }
 
         let data;
@@ -1460,24 +1488,27 @@ class ContourApp {
             data = JSON.parse(raw);
         } catch (err) {
             console.error('Ошибка чтения workspace', err);
-            return;
+            return false;
         }
 
         if (data.schemaVersion !== 2) {
             console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
-            return;
+            return false;
         }
 
         await this.loadWorkspace(data);
+        return true;
     }
 
     async loadWorkspace(data) {
+        this.cancelAutosave();
         this.isRestoringWorkspace = true;
-        await this.performWithScaleOne(async () => {
-            this.canvas.discardActiveObject();
-            this.contourManager.clearContours();
-            this.primitiveManager.clearPrimitives();
-            this.labelManager.clearLabels();
+        try {
+            await this.performWithScaleOne(async () => {
+                this.canvas.discardActiveObject();
+                this.contourManager.clearContours();
+                this.primitiveManager.clearPrimitives();
+                this.labelManager.clearLabels();
 
             const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
             const width = data.layment?.width || Config.LAYMENT_DEFAULT_WIDTH;
@@ -1564,14 +1595,16 @@ class ContourApp {
                 }
             }
 
-            this.applyMaterialColorToCutouts();
-            this.canvas.renderAll();
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
-        });
-        this.isRestoringWorkspace = false;
+                this.applyMaterialColorToCutouts();
+                this.canvas.renderAll();
+                this.updateButtons();
+                this.updateStatusBar();
+                this.syncPrimitiveControlsFromSelection();
+                this.syncLabelControlsFromSelection();
+            });
+        } finally {
+            this.isRestoringWorkspace = false;
+        }
         this.syncWorkspaceScaleInput();
     }
 
