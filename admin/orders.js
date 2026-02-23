@@ -101,10 +101,20 @@ const updateMeta = (details) => {
   contoursPreEl.textContent = JSON.stringify(details.contours || [], null, 2);
 
   const files = details.files || {};
-  downloadNcLink.href = files.finalNc || '#';
+  if (files.gcodeNc) {
+    downloadNcLink.href = files.gcodeNc;
+    downloadNcLink.classList.remove('is-disabled');
+    downloadNcLink.removeAttribute('aria-disabled');
+    downloadNcLink.tabIndex = 0;
+  } else {
+    downloadNcLink.href = '#';
+    downloadNcLink.classList.add('is-disabled');
+    downloadNcLink.setAttribute('aria-disabled', 'true');
+    downloadNcLink.tabIndex = -1;
+  }
 
-  if (files.layoutSvg) {
-    downloadSvgLink.href = files.layoutSvg;
+  if (files.previewSvg) {
+    downloadSvgLink.href = files.previewSvg;
     downloadSvgLink.classList.remove('is-disabled');
     downloadSvgLink.removeAttribute('aria-disabled');
     downloadSvgLink.tabIndex = 0;
@@ -115,8 +125,8 @@ const updateMeta = (details) => {
     downloadSvgLink.tabIndex = -1;
   }
 
-  if (files.layoutDxf) {
-    downloadDxfLink.href = files.layoutDxf;
+  if (files.laserDxf) {
+    downloadDxfLink.href = files.laserDxf;
     downloadDxfLink.classList.remove('is-disabled');
     downloadDxfLink.removeAttribute('aria-disabled');
     downloadDxfLink.tabIndex = 0;
@@ -128,15 +138,15 @@ const updateMeta = (details) => {
   }
 
   layoutWrapEl.innerHTML = '';
-  if (files.layoutPng) {
+  if (files.previewPng) {
     const img = document.createElement('img');
-    img.src = `${files.layoutPng}?t=${Date.now()}`;
+    img.src = `${files.previewPng}?t=${Date.now()}`;
     img.alt = `layout ${details.orderId}`;
     layoutWrapEl.appendChild(img);
   } else {
     const noImg = document.createElement('div');
     noImg.className = 'muted';
-    noImg.textContent = 'layout.png отсутствует';
+    noImg.textContent = 'превью отсутствует';
     layoutWrapEl.appendChild(noImg);
   }
 
