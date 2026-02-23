@@ -4,8 +4,8 @@
 Веб-конструктор раскладки инструментов в габаритах ложемента (EVA-foam) + детерминированная генерация G-code для ЧПУ.
 
 ## Что является продуктом сервиса
-- `final.nc` — внутренний технологический артефакт производства.
-- `final.nc` не является продуктом сервиса и не является файлом, который отдаётся клиенту как конечная ценность.
+- `.nc` — внутренний технологический артефакт производства.
+- `.nc` не является продуктом сервиса и не является файлом, который отдаётся клиенту как конечная ценность.
 - Конечный продукт сервиса — физически изготовленный ложемент.
 
 ## Статусы заказа
@@ -27,8 +27,7 @@
 - Все проверки/экспорт на фронте выполняются при `scale=1` (паттерн `performWithScaleOne()`).
 - Manifest нельзя получать как статик (`/contours/manifest.json` закрыт nginx). Использовать только `GET /api/contours/manifest`.
 
-«prod routing: /api/*, /admin/api/*, /contours/*»
-«на проде есть systemd unit layment-backend.service и nginx site layment-designer»
+на проде есть systemd unit layment-backend.service и nginx site layment-designer
 (детали ExecStart/alias — в `DEPLOYMENT.md`)
 
 ## URL-неймспейсы (канон)
@@ -37,33 +36,70 @@
 - Admin UI: `/admin` (static)
 - Domain static: `/contours/*` (раздача `domain/contours`)
 
-## Контракт export (frontend -> backend) — стабилен
+## Orders — идентификаторы и имена файлов (канон)
+- `orderId` — имя папки заказа: `orders/<orderId>/...`
+- `orderNumber` — номер заказа вида `K-00001` и префикс производственных файлов:
+  - `<orderNumber>.nc`, `<orderNumber>.png`, `<orderNumber>.svg`, `<orderNumber>.dxf`, `<orderNumber>_labels.dxf`
+
+## Контракт export (frontend -> backend) — стабилен (но расширен)
+
 Request JSON:
 
 ```json
 {
-  "orderMeta": { "width": "mm", "height": "mm", "units": "mm", "coordinateSystem": "..." },
+  "orderMeta": { "width": "mm", "height": "mm", "units": "mm", "coordinateSystem": "origin-top-left" },
   "contours": [
     { "id": "str", "x": "mm", "y": "mm", "angle": "deg", "scaleOverride": "number" }
   ],
-  "primitives": []
+  "primitives": [],
+  "labels": []
 }
 ```
+Backend обязан читать orderMeta.width/height, а не ширину/высоту на верхнем уровне.
 
-Backend обязан читать `orderMeta.width/height`, а не ширину/высоту на верхнем уровне.
+Дополнительно (опционально, для “снимка” раскладки в заказе):
+- layoutPng (base64 payload / data-url),
+- layoutSvg (строка SVG).
+
+Response JSON:
+всегда возвращает orderId и orderNumber (+ pricePreview / status).
+
+
+## Добавление артикула (админ-пайплайн):
+
+Добавление артикула — два явных шага:
+- metadata → получение канонического id от backend
+- upload файлов (SVG/NC/preview) только для существующего id
+
+Преобразования геометрии должны происходить до runtime (admin-этап), а не “по необходимости” при заказе.
+
+## G-code — детерминизм и сборка :
+
+Итоговый G-code (<orderNumber>.nc) собирается детерминированно из:
+
+- стартового шаблона (domain/gcode/start_gcode.nc)
+- фрагментов каждого артикула (domain/contours/nc/*)
+- фрагментов примитивов (генерация на backend)
+- конечного шаблона (domain/gcode/end_gcode.nc)
+- Rotation и offset применяются на backend.
+
+## DXF — второй производственный выход (маркировка/лазер):
+
+- Заказ должен иметь DXF артефакт(ы).
+- labels — часть заказа и используется для генерации DXF под лазерную маркировку.
+
+## Frontend vendor libs (важно) :
+
+- Fabric.js подключаем не с CDN, а из frontend/vendor/* (пропатченная версия).
+- Обновление vendor-версии делается через ./scripts/update_fabric_vendor.sh <version>
 
 ## Ограничения по технологиям
 - Не добавлять новые фреймворки (frontend остаётся plain JS + fabric.js; backend остаётся FastAPI).
 - Не делать «красивый» рефакторинг ради рефакторинга. Только прозрачные инженерные изменения.
 - Любая смена контракта/путей — синхронно на обеих сторонах + обновить docs.
 
-## Критерии готовности изменений
-- `/api/export-layment` работает, фронт и бэк согласованы.
-- Админка пишет manifest assets в каноничном формате (без ведущего `/`).
-- Backend использует абсолютную базу `BASE_DIR/domain/contours`, не зависит от cwd.
-- Есть минимальный smoke-test (`curl` или ручной сценарий), и он описан в PR/коммите.
-
 ## Стиль работы агента
 - Делай изменения небольшими и атомарными.
 - Перед правками — найди все места использования (`ripgrep`).
 - После — покажи diff и список команд для проверки.
+- Не меняй публичные контракты/форматы “по-тихому”: любое изменение контракта должно быть описано в PR/коммите.

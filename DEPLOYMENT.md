@@ -21,7 +21,7 @@
   - `svg/`
   - `nc/`
   - `preview/`
-
+- `/var/www/layment-designer/orders` — Orders (runtime):
 ---
 
 ## 2) Backend service (systemd + uvicorn)
