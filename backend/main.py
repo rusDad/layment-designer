@@ -126,17 +126,15 @@ def _next_order_number(orders_dir: Path) -> str:
     return f"K-{max_number + 1:05d}"
 
 
-def _resolve_order_artifact(order_dir: Path, order_number: Optional[str], extension: str, legacy_name: str) -> Path:
-    if order_number:
-        numbered_artifact = order_dir / f"{order_number}.{extension}"
-        if numbered_artifact.exists() and numbered_artifact.is_file():
-            return numbered_artifact
+def _require_order_number(order_dir: Path) -> str:
+    order_number = _read_order_number(order_dir)
+    if not order_number:
+        raise HTTPException(status_code=500, detail="Order is missing orderNumber")
+    return order_number
 
-    legacy_artifact = order_dir / legacy_name
-    if legacy_artifact.exists() and legacy_artifact.is_file():
-        return legacy_artifact
 
-    raise HTTPException(status_code=404, detail=f"{legacy_name} not found")
+def _artifact_path(order_dir: Path, order_number: str, ext: str) -> Path:
+    return order_dir / f"{order_number}.{ext}"
 
 
 def _update_order_status(order_id: str, *, field: str, timestamp_field: str) -> Dict[str, Any]:
@@ -392,7 +390,7 @@ def list_orders():
             "produced": bool(status_data.get("produced", False)),
             "width": order_meta.get("width"),
             "height": order_meta.get("height"),
-            "hasLayoutPng": ((order_dir / f"{order_number}.png").exists() if order_number else False) or (order_dir / "layout.png").exists(),
+            "hasLayoutPng": (order_dir / f"{order_number}.png").exists() if order_number else False,
         })
 
     def sort_key(item: Dict[str, Any]) -> datetime:
@@ -414,7 +412,7 @@ def get_order_details(order_id: str):
     order_dir = _order_dir(order_id)
     status_data = _read_json_if_exists(order_dir / "status.json") or {}
     order_payload = _read_json_if_exists(order_dir / "order.json") or {}
-    order_number = _read_order_number(order_dir)
+    order_number = _require_order_number(order_dir)
     order_meta = _order_meta_from_order_json(order_payload)
 
     return {
@@ -425,10 +423,10 @@ def get_order_details(order_id: str):
         "contours": order_payload.get("contours") or [],
         "primitives": order_payload.get("primitives") or [],
         "files": {
-            "finalNc": f"/admin/api/orders/{order_id}/final.nc",
-            "layoutPng": f"/admin/api/orders/{order_id}/layout.png" if ((order_dir / f"{order_number}.png").exists() if order_number else False) or (order_dir / "layout.png").exists() else None,
-            "layoutSvg": f"/admin/api/orders/{order_id}/layout.svg" if ((order_dir / f"{order_number}.svg").exists() if order_number else False) or (order_dir / "layout.svg").exists() else None,
-            "layoutDxf": f"/admin/api/orders/{order_id}/layout.dxf" if ((order_dir / f"{order_number}.dxf").exists() if order_number else False) or (order_dir / "layout.dxf").exists() else None,
+            "gcodeNc": f"/admin/api/orders/{order_id}/artifacts/cnc.nc",
+            "previewPng": f"/admin/api/orders/{order_id}/artifacts/preview.png" if (order_dir / f"{order_number}.png").exists() else None,
+            "previewSvg": f"/admin/api/orders/{order_id}/artifacts/preview.svg" if (order_dir / f"{order_number}.svg").exists() else None,
+            "laserDxf": f"/admin/api/orders/{order_id}/artifacts/laser.dxf" if (order_dir / f"{order_number}.dxf").exists() else None,
         },
     }
 
@@ -463,32 +461,34 @@ def _serve_order_file(order_id: str, filename: str, media_type: Optional[str] = 
     return FileResponse(file_path, filename=download_name or filename, media_type=media_type)
 
 
-def _serve_order_artifact(order_id: str, extension: str, legacy_filename: str, media_type: str) -> FileResponse:
+def _serve_order_number_artifact(order_id: str, ext: str, media_type: str, download_name_ext: Optional[str] = None) -> FileResponse:
     order_dir = _order_dir(order_id)
-    order_number = _read_order_number(order_dir)
-    artifact_path = _resolve_order_artifact(order_dir, order_number, extension, legacy_filename)
-    download_name = f"{order_number}.{extension}" if order_number else artifact_path.name
-    return FileResponse(artifact_path, filename=download_name, media_type=media_type)
+    order_number = _require_order_number(order_dir)
+    artifact_path = _artifact_path(order_dir, order_number, ext)
+    if not artifact_path.exists() or not artifact_path.is_file():
+        raise HTTPException(status_code=404, detail=f"{order_number}.{ext} not found")
+    filename_ext = download_name_ext or ext
+    return FileResponse(artifact_path, filename=f"{order_number}.{filename_ext}", media_type=media_type)
 
 
-@admin_orders_router.get("/orders/{order_id}/final.nc")
-def download_final_nc(order_id: str):
-    return _serve_order_artifact(order_id, "nc", "final.nc", media_type="text/plain")
+@admin_orders_router.get("/orders/{order_id}/artifacts/cnc.nc")
+def download_gcode_nc(order_id: str):
+    return _serve_order_number_artifact(order_id, "nc", media_type="text/plain")
 
 
-@admin_orders_router.get("/orders/{order_id}/layout.png")
-def download_layout_png(order_id: str):
-    return _serve_order_artifact(order_id, "png", "layout.png", media_type="image/png")
+@admin_orders_router.get("/orders/{order_id}/artifacts/preview.png")
+def download_preview_png(order_id: str):
+    return _serve_order_number_artifact(order_id, "png", media_type="image/png")
 
 
-@admin_orders_router.get("/orders/{order_id}/layout.svg")
-def download_layout_svg(order_id: str):
-    return _serve_order_artifact(order_id, "svg", "layout.svg", media_type="image/svg+xml")
+@admin_orders_router.get("/orders/{order_id}/artifacts/preview.svg")
+def download_preview_svg(order_id: str):
+    return _serve_order_number_artifact(order_id, "svg", media_type="image/svg+xml")
 
 
-@admin_orders_router.get("/orders/{order_id}/layout.dxf")
-def download_layout_dxf(order_id: str):
-    return _serve_order_artifact(order_id, "dxf", "layout.dxf", media_type="application/dxf")
+@admin_orders_router.get("/orders/{order_id}/artifacts/laser.dxf")
+def download_laser_dxf(order_id: str):
+    return _serve_order_number_artifact(order_id, "dxf", media_type="application/dxf")
 
 
 @admin_orders_router.get("/orders/{order_id}/order.json")
