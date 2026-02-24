@@ -416,10 +416,16 @@ class ContourManager {
                 article: meta.article,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
-                angle: obj.angle,
+                angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1
             };
         });
+    }
+
+    normalizeExportAngle(angle) {
+        if (angle === -90 || angle === '-90') return 270;
+        if (angle === -180 || angle === '-180') return 180;
+        return angle;
     }
 
     getWorkspaceContoursData() {
@@ -434,7 +440,7 @@ class ContourManager {
                 article: meta.article,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
-                angle: obj.angle,
+                angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1,
                 placementId: obj.placementId
             };
