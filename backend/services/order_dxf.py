@@ -322,7 +322,7 @@ def _emit_tables_cad(lines: List[str]) -> None:
         "0", "LAYER", "100", "AcDbSymbolTableRecord", "100", "AcDbLayerTableRecord", "2", "LABELS", "70", "0", "62", "7", "6", "CONTINUOUS",
         "0", "ENDTAB",
         "0", "TABLE", "2", "STYLE", "70", "1",
-        "0", "STYLE", "100", "AcDbSymbolTableRecord", "100", "AcDbTextStyleTableRecord", "2", "STANDARD", "70", "0", "40", "0", "41", "1", "50", "0", "71", "0", "42", "2.5", "3", "txt.shx", "4", "",
+        "0", "STYLE", "100", "AcDbSymbolTableRecord", "100", "AcDbTextStyleTableRecord", "2", "STANDARD", "70", "0", "40", "0", "41", "1", "50", "0", "71", "0", "42", "2.5", "3", "Arial.ttf", "4", "",
         "0", "ENDTAB",
         "0", "TABLE", "2", "VIEW", "70", "0", "0", "ENDTAB",
         "0", "TABLE", "2", "UCS", "70", "0", "0", "ENDTAB",
