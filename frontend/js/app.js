@@ -736,9 +736,16 @@ class ContourApp {
             return [];
         }
         if (active.type === 'activeSelection') {
-            return active.getObjects().filter(obj => this.shouldAutosaveForObject(obj));
+            return active.getObjects().filter(obj => this.isArrangeTarget(obj));
         }
-        return this.shouldAutosaveForObject(active) ? [active] : [];
+        return this.isArrangeTarget(active) ? [active] : [];
+    }
+
+    isArrangeTarget(obj) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
+            return false;
+        }
+        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
     }
 
     temporarilyUngroupActiveSelection() {
@@ -755,6 +762,13 @@ class ContourApp {
 
     restoreActiveSelection(objects) {
         if (!objects || !objects.length) {
+            return;
+        }
+
+        if (objects.length === 1) {
+            this.canvas.setActiveObject(objects[0]);
+            objects[0].setCoords();
+            this.canvas.requestRenderAll();
             return;
         }
 
@@ -794,6 +808,8 @@ class ContourApp {
             return;
         }
 
+        this.temporarilyUngroupActiveSelection();
+
         const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
         const minLeft = Math.min(...boxes.map(item => item.bbox.left));
         const maxRight = Math.max(...boxes.map(item => item.bbox.left + item.bbox.width));
@@ -819,6 +835,10 @@ class ContourApp {
         }
 
         this.finalizeArrangeOperation();
+        this.restoreActiveSelection(selected);
+        this.updateButtons();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncLabelControlsFromSelection();
     }
 
     distributeSelected(mode) {
@@ -826,6 +846,8 @@ class ContourApp {
         if (selected.length < 3) {
             return;
         }
+
+        this.temporarilyUngroupActiveSelection();
 
         const axis = mode === 'horizontal-gaps' ? 'x' : 'y';
         const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
@@ -858,6 +880,10 @@ class ContourApp {
         }
 
         this.finalizeArrangeOperation();
+        this.restoreActiveSelection(selected);
+        this.updateButtons();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncLabelControlsFromSelection();
     }
 
     snapSelectedToSide(side) {
@@ -866,7 +892,7 @@ class ContourApp {
             return;
         }
          // важно: разгруппировать ПОСЛЕ того, как мы получили список объектов
-        const saved = this.temporarilyUngroupActiveSelection();        
+        this.temporarilyUngroupActiveSelection();
 
         const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
         const clearanceMm = 3;
@@ -895,7 +921,10 @@ class ContourApp {
         }
 
         this.finalizeArrangeOperation();
-        this.restoreActiveSelection(saved.objects);
+        this.restoreActiveSelection(selected);
+        this.updateButtons();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncLabelControlsFromSelection();
     }
 
     updateButtons() {
