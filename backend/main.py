@@ -33,9 +33,16 @@ class OrderMeta(BaseModel):
     height: float
     units: str
     coordinateSystem: Optional[str] = None
+    baseMaterialColor: Optional[str] = None
+    laymentType: Optional[str] = None
     pricePreview: Optional[Dict[str, Any]] = None
     workspaceSnapshot: Optional[Dict[str, Any]] = None
     canvasPng: Optional[str] = None
+
+
+class CustomerInfo(BaseModel):
+    name: str
+    contact: str
 
 
 class ContourPlacement(BaseModel):
@@ -59,6 +66,7 @@ class ExportRequest(BaseModel):
     contours: List[ContourPlacement]
     primitives: Optional[List[Dict[str, Any]]] = None
     labels: Optional[List[LabelPlacement]] = None
+    customer: Optional[CustomerInfo] = None
 
 
 def _orders_dir() -> Path:
@@ -393,6 +401,8 @@ def get_order_status(order_id: str):
     order_number = _read_order_number(order_dir)
     meta = _read_json_if_exists(order_dir / "meta.json") or {}
     order_payload = _read_json_if_exists(order_dir / "order.json") or {}
+    order_meta = _order_meta_from_order_json(order_payload)
+    customer = order_payload.get("customer") if isinstance(order_payload.get("customer"), dict) else None
 
     created_at = status_data.get("createdAt")
     if not isinstance(created_at, str) or not created_at:
@@ -411,6 +421,8 @@ def get_order_status(order_id: str):
         "producedAt": produced_at,
         "updatedAt": updated_at,
         "contents": _build_order_contents(order_payload),
+        "customer": customer,
+        "baseMaterialColor": order_meta.get("baseMaterialColor"),
     }
 
     preview_path = _order_preview_png_path(order_dir, order_number)
@@ -494,6 +506,7 @@ def get_order_details(order_id: str):
         "orderNumber": order_number,
         "status": status_data,
         "orderMeta": order_meta,
+        "customer": order_payload.get("customer") if isinstance(order_payload.get("customer"), dict) else None,
         "contours": order_payload.get("contours") or [],
         "primitives": order_payload.get("primitives") or [],
         "files": {
