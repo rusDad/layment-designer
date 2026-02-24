@@ -24,6 +24,7 @@ class ContourApp {
         this.exportInProgress = false;
         this.lastOrderResult = null;
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
+        this.pendingCustomer = null;
 
         this.init();
     }
@@ -327,13 +328,15 @@ class ContourApp {
         this.bindInputEvents();
         this.bindCatalogEvents();
         this.bindStatusHintEvents();
+        this.bindCustomerModalEvents();
         this.bindKeyboardShortcuts();
         this.syncWorkspaceScaleInput();
     }
 
     bindKeyboardShortcuts() {
         document.addEventListener('keydown', event => {
-            if (event.defaultPrevented || this.shouldIgnoreKeyboardShortcut(event)) {
+            const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
+            if (event.defaultPrevented || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
                 return;
             }
 
@@ -367,6 +370,11 @@ class ContourApp {
                     }
                     break;
                 case 'Escape':
+                    if (!UIDom.customerModal?.overlay?.hidden) {
+                        event.preventDefault();
+                        this.closeCustomerModal();
+                        break;
+                    }
                     if (this.canvas.getActiveObject()) {
                         event.preventDefault();
                         this.canvas.discardActiveObject();
@@ -494,7 +502,7 @@ class ContourApp {
             }
         };
 
-        UIDom.buttons.export.onclick = () => this.withExportCooldown(() => this.performWithScaleOne(() => this.exportData()));
+        UIDom.buttons.export.onclick = () => this.openCustomerModal();
 
         UIDom.buttons.check.onclick =
             () => this.performWithScaleOne(() => {
@@ -544,6 +552,48 @@ class ContourApp {
         UIDom.buttons.snapTop.onclick = () => this.snapSelectedToSide('top');
         UIDom.buttons.snapBottom.onclick = () => this.snapSelectedToSide('bottom');
     }
+    bindCustomerModalEvents() {
+        const modal = UIDom.customerModal;
+        if (!modal?.overlay) {
+            return;
+        }
+
+        const syncConfirmState = () => {
+            const isValid = Boolean(modal.nameInput?.value.trim()) && Boolean(modal.contactInput?.value.trim());
+            if (modal.confirmButton) {
+                modal.confirmButton.disabled = !isValid;
+            }
+            return isValid;
+        };
+
+        modal.nameInput?.addEventListener('input', syncConfirmState);
+        modal.contactInput?.addEventListener('input', syncConfirmState);
+
+        modal.cancelButton?.addEventListener('click', () => this.closeCustomerModal());
+
+        modal.overlay.addEventListener('click', event => {
+            if (event.target === modal.overlay) {
+                this.closeCustomerModal();
+            }
+        });
+
+        const onEnter = event => {
+            if (event.key !== 'Enter') {
+                return;
+            }
+            if (!syncConfirmState()) {
+                return;
+            }
+            event.preventDefault();
+            this.handleCustomerModalConfirm();
+        };
+
+        modal.nameInput?.addEventListener('keydown', onEnter);
+        modal.contactInput?.addEventListener('keydown', onEnter);
+
+        modal.confirmButton?.addEventListener('click', () => this.handleCustomerModalConfirm());
+    }
+
     bindInputEvents() {
         UIDom.inputs.laymentPreset.addEventListener('change', e => {
             this.applyLaymentPreset(e.target.value);
@@ -1684,6 +1734,47 @@ class ContourApp {
     }
 
 
+    openCustomerModal() {
+        const modal = UIDom.customerModal;
+        if (!modal?.overlay) {
+            return;
+        }
+        modal.overlay.hidden = false;
+        if (modal.confirmButton) {
+            modal.confirmButton.disabled = !(modal.nameInput?.value.trim() && modal.contactInput?.value.trim());
+        }
+        modal.nameInput?.focus();
+    }
+
+    closeCustomerModal() {
+        const modal = UIDom.customerModal;
+        if (!modal?.overlay) {
+            return;
+        }
+        modal.overlay.hidden = true;
+    }
+
+    getSanitizedCustomerFromModal() {
+        const modal = UIDom.customerModal;
+        const name = (modal?.nameInput?.value || '').trim().replace(/\s+/g, ' ');
+        const rawContact = (modal?.contactInput?.value || '').trim();
+        const contact = rawContact.replace(/[^0-9A-Za-zА-Яа-яЁё+@.-]/g, '');
+
+        return { name, contact };
+    }
+
+    async handleCustomerModalConfirm() {
+        const customer = this.getSanitizedCustomerFromModal();
+        if (!customer.name || !customer.contact) {
+            return;
+        }
+
+        this.pendingCustomer = customer;
+        this.closeCustomerModal();
+
+        await this.withExportCooldown(() => this.performWithScaleOne(() => this.exportData()));
+    }
+
     async withExportCooldown(action) {
         if (this.exportInProgress) {
             return;
@@ -1744,7 +1835,8 @@ class ContourApp {
 
             contours: this.contourManager.getContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
-            labels: this.labelManager.getExportLabelsData()
+            labels: this.labelManager.getExportLabelsData(),
+            customer: this.pendingCustomer
         };
 
         console.log('Заказ:', data);
@@ -1775,6 +1867,8 @@ class ContourApp {
         } catch (err) {
             console.error(err);
             this.showOrderResultError('Ошибка при создании заказа: ' + err.message);
+        } finally {
+            this.pendingCustomer = null;
         }
     }
 
