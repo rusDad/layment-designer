@@ -327,15 +327,15 @@ async def export_layment(payload: Dict[str, Any]):
 
             dxf_content, missing_contours = generate_order_layout_dxf(order_data)
             dxf_cad_content, missing_contours_cad = generate_order_layout_dxf_cad(order_data, include_labels=True)
-            with (staging_dir / f"{order_number}.dxf").open('w', encoding='utf-8') as dxf_file:
+            with (staging_dir / f"{order_number}_minimal.dxf").open('w', encoding='utf-8') as dxf_file:
                 dxf_file.write(dxf_content)
-            with (staging_dir / f"{order_number}_labels.dxf").open('w', encoding='utf-8') as dxf_labels_file:
+            with (staging_dir / f"{order_number}.dxf").open('w', encoding='utf-8') as dxf_labels_file:
                 dxf_labels_file.write(dxf_cad_content)
             meta["dxf"] = {
                 "generated": len(missing_contours) == 0,
                 "missingContours": missing_contours,
-                "minimalFile": f"{order_number}.dxf",
-                "cadFile": f"{order_number}_labels.dxf",
+                "minimalFile": f"{order_number}_minimal.dxf",
+                "cadFile": f"{order_number}.dxf",
                 "cadGenerated": len(missing_contours_cad) == 0,
                 "cadMissingContours": missing_contours_cad,
             }
