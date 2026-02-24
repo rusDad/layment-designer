@@ -33,6 +33,23 @@ const fmt = (value) => {
   return date.toLocaleString('ru-RU');
 };
 
+const escapeHtml = (value) => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;');
+
+const humanizeColor = (color) => {
+  if (color === 'green') {
+    return 'зелёный';
+  }
+  if (color === 'blue') {
+    return 'синий';
+  }
+  return '—';
+};
+
 const createBadge = (label, active) => {
   const span = document.createElement('span');
   span.className = `badge${active ? ' ok' : ''}`;
@@ -149,10 +166,19 @@ const renderOrdersList = () => {
 const updateMeta = (details) => {
   const status = details.status || {};
   const orderMeta = details.orderMeta || {};
+  const customer = details.customer || {};
+  const baseMaterialColor = orderMeta?.baseMaterialColor;
+
+  const safeOrderId = escapeHtml(details.orderId || '—');
+  const safeCustomerName = escapeHtml(customer.name || '—');
+  const safeCustomerContact = escapeHtml(customer.contact || '—');
 
   orderMetaEl.innerHTML = `
     <div><strong>Номер заказа:</strong> ${details.orderNumber || '—'}</div>
-    <div><strong>Шифр (orderId):</strong> ${details.orderId}</div>
+    <div><strong>Шифр (orderId):</strong> ${safeOrderId}</div>
+    <div><strong>Заказчик:</strong> ${safeCustomerName}</div>
+    <div><strong>Контакт:</strong> ${safeCustomerContact}</div>
+    <div><strong>Цвет основы:</strong> ${humanizeColor(baseMaterialColor)}</div>
     <div><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
     <div><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
     <div><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
