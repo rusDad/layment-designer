@@ -15,6 +15,8 @@
     const statusOrderNumber = document.getElementById('statusOrderNumber');
     const statusOrderId = document.getElementById('statusOrderId');
     const statusState = document.getElementById('statusState');
+    const statusCustomerName = document.getElementById('statusCustomerName');
+    const statusBaseMaterialColor = document.getElementById('statusBaseMaterialColor');
     const statusPrice = document.getElementById('statusPrice');
     const statusCreatedAt = document.getElementById('statusCreatedAt');
     const statusConfirmedAt = document.getElementById('statusConfirmedAt');
@@ -92,6 +94,22 @@
         statusContentsBlock.hidden = false;
     }
 
+    function humanizeColor(color) {
+        if (!color) {
+            return '—';
+        }
+
+        if (color === 'green') {
+            return 'зелёный';
+        }
+
+        if (color === 'blue') {
+            return 'синий';
+        }
+
+        return String(color) || '—';
+    }
+
     function showSuccess(order) {
         setResultType('success');
         statusResult.hidden = false;
@@ -101,6 +119,8 @@
         statusOrderNumber.textContent = order.orderNumber || '—';
         statusOrderId.textContent = order.orderId || '—';
         statusState.textContent = stateLabels[order.state] || order.state || '—';
+        statusCustomerName.textContent = order.customer?.name || '—';
+        statusBaseMaterialColor.textContent = humanizeColor(order.baseMaterialColor);
         statusPrice.textContent = order.price && order.price.total != null ? String(order.price.total) : '—';
         statusCreatedAt.textContent = formatDateTime(order.createdAt);
         statusConfirmedAt.textContent = formatDateTime(order.confirmedAt);
