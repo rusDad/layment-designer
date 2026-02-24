@@ -69,6 +69,16 @@ window.UIDom = {
 
 
 
+
+  customerModal: {
+    overlay: document.getElementById('customerModalOverlay'),
+    dialog: document.getElementById('customerModalDialog'),
+    nameInput: document.getElementById('customerNameInput'),
+    contactInput: document.getElementById('customerContactInput'),
+    confirmButton: document.getElementById('customerModalConfirmButton'),
+    cancelButton: document.getElementById('customerModalCancelButton'),
+  },
+
   orderResult: {
     container: document.getElementById('orderResult'),
     message: document.getElementById('orderResultMessage'),

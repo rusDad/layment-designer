@@ -185,6 +185,25 @@
         </div>
 
     </div>
+
+    <div id="customerModalOverlay" class="customer-modal-overlay" hidden>
+        <div id="customerModalDialog" class="customer-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
+            <h2 id="customerModalTitle">Создание заказа</h2>
+            <div class="customer-modal-field">
+                <label for="customerNameInput">Как к вам обращаться?</label>
+                <input type="text" id="customerNameInput" autocomplete="name">
+            </div>
+            <div class="customer-modal-field">
+                <label for="customerContactInput">Укажите любой удобный способ связи ( Номер телефона или e-mail )</label>
+                <input type="text" id="customerContactInput" autocomplete="email">
+            </div>
+            <div class="customer-modal-actions">
+                <button id="customerModalCancelButton" class="tool-button customer-modal-cancel">Отмена</button>
+                <button id="customerModalConfirmButton" class="tool-button export-button" disabled>Создать заказ</button>
+            </div>
+        </div>
+    </div>
+
     <script src="./js/config.js"></script>
     <script src="./js/svgLoader.js"></script>
     <script src="./js/contourManager.js"></script>
