@@ -173,7 +173,20 @@ class ContourManager {
           for (let j = i + 1; j < this.contours.length; j++) {
             const b = this.contours[j];
             const boxB = b.getBoundingRect(true);
-            if (this.intersect(box, boxB) && this.hasPixelOverlap(a, b)) {  // Pixel overlap check
+            const C = Config.GEOMETRY.CLEARANCE_MM;
+            const boxA = {
+              left: box.left - C,
+              top: box.top - C,
+              width: box.width + 2 * C,
+              height: box.height + 2 * C
+            };
+            const boxB2 = {
+              left: boxB.left - C,
+              top: boxB.top - C,
+              width: boxB.width + 2 * C,
+              height: boxB.height + 2 * C
+            };
+            if (this.intersect(boxA, boxB2) && this.hasPixelOverlap(a, b)) {  // Pixel overlap check
                 problematic.add(a);
                 problematic.add(b);
                 collisionContours.add(a);
@@ -240,11 +253,18 @@ class ContourManager {
    
     // NEW Pixel overlap check assuming scale=1 during check
     hasPixelOverlap(a, b) {
-        const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
+        const C = Config.GEOMETRY.CLEARANCE_MM;
+
+        const boxA = a.getBoundingRect(true);
+        const boxB = b.getBoundingRect(true);
+
+        const boxA2 = { left: boxA.left - C, top: boxA.top - C, width: boxA.width + 2*C, height: boxA.height + 2*C };
+        const boxB2 = { left: boxB.left - C, top: boxB.top - C, width: boxB.width + 2*C, height: boxB.height + 2*C };
+        const intersectBox = this.getIntersectBBox(boxA2, boxB2);
         if (!intersectBox.width || !intersectBox.height) return false;
 
-        const paddedWidth = Math.ceil(intersectBox.width + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);
-        const paddedHeight = Math.ceil(intersectBox.height + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);
+        const paddedWidth = Math.ceil(intersectBox.width + (Config.CANVAS_OVERLAP.CENTER_OFFSET * 2 ));
+        const paddedHeight = Math.ceil(intersectBox.height + (Config.CANVAS_OVERLAP.CENTER_OFFSET * 2));
 
         const setMaskStyleRecursive = (obj) => {
             if (obj.type === 'group') {
@@ -259,7 +279,7 @@ class ContourManager {
                 opacity: 1,
                 // ВАЖНО: clearance=6мм => strokeWidth=6 => наружу +3мм (stroke рисуется по центру)
                 // Так как применяем к обоим контурам — суммарный зазор получится 6мм
-                strokeWidth: Config.GEOMETRY.CLEARANCE_MM,
+                strokeWidth: Config.GEOMETRY.CLEARANCE_MM * 2 ,
                 strokeLineJoin: 'round',
                 strokeLineCap: 'round',
                 strokeUniform: true,     // clearance в "мм", не должен масштабироваться вместе с контуром
