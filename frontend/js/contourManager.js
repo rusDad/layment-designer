@@ -38,6 +38,8 @@ class ContourManager {
             scaleY: factor,
             hasControls: true,
             hasBorders: true,
+            perPixelTargetFind : true,
+            targetFindTolerance : Config.GEOMETRY.FIND_TOLERANCE,
             lockScalingX: true,
             lockScalingY: true,
             lockRotation: false,
