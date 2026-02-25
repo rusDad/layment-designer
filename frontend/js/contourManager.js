@@ -237,77 +237,7 @@ class ContourManager {
                a.top + a.height > b.top;
     }
 
-    //OLD  Pixel overlap check assuming scale=1 during check
-    /*
-    hasPixelOverlap(a, b) {
-        const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));
-        if (!intersectBox.width || !intersectBox.height) return false;
-
-        const paddedWidth = Math.ceil(intersectBox.width + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);  // Increased padding
-        const paddedHeight = Math.ceil(intersectBox.height + Config.CANVAS_OVERLAP.PIXEL_CHECK_PADDING);
-
-        const tempCanvas = new fabric.StaticCanvas(null, {
-            width: paddedWidth,
-            height: paddedHeight,
-            backgroundColor: Config.CANVAS_OVERLAP.TEMP_BACKGROUND
-        });
-
-        // Клоны с нормализованным scale и position
-        const cloneA = fabric.util.object.clone(a);
-        cloneA.set({
-            stroke: null,
-            left: (cloneA.left - intersectBox.left) + Config.CANVAS_OVERLAP.CENTER_OFFSET,  // Centered padding
-            top: (cloneA.top - intersectBox.top) + Config.CANVAS_OVERLAP.CENTER_OFFSET
-        });
-
-        const cloneB = fabric.util.object.clone(b);
-        cloneB.set({
-            stroke: null,
-            left: (cloneB.left - intersectBox.left) + Config.CANVAS_OVERLAP.CENTER_OFFSET,
-            top: (cloneB.top - intersectBox.top) + Config.CANVAS_OVERLAP.CENTER_OFFSET
-        });
-
-        // Рекурсивно устанавливаем fill на все дочерние объекты (paths, etc)
-        const setFillRecursive = (obj, color) => {
-            if (obj.type === 'path' || obj.type === 'polygon' || obj.type === 'polyline' || obj.type === 'circle' || obj.type === 'rect' || obj.type === 'ellipse') {
-                obj.set({
-                    fill: color,
-                    stroke: 'transparent',
-                    strokeWidth: Config.GEOMETRY.CLEARANCE_MM,
-                    strokeLineJoin: 'round',
-                    strokeLineCap: 'round'
-                });
-            }
-            if (obj.type === 'group') {
-                obj.forEachObject(child => setFillRecursive(child, color));
-            }
-        };
-
-        setFillRecursive(cloneA, Config.CANVAS_OVERLAP.OVERLAP_COLOR);
-        setFillRecursive(cloneB, Config.CANVAS_OVERLAP.OVERLAP_COLOR);
-
-        tempCanvas.add(cloneA);
-        tempCanvas.add(cloneB);
-        tempCanvas.renderAll();
-
-        const ctx = tempCanvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height).data;
-
-        for (let i = 0; i < imageData.length; i += 4) {
-            const r = imageData[i], g = imageData[i+1], b = imageData[i+2], a = imageData[i+3];
-            // Проверяем темный серый (overlap ~63, with tolerance for antialias)
-             //Math.abs(r - g) < 10 && Math.abs(r - b) < 10 && r < 100 && a > 128
-            if (Math.abs(r - g) < Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.COLOR_DIFF &&             
-                Math.abs(r - b) < Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.COLOR_DIFF && 
-                r < Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.MAX_RGB && 
-                a > Config.CANVAS_OVERLAP.OVERLAP_THRESHOLD.MIN_ALPHA) {      
-              return true;
-            }
-        }
-        return false;
-    }
-    */
-
+   
     // NEW Pixel overlap check assuming scale=1 during check
     hasPixelOverlap(a, b) {
         const intersectBox = this.getIntersectBBox(a.getBoundingRect(true), b.getBoundingRect(true));

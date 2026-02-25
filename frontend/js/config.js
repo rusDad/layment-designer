@@ -17,13 +17,13 @@ window.Config = {
         MIN: 0.5,
         MAX: 10.0,
         STEP_NORMAL: 0.1,
-        STEP_CTRL: 0.05
+        STEP_CTRL: 0.2
     },
 
     LABELS: {
         FONT_SIZE_MM: 5,
         DEFAULT_OFFSET: { x: 6, y: 0 },
-        BOUNDS_PAD_MM: 3
+        BOUNDS_PAD_MM: 5
     },
 
     // ==================== UI ====================
@@ -53,7 +53,7 @@ window.Config = {
     CONVERSION : {
         MM_TO_METERS: 0.001,
         MM2_TO_M2: 1e-6,
-        SCALE_FACTOR: 1  // 1px = 0.0353 мм
+        SCALE_FACTOR: 1  // TODO : legacy константа, убрать из кода  
     },
 
     // ==================== API И ПУТИ ====================
@@ -68,7 +68,7 @@ window.Config = {
     GEOMETRY : {
         ALLOWED_ANGLES: [0, 90, 180, 270],
         LAYMENT_PADDING: 8,
-        CLEARANCE_MM: 2,
+        CLEARANCE_MM: 6,
         PRIMITIVES: {
             RECT: { MIN_WIDTH: 8, MAX_WIDTH: 800, MIN_HEIGHT: 8, MAX_HEIGHT: 400 },
             CIRCLE: { MIN_RADIUS: 4, MAX_RADIUS: 200 }
@@ -91,13 +91,14 @@ window.Config = {
             ERROR_CORNER: '#c0392b'
         },
         PRIMITIVE: {
-            STROKE: '#20ff00',  // Зеленый для примитивов
+            STROKE: '#20aa10',  // Зеленый для примитивов
             FILL: '#208820',
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
     },
 
     // ==================== Константы PixelOverlap  ДЛЯ ПРОВЕРКИ ПЕРЕСЕЧЕНИЙ ====================
+    // TODO: убрать неиспользуемые константы
     CANVAS_OVERLAP : {
         TEMP_BACKGROUND: '#ffffff',
         PIXEL_CHECK_PADDING: 10,
