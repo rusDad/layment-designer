@@ -31,7 +31,8 @@ window.Config = {
         PANEL_WIDTH: 320,
         CANVAS_PADDING: 40,
         HEADER_HEIGHT: 120,
-        CANVAS_BACKGROUND: '#fafafa'
+        CANVAS_BACKGROUND: '#fafafa',
+        ZOOM_ENGINE: 'objects'
     },
 
     LAYMENT_STYLE : {

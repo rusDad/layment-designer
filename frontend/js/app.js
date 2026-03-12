@@ -83,6 +83,22 @@ class ContourApp {
         };
     }
 
+    isViewportZoomEngine() {
+        return Config.UI.ZOOM_ENGINE === 'viewport';
+    }
+
+    getWorldScale() {
+        return this.isViewportZoomEngine() ? 1 : (this.workspaceScale || 1);
+    }
+
+    mmToPx(mm) {
+        return mm * this.getWorldScale();
+    }
+
+    pxToMm(px) {
+        return px / this.getWorldScale();
+    }
+
     resizeCanvasToContent() {
         if (!this.canvas) {
             return;
@@ -104,10 +120,14 @@ class ContourApp {
             }
         }
 
-        const width = Math.max(viewport.width, Math.ceil(contentRight + margin));
-        const height = Math.max(viewport.height, Math.ceil(contentBottom + margin));
+        const zoomFactor = this.isViewportZoomEngine()
+            ? (this.canvas?.getZoom?.() || this.workspaceScale || 1)
+            : 1;
+        const width = Math.max(viewport.width, Math.ceil((contentRight + margin) * zoomFactor));
+        const height = Math.max(viewport.height, Math.ceil((contentBottom + margin) * zoomFactor));
 
         this.canvas.setDimensions({ width, height });
+        this.canvas.calcOffset();
     }
 
     initializeServices() {
@@ -275,7 +295,7 @@ class ContourApp {
         await this.contourManager.addContour(
             `/contours/${item.assets.svg}`,
             { x: centerX, y: centerY },
-            this.workspaceScale,
+            this.getWorldScale(),
             item
         );
 
@@ -295,6 +315,15 @@ class ContourApp {
     updateWorkspaceScale(newScale) {
         if (newScale < Config.WORKSPACE_SCALE.MIN || newScale > Config.WORKSPACE_SCALE.MAX) return;
 
+        if (this.isViewportZoomEngine()) {
+            this.applyZoomByViewport(newScale);
+            return;
+        }
+
+        this.applyZoomByScalingObjects(newScale);
+    }
+
+    applyZoomByScalingObjects(newScale) {
         const saved = this.temporarilyUngroupActiveSelection();
         const ratio = newScale / this.workspaceScale;
         this.workspaceScale = newScale;
@@ -317,6 +346,17 @@ class ContourApp {
         this.resizeCanvasToContent();
 
         this.canvas.renderAll();
+        this.syncWorkspaceScaleInput();
+        this.updateStatusBar();
+        this.restoreActiveSelection(saved.objects);
+    }
+
+    applyZoomByViewport(newScale) {
+        const saved = this.temporarilyUngroupActiveSelection();
+        this.workspaceScale = newScale;
+        this.canvas.setZoom(newScale);
+        this.resizeCanvasToContent();
+        this.canvas.requestRenderAll();
         this.syncWorkspaceScaleInput();
         this.updateStatusBar();
         this.restoreActiveSelection(saved.objects);
@@ -647,11 +687,13 @@ class ContourApp {
             const delta = e.deltaY > 0 ? -step : step;
             const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
             const maxPercent = Math.round(Config.WORKSPACE_SCALE.MAX * 100);
-            let val = parseFloat(scaleInput.value) || Math.round(this.workspaceScale * 100);
+            let percent = parseFloat(scaleInput.value) || Math.round(this.workspaceScale * 100);
 
-            val = Math.max(minPercent, Math.min(maxPercent, val + delta));
-            scaleInput.value = Math.round(val);
-            scaleInput.dispatchEvent(new Event('change'));
+            percent = Math.max(minPercent, Math.min(maxPercent, percent + delta));
+            const newScale = percent / 100;
+            scaleInput.value = Math.round(percent);
+            this.updateWorkspaceScale(newScale);
+            this.syncWorkspaceScaleInput();
         }, { passive: false });
 
         UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
@@ -712,6 +754,18 @@ class ContourApp {
     // Выполнить с временным  scale=1
 
     async performWithScaleOne(action) {
+        if (this.isViewportZoomEngine()) {
+            const vpt = this.canvas.viewportTransform?.slice?.() || [1, 0, 0, 1, 0, 0];
+            this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+            this.canvas.requestRenderAll();
+            try {
+                return await action();
+            } finally {
+                this.canvas.setViewportTransform(vpt);
+                this.canvas.requestRenderAll();
+            }
+        }
+
         const oldScale = this.workspaceScale;
         const sc = this.canvasScrollContainer;
         const savedScroll = sc ? { left: sc.scrollLeft, top: sc.scrollTop } : null;
@@ -896,7 +950,7 @@ class ContourApp {
 
         const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
         const clearanceMm = 3;
-        const clearancePx = clearanceMm * (this.workspaceScale || 1);
+        const clearancePx = this.mmToPx(clearanceMm);
 
         for (const obj of selected) {
             const bbox = obj.getBoundingRect(true);
@@ -1421,14 +1475,14 @@ class ContourApp {
 
             if (active.primitiveType === 'rect') {
                 const bbox = active.getBoundingRect(true);
-                const realX = ((bbox.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
-                const realY = ((bbox.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
+                const realX = ((bbox.left - laymentBbox.left) / this.getWorldScale()).toFixed(1);
+                const realY = ((bbox.top - laymentBbox.top) / this.getWorldScale()).toFixed(1);
                 statusEl.innerHTML = `<strong>Выемка: Прямоугольная</strong> X: ${realX} мм Y: ${realY} мм W: ${dimensions.width} мм H: ${dimensions.height} мм`;
                 return;
             }
 
-            const realX = ((active.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
-            const realY = ((active.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
+            const realX = ((active.left - laymentBbox.left) / this.getWorldScale()).toFixed(1);
+            const realY = ((active.top - laymentBbox.top) / this.getWorldScale()).toFixed(1);
             statusEl.innerHTML = `<strong>Выемка: Круглая</strong> X: ${realX} мм Y: ${realY} мм R: ${dimensions.radius} мм`;
             return;
         }
@@ -1445,8 +1499,8 @@ class ContourApp {
 
         const meta = this.contourManager.metadataMap.get(contour);
         const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
-        const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1);
-        const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
+        const realX = ((tl.x - this.layment.left) / this.getWorldScale()).toFixed(1);
+        const realY = ((tl.y - this.layment.top) / this.getWorldScale()).toFixed(1);
 
         const article = meta.article || '—';
         statusEl.innerHTML = `<strong>${meta.name}</strong> article: ${article} X: ${realX} мм Y: ${realY} мм Угол: ${contour.angle}°`;
@@ -1620,7 +1674,7 @@ class ContourApp {
                 await this.contourManager.addContour(
                     `/contours/${metadata.assets.svg}`,
                     { x: this.layment.left, y: this.layment.top },
-                    this.workspaceScale,
+                    this.getWorldScale(),
                     metadata
                 );
                 const added = this.contourManager.contours[this.contourManager.contours.length - 1];
