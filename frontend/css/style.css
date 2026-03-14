@@ -282,6 +282,11 @@ body {
     overflow: auto;
     border: 2px dashed #bdc3c7;
     background-color: #fafafa;
+    cursor: grab;
+}
+
+.canvas-scroll-container.is-panning {
+    cursor: grabbing;
 }
 
 .canvas-scroll-container::-webkit-scrollbar {
