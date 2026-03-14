@@ -879,19 +879,24 @@ class ContourApp {
     }
 
    
+    withViewportReset(callback) {
+        const saved = this.canvas.viewportTransform?.slice?.() || [1, 0, 0, 1, 0, 0];
+        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        this.canvas.requestRenderAll();
+
+        try {
+            return callback();
+        } finally {
+            this.canvas.setViewportTransform(saved);
+            this.canvas.requestRenderAll();
+        }
+    }
+
     // Выполнить с временным  scale=1
 
     async performWithScaleOne(action) {
         if (this.isViewportZoomEngine()) {
-            const vpt = this.canvas.viewportTransform?.slice?.() || [1, 0, 0, 1, 0, 0];
-            this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            this.canvas.requestRenderAll();
-            try {
-                return await action();
-            } finally {
-                this.canvas.setViewportTransform(vpt);
-                this.canvas.requestRenderAll();
-            }
+            return await this.withViewportReset(action);
         }
 
         const oldScale = this.workspaceScale;
@@ -2089,23 +2094,29 @@ class ContourApp {
         }
     }
 
-    createLaymentPreviewPng(padPx = 16) {
+    createLaymentPreviewPng(padPx = 20) {
         if (!this.layment) {
-            return this.canvas.toDataURL({ format: 'png' });
+            return this.withViewportReset(() => this.canvas.toDataURL({
+                format: 'png',
+                multiplier: 1
+            }));
         }
 
-        const rect = this.layment.getBoundingRect(true, true);
-        const left = Math.max(0, rect.left - padPx);
-        const top = Math.max(0, rect.top - padPx);
-        const width = Math.ceil(rect.width + padPx * 2);
-        const height = Math.ceil(rect.height + padPx * 2);
+        return this.withViewportReset(() => {
+            const rect = this.layment.getBoundingRect(true, true);
+            const left = Math.max(0, rect.left - padPx);
+            const top = Math.max(0, rect.top - padPx);
+            const width = Math.ceil(rect.width + padPx * 2);
+            const height = Math.ceil(rect.height + padPx * 2);
 
-        return this.canvas.toDataURL({
-            format: 'png',
-            left,
-            top,
-            width,
-            height
+            return this.canvas.toDataURL({
+                format: 'png',
+                multiplier: 1,
+                left,
+                top,
+                width,
+                height
+            });
         });
     }
 }
