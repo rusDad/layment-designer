@@ -413,9 +413,47 @@ class ContourApp {
             return false;
         }
 
-        const isMiddleButton = mouseEvent.button === 1;
-        const isSpaceAndLeftButton = mouseEvent.button === 0 && this.isSpacePanModifier(mouseEvent);
-        return isMiddleButton || isSpaceAndLeftButton;
+        return mouseEvent.button === 1;
+    }
+
+    zoomViewportByPointer(mouseEvent) {
+        if (!this.canvas || !this.isViewportZoomEngine() || !mouseEvent) {
+            return;
+        }
+
+        const wheelDelta = mouseEvent.deltaY;
+        if (!wheelDelta) {
+            return;
+        }
+
+        mouseEvent.preventDefault();
+        mouseEvent.stopPropagation();
+
+        const oldZoom = this.canvas.getZoom() || this.workspaceScale || 1;
+        const zoomMultiplier = wheelDelta < 0 ? 1.1 : (1 / 1.1);
+        const unclampedZoom = oldZoom * zoomMultiplier;
+        const newZoom = Math.max(Config.WORKSPACE_SCALE.MIN, Math.min(Config.WORKSPACE_SCALE.MAX, unclampedZoom));
+
+        if (newZoom === oldZoom) {
+            return;
+        }
+
+        const vpt = this.canvas.viewportTransform;
+        const cursorX = mouseEvent.offsetX;
+        const cursorY = mouseEvent.offsetY;
+        const worldX = (cursorX - vpt[4]) / oldZoom;
+        const worldY = (cursorY - vpt[5]) / oldZoom;
+
+        vpt[0] = newZoom;
+        vpt[3] = newZoom;
+        vpt[4] = cursorX - worldX * newZoom;
+        vpt[5] = cursorY - worldY * newZoom;
+
+        this.canvas.setViewportTransform(vpt);
+        this.workspaceScale = newZoom;
+        this.syncWorkspaceScaleInput();
+        this.canvas.requestRenderAll();
+        this.updateStatusBar();
     }
 
     setPanCursor(isGrabbing) {
@@ -614,6 +652,10 @@ class ContourApp {
 
         this.canvas.on('mouse:up', () => {
             this.stopPanning();
+        });
+
+        this.canvas.on('mouse:wheel', event => {
+            this.zoomViewportByPointer(event.e);
         });
 
         this.canvas.on('selection:created', () => {
