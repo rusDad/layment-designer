@@ -4,7 +4,32 @@
         confirmed: 'Подтверждён',
         produced: 'Изготовлен',
     };
+    const APP_BASE_PREFIX = window.location.pathname.startsWith('/dev/') ? '/dev' : '';
+    const PUBLIC_API_BASE = `${APP_BASE_PREFIX}/api`;
+    function withAppPrefix(url) {
+    if (!url) {
+        return url;
+    }
 
+    if (/^https?:\/\//i.test(url)) {
+        return url;
+    }
+
+    if (!APP_BASE_PREFIX) {
+        return url;
+    }
+
+    if (url.startsWith(`${APP_BASE_PREFIX}/`)) {
+        return url;
+    }
+
+    if (url.startsWith('/')) {
+        return `${APP_BASE_PREFIX}${url}`;
+    }
+
+    return url;
+    }
+    
     const orderIdInput = document.getElementById('orderIdInput');
     const checkOrderButton = document.getElementById('checkOrderButton');
 
@@ -69,7 +94,8 @@
         }
 
         const cacheBuster = encodeURIComponent(order.updatedAt || Date.now());
-        statusPreviewImage.src = `${order.previewPngUrl}?t=${cacheBuster}`;
+        const previewUrl = withAppPrefix(order.previewPngUrl);
+        statusPreviewImage.src = `${previewUrl}?t=${cacheBuster}`;
         statusPreviewBlock.hidden = false;
     }
 
@@ -141,7 +167,7 @@
         statusResult.hidden = true;
 
         try {
-            const response = await fetch(`/api/orders/${encodeURIComponent(trimmedOrderId)}`);
+            const response = await fetch(`${PUBLIC_API_BASE}/orders/${encodeURIComponent(trimmedOrderId)}`);
             if (!response.ok) {
                 if (response.status === 404) {
                     showError('Заказ не найден');

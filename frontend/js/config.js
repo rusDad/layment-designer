@@ -1,4 +1,5 @@
 // config.js - Конфигурационные константы приложения
+const APP_BASE_PREFIX = window.location.pathname.startsWith('/dev/') ? '/dev' : '';
 
 // ==================== ОБЩИЕ НАСТРОЙКИ ====================
 window.Config = {
@@ -59,9 +60,9 @@ window.Config = {
 
     // ==================== API И ПУТИ ====================
     API : {
-        BASE_URL: '/api',
+        BASE_URL: `${APP_BASE_PREFIX}/api`,
         EXPORT_Layment: '/export-layment',
-        MANIFEST_URL: '/api/contours/manifest'
+        MANIFEST_URL: `${APP_BASE_PREFIX}/api/contours/manifest`
 
     },
 

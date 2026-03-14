@@ -1,3 +1,28 @@
+const APP_BASE_PREFIX = window.location.pathname.startsWith('/dev/admin/') ? '/dev' : '';
+const ADMIN_API_BASE = `${APP_BASE_PREFIX}/admin/api`;
+function withAppPrefix(url) {
+    if (!url) {
+        return url;
+    }
+
+    if (/^https?:\/\//i.test(url)) {
+        return url;
+    }
+
+    if (!APP_BASE_PREFIX) {
+        return url;
+    }
+
+    if (url.startsWith(`${APP_BASE_PREFIX}/`)) {
+        return url;
+    }
+
+    if (url.startsWith('/')) {
+        return `${APP_BASE_PREFIX}${url}`;
+    }
+
+    return url;
+}
 const ordersListEl = document.getElementById('ordersList');
 const listStatusEl = document.getElementById('listStatus');
 const reloadBtn = document.getElementById('reloadBtn');
@@ -67,7 +92,7 @@ const ensureItemsLoaded = async () => {
 
   itemsLoadPromise = (async () => {
     try {
-      const res = await fetch('/admin/api/items');
+      const res = await fetch(`${ADMIN_API_BASE}/items`);
       const text = await res.text();
       if (!res.ok) {
         throw new Error(text || `HTTP ${res.status}`);
@@ -191,7 +216,7 @@ const updateMeta = (details) => {
 
   const files = details.files || {};
   if (files.gcodeNc) {
-    downloadNcLink.href = files.gcodeNc;
+   downloadNcLink.href = withAppPrefix(files.gcodeNc);
     downloadNcLink.classList.remove('is-disabled');
     downloadNcLink.removeAttribute('aria-disabled');
     downloadNcLink.tabIndex = 0;
@@ -203,7 +228,7 @@ const updateMeta = (details) => {
   }
 
   if (files.previewSvg) {
-    downloadSvgLink.href = files.previewSvg;
+    downloadSvgLink.href = withAppPrefix(files.previewSvg);
     downloadSvgLink.classList.remove('is-disabled');
     downloadSvgLink.removeAttribute('aria-disabled');
     downloadSvgLink.tabIndex = 0;
@@ -215,7 +240,7 @@ const updateMeta = (details) => {
   }
 
   if (files.laserDxf) {
-    downloadDxfLink.href = files.laserDxf;
+    downloadDxfLink.href = withAppPrefix(files.laserDxf);
     downloadDxfLink.classList.remove('is-disabled');
     downloadDxfLink.removeAttribute('aria-disabled');
     downloadDxfLink.tabIndex = 0;
@@ -229,7 +254,8 @@ const updateMeta = (details) => {
   layoutWrapEl.innerHTML = '';
   if (files.previewPng) {
     const img = document.createElement('img');
-    img.src = `${files.previewPng}?t=${Date.now()}`;
+    const previewUrl = withAppPrefix(files.previewPng);
+    img.src = `${previewUrl}?t=${Date.now()}`;
     img.alt = `layout ${details.orderId}`;
     layoutWrapEl.appendChild(img);
   } else {
@@ -247,7 +273,7 @@ const loadOrders = async () => {
   listStatusEl.textContent = 'Загрузка…';
   statusEl.textContent = '';
   try {
-    const res = await fetch('/admin/api/orders');
+    const res = await fetch(`${ADMIN_API_BASE}/orders`);
     const text = await res.text();
     if (!res.ok) {
       throw new Error(text || `HTTP ${res.status}`);
@@ -283,7 +309,7 @@ const selectOrder = async (orderId, options = {}) => {
   layoutWrapEl.textContent = '';
 
   try {
-    const res = await fetch(`/admin/api/orders/${encodeURIComponent(orderId)}`);
+    const res = await fetch(`${ADMIN_API_BASE}/orders/${encodeURIComponent(orderId)}`);
     const text = await res.text();
     if (!res.ok) {
       throw new Error(text || `HTTP ${res.status}`);
@@ -322,11 +348,11 @@ const postStatusChange = async (path, loadingText) => {
 };
 
 confirmBtn.addEventListener('click', () => {
-  postStatusChange(`/admin/api/orders/${encodeURIComponent(selectedOrderId)}/confirm`, 'Обновление confirmed…');
+  postStatusChange(`${ADMIN_API_BASE}/orders/${encodeURIComponent(selectedOrderId)}/confirm`, 'Обновление confirmed…');
 });
 
 producedBtn.addEventListener('click', () => {
-  postStatusChange(`/admin/api/orders/${encodeURIComponent(selectedOrderId)}/produced`, 'Обновление produced…');
+  postStatusChange(`${ADMIN_API_BASE}/orders/${encodeURIComponent(selectedOrderId)}/produced`, 'Обновление produced…');
 });
 
 reloadBtn.addEventListener('click', loadOrders);
