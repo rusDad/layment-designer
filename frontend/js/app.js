@@ -430,8 +430,9 @@ class ContourApp {
     }
 
     canStartPanning(mouseEvent) {
-        if (!this.isViewportZoomEngine() || !mouseEvent) {
-            return false;
+       // if (!this.isViewportZoomEngine() || !mouseEvent) {
+         //   return false;
+         return mouseEvent.button === 1 || (mouseEvent.button === 0 && this.isSpacePanModifier(mouseEvent));
         }
 
         return mouseEvent.button === 1;
