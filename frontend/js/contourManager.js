@@ -12,7 +12,7 @@
 class ContourManager {
     constructor(canvas, app) {
         this.canvas = canvas;
-        this.app = app;  // Reference to ContourApp for workspaceScale
+        this.app = app;  // Reference to ContourApp for scale helpers
         this.svgLoader = new SVGLoader();
         this.contours = [];
         this.metadataMap = new WeakMap();
@@ -113,8 +113,9 @@ class ContourManager {
         }
       };
 
-      if (this.app.workspaceScale !== 1) {
-        console.warn('Collision check must run with workspace scale=1. Use performWithScaleOne().');
+      const worldScale = this.app.getWorldScale();
+      if (worldScale !== 1) {
+        console.warn('Collision check must run with world scale=1. Use performWithScaleOne().');
         return {
             ...emptyResult,
             ok: false
@@ -506,7 +507,7 @@ class PrimitiveManager {
             return;
         }
 
-        const scale = this.app.workspaceScale || 1;
+        const scale = this.app.getWorldScale();
         let nextScaleX = obj.scaleX;
         let nextScaleY = obj.scaleY;
         let changed = false;
@@ -554,7 +555,7 @@ class PrimitiveManager {
             return null;
         }
 
-        const scale = this.app.workspaceScale || 1;
+        const scale = this.app.getWorldScale();
 
         if (obj.primitiveType === 'rect') {
             return {
@@ -579,7 +580,7 @@ class PrimitiveManager {
             return false;
         }
 
-        const scale = this.app.workspaceScale || 1;
+        const scale = this.app.getWorldScale();
 
         if (obj.primitiveType === 'rect') {
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;

@@ -28,8 +28,8 @@ class LabelManager {
             return null;
         }
         const rect = contour.getBoundingRect(true, true);
-        const workspaceScale = this.app.workspaceScale || 1;
-        const pad = this.getBoundsPadMm() * workspaceScale;
+        const worldScale = this.app.getWorldScale();
+        const pad = this.getBoundsPadMm() * worldScale;
         return {
             left: rect.left - pad,
             top: rect.top - pad,
@@ -107,8 +107,8 @@ class LabelManager {
             originX: 'left',
             originY: 'top',
             fontSize: fontSize ?? Config.LABELS.FONT_SIZE_MM,
-            scaleX: this.app.workspaceScale || 1,
-            scaleY: this.app.workspaceScale || 1,
+            scaleX: this.app.getWorldScale(),
+            scaleY: this.app.getWorldScale(),
             fill: '#000000',
             // FIX: валидное значение CanvasTextBaseline
             textBaseline: 'alphabetic',
@@ -273,7 +273,7 @@ class LabelManager {
             return [];
         }
 
-        const workspaceScale = this.app.workspaceScale || 1;
+        const worldScale = this.app.getWorldScale();
 
         return this.labels
             .map(label => {
@@ -285,8 +285,8 @@ class LabelManager {
                 return {
                     contourId: String(label.labelForPlacementId),
                     text: label.text,
-                    x: Math.round((tl.x - layment.left) / workspaceScale),
-                    y: Math.round((tl.y - layment.top) / workspaceScale),
+                    x: Math.round((tl.x - layment.left) / worldScale),
+                    y: Math.round((tl.y - layment.top) / worldScale),
                     fontSizeMm: Number(label.fontSize) || Config.LABELS.FONT_SIZE_MM
                 };
             })
