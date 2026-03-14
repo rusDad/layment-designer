@@ -507,19 +507,18 @@ class PrimitiveManager {
             return;
         }
 
-        const scale = this.app.getWorldScale();
         let nextScaleX = obj.scaleX;
         let nextScaleY = obj.scaleY;
         let changed = false;
 
         if (obj.primitiveType === 'rect') {
-            const realWidth = (obj.width * obj.scaleX) / scale;
-            const realHeight = (obj.height * obj.scaleY) / scale;
+            const realWidth = this.app.pxToMm(obj.width * obj.scaleX);
+            const realHeight = this.app.pxToMm(obj.height * obj.scaleY);
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
             const clampedWidth = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, realWidth));
             const clampedHeight = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, realHeight));
-            const targetScaledW = clampedWidth * scale;
-            const targetScaledH = clampedHeight * scale;
+            const targetScaledW = this.app.mmToPx(clampedWidth);
+            const targetScaledH = this.app.mmToPx(clampedHeight);
             const targetScaleX = targetScaledW / obj.width;
             const targetScaleY = targetScaledH / obj.height;
 
@@ -529,10 +528,10 @@ class PrimitiveManager {
                 changed = true;
             }
         } else if (obj.primitiveType === 'circle') {
-            const realRadius = (obj.radius * obj.scaleX) / scale;
+            const realRadius = this.app.pxToMm(obj.radius * obj.scaleX);
             const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
             const clampedRadius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, realRadius));
-            const targetScaledR = clampedRadius * scale;
+            const targetScaledR = this.app.mmToPx(clampedRadius);
             const targetScale = targetScaledR / obj.radius;
 
             if (Math.abs(targetScale - obj.scaleX) > 0.0001 || Math.abs(targetScale - obj.scaleY) > 0.0001) {
@@ -555,20 +554,19 @@ class PrimitiveManager {
             return null;
         }
 
-        const scale = this.app.getWorldScale();
 
         if (obj.primitiveType === 'rect') {
             return {
                 type: 'rect',
-                width: Math.round((obj.width * obj.scaleX) / scale),
-                height: Math.round((obj.height * obj.scaleY) / scale)
+                width: Math.round(this.app.pxToMm(obj.width * obj.scaleX)),
+                height: Math.round(this.app.pxToMm(obj.height * obj.scaleY))
             };
         }
 
         if (obj.primitiveType === 'circle') {
             return {
                 type: 'circle',
-                radius: Math.round((obj.radius * obj.scaleX) / scale)
+                radius: Math.round(this.app.pxToMm(obj.radius * obj.scaleX))
             };
         }
 
@@ -580,7 +578,6 @@ class PrimitiveManager {
             return false;
         }
 
-        const scale = this.app.getWorldScale();
 
         if (obj.primitiveType === 'rect') {
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
@@ -589,8 +586,8 @@ class PrimitiveManager {
             }
             const width = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, dimensions.width));
             const height = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, dimensions.height));
-            const targetScaledW = width * scale;
-            const targetScaledH = height * scale;
+            const targetScaledW = this.app.mmToPx(width);
+            const targetScaledH = this.app.mmToPx(height);
             obj.set({
                 scaleX: targetScaledW / obj.width,
                 scaleY: targetScaledH / obj.height
@@ -606,7 +603,7 @@ class PrimitiveManager {
                 return false;
             }
             const radius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, dimensions.radius));
-            const targetScaledR = radius * scale;
+            const targetScaledR = this.app.mmToPx(radius);
             const targetScale = targetScaledR / obj.radius;
             obj.set({ scaleX: targetScale, scaleY: targetScale });
             obj.setCoords();
