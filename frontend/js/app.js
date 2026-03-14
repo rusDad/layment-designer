@@ -1603,14 +1603,14 @@ class ContourApp {
 
             if (active.primitiveType === 'rect') {
                 const bbox = active.getBoundingRect(true);
-                const realX = ((bbox.left - laymentBbox.left) / this.getWorldScale()).toFixed(1);
-                const realY = ((bbox.top - laymentBbox.top) / this.getWorldScale()).toFixed(1);
+                const realX = this.pxToMm(bbox.left - laymentBbox.left).toFixed(1);
+                const realY = this.pxToMm(bbox.top - laymentBbox.top).toFixed(1);
                 statusEl.innerHTML = `<strong>Выемка: Прямоугольная</strong> X: ${realX} мм Y: ${realY} мм W: ${dimensions.width} мм H: ${dimensions.height} мм`;
                 return;
             }
 
-            const realX = ((active.left - laymentBbox.left) / this.getWorldScale()).toFixed(1);
-            const realY = ((active.top - laymentBbox.top) / this.getWorldScale()).toFixed(1);
+            const realX = this.pxToMm(active.left - laymentBbox.left).toFixed(1);
+            const realY = this.pxToMm(active.top - laymentBbox.top).toFixed(1);
             statusEl.innerHTML = `<strong>Выемка: Круглая</strong> X: ${realX} мм Y: ${realY} мм R: ${dimensions.radius} мм`;
             return;
         }
@@ -1627,8 +1627,8 @@ class ContourApp {
 
         const meta = this.contourManager.metadataMap.get(contour);
         const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
-        const realX = ((tl.x - this.layment.left) / this.getWorldScale()).toFixed(1);
-        const realY = ((tl.y - this.layment.top) / this.getWorldScale()).toFixed(1);
+        const realX = this.pxToMm(tl.x - this.layment.left).toFixed(1);
+        const realY = this.pxToMm(tl.y - this.layment.top).toFixed(1);
 
         const article = meta.article || '—';
         statusEl.innerHTML = `<strong>${meta.name}</strong> article: ${article} X: ${realX} мм Y: ${realY} мм Угол: ${contour.angle}°`;
