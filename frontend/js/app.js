@@ -58,6 +58,7 @@ class ContourApp {
             selection: true,
             preserveObjectStacking: true
         });
+        this.canvas.renderOnAddRemove = false;
 
         const resizeCanvas = () => {
             const size = getCanvasSize();
@@ -100,6 +101,23 @@ class ContourApp {
 
     pxToMm(px) {
         return px / this.getWorldScale();
+    }
+
+    async batchRender(callback) {
+        if (!this.canvas) {
+            return await callback();
+        }
+
+        const originalRenderAll = this.canvas.renderAll;
+        this.canvas._objectsDirty = true;
+        this.canvas.renderAll = () => {};
+
+        try {
+            return await callback();
+        } finally {
+            this.canvas.renderAll = originalRenderAll;
+            this.canvas.requestRenderAll();
+        }
     }
 
     resizeCanvasToContent() {
@@ -295,15 +313,18 @@ class ContourApp {
         const centerX = this.layment.left + this.layment.width / 2;
         const centerY = this.layment.top + this.layment.height / 2;
 
-        await this.contourManager.addContour(
-            `/contours/${item.assets.svg}`,
-            { x: centerX, y: centerY },
-            this.getWorldScale(),
-            item
-        );
+        await this.batchRender(async () => {
+            await this.contourManager.addContour(
+                `/contours/${item.assets.svg}`,
+                { x: centerX, y: centerY },
+                this.getWorldScale(),
+                item
+            );
 
-        const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
-        this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
+            const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
+            this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
+        });
+
         this.scheduleWorkspaceSave();
     }
 
@@ -314,7 +335,7 @@ class ContourApp {
         if (this.isViewportZoomEngine() && !this.isRestoringWorkspace) {
             this.fitToLayment();
         }
-        this.canvas.renderAll();
+        this.canvas.requestRenderAll();
         this.scheduleWorkspaceSave();
     }
 
@@ -642,6 +663,17 @@ class ContourApp {
             if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
                 this.labelManager.onContourMoving(target);
             }
+            this.canvas.requestRenderAll();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('object:scaling', () => {
+            this.canvas.requestRenderAll();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('object:rotating', () => {
+            this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
 
@@ -650,6 +682,7 @@ class ContourApp {
             if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
                 this.labelManager.onContourModified(target);
             }
+            this.canvas.requestRenderAll();
             if (this.shouldAutosaveForObject(target)) {
                 this.scheduleWorkspaceSave();
             }
@@ -1647,30 +1680,31 @@ class ContourApp {
         ? active.getObjects().slice()
         : [active];
         // КРИТИЧНО: сначала убираем activeSelection, потом удаляем объекты
-        this.canvas.discardActiveObject();
-        for (const o of objects) {
-          if (!o) continue;
-          if (o.isLabel) {
-            this.labelManager.removeLabel(o);
-            continue;
-          }
+        this.batchRender(() => {
+            this.canvas.discardActiveObject();
+            for (const o of objects) {
+              if (!o) continue;
+              if (o.isLabel) {
+                this.labelManager.removeLabel(o);
+                continue;
+              }
 
-          if (o.primitiveType) {
-            this.primitiveManager.removePrimitive(o, false);
-            continue;
-          }
-          // contour
-          if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
-            this.labelManager.removeLabelsForPlacementId(o.placementId);
-          } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
-            // на случай старой схемы
-            this.labelManager.removeLabelsForContourId(o.contourId);
-          }
+              if (o.primitiveType) {
+                this.primitiveManager.removePrimitive(o, false);
+                continue;
+              }
+              // contour
+              if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
+                this.labelManager.removeLabelsForPlacementId(o.placementId);
+              } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
+                // на случай старой схемы
+                this.labelManager.removeLabelsForContourId(o.contourId);
+              }
 
-          this.contourManager.removeContour(o, false);
-        }
+              this.contourManager.removeContour(o, false);
+            }
+        });
 
-      this.canvas.requestRenderAll();
       this.updateButtons();
       this.updateStatusBar?.();
       this.syncPrimitiveControlsFromSelection();
@@ -1777,10 +1811,12 @@ class ContourApp {
         this.isRestoringWorkspace = true;
         try {
             await this.performWithScaleOne(async () => {
-                this.canvas.discardActiveObject();
-                this.contourManager.clearContours();
-                this.primitiveManager.clearPrimitives();
-                this.labelManager.clearLabels();
+                await this.batchRender(() => {
+                    this.canvas.discardActiveObject();
+                    this.contourManager.clearContours();
+                    this.primitiveManager.clearPrimitives();
+                    this.labelManager.clearLabels();
+                });
 
             const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
             const width = data.layment?.width || Config.LAYMENT_DEFAULT_WIDTH;
@@ -1803,32 +1839,34 @@ class ContourApp {
             this.layment.setCoords();
             this.syncSafeAreaRect();
 
-            for (const contour of data.contours || []) {
-                const meta = this.manifest?.[contour.id];
-                if (!meta) {
-                    console.warn('Контур не найден в manifest', contour.id);
-                    continue;
+            await this.batchRender(async () => {
+                for (const contour of data.contours || []) {
+                    const meta = this.manifest?.[contour.id];
+                    if (!meta) {
+                        console.warn('Контур не найден в manifest', contour.id);
+                        continue;
+                    }
+                    const metadata = { ...meta, scaleOverride: contour.scaleOverride ?? meta.scaleOverride };
+                    await this.contourManager.addContour(
+                        `/contours/${metadata.assets.svg}`,
+                        { x: this.layment.left, y: this.layment.top },
+                        this.getWorldScale(),
+                        metadata
+                    );
+                    const added = this.contourManager.contours[this.contourManager.contours.length - 1];
+                    added.placementId = contour.placementId;
+                    added.angle = contour.angle || 0;
+                    added.setCoords();
+                    const targetX = this.layment.left + contour.x;
+                    const targetY = this.layment.top + contour.y;
+                    const tl = added.aCoords.tl;
+                    added.set({
+                        left: added.left + (targetX - tl.x),
+                        top: added.top + (targetY - tl.y)
+                    });
+                    added.setCoords();
                 }
-                const metadata = { ...meta, scaleOverride: contour.scaleOverride ?? meta.scaleOverride };
-                await this.contourManager.addContour(
-                    `/contours/${metadata.assets.svg}`,
-                    { x: this.layment.left, y: this.layment.top },
-                    this.getWorldScale(),
-                    metadata
-                );
-                const added = this.contourManager.contours[this.contourManager.contours.length - 1];
-                added.placementId = contour.placementId;
-                added.angle = contour.angle || 0;
-                added.setCoords();
-                const targetX = this.layment.left + contour.x;
-                const targetY = this.layment.top + contour.y;
-                const tl = added.aCoords.tl;
-                added.set({
-                    left: added.left + (targetX - tl.x),
-                    top: added.top + (targetY - tl.y)
-                });
-                added.setCoords();
-            }
+            });
 
             const placementIds = this.contourManager.contours
                 .map(c => c.placementId)
@@ -1857,18 +1895,20 @@ class ContourApp {
                 }
             }
 
-            for (const primitive of data.primitives || []) {
-                const x = this.layment.left + primitive.x;
-                const y = this.layment.top + primitive.y;
-                if (primitive.type === 'rect') {
-                    this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height });
-                } else if (primitive.type === 'circle') {
-                    this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius });
+            await this.batchRender(() => {
+                for (const primitive of data.primitives || []) {
+                    const x = this.layment.left + primitive.x;
+                    const y = this.layment.top + primitive.y;
+                    if (primitive.type === 'rect') {
+                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height });
+                    } else if (primitive.type === 'circle') {
+                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius });
+                    }
                 }
-            }
+            });
 
                 this.applyMaterialColorToCutouts();
-                this.canvas.renderAll();
+                this.canvas.requestRenderAll();
                 this.updateButtons();
                 this.updateStatusBar();
                 this.syncPrimitiveControlsFromSelection();
