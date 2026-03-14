@@ -25,6 +25,9 @@ class ContourApp {
         this.lastOrderResult = null;
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
         this.pendingCustomer = null;
+        this.isPanning = false;
+        this.panStart = null;
+        this.isSpacePressed = false;
 
         this.init();
     }
@@ -308,6 +311,9 @@ class ContourApp {
         this.layment.set({ width, height });
         this.layment.setCoords();
         this.syncSafeAreaRect();
+        if (this.isViewportZoomEngine() && !this.isRestoringWorkspace) {
+            this.fitToLayment();
+        }
         this.canvas.renderAll();
         this.scheduleWorkspaceSave();
     }
@@ -362,6 +368,75 @@ class ContourApp {
         this.restoreActiveSelection(saved.objects);
     }
 
+    fitToLayment() {
+        if (!this.canvas || !this.layment) {
+            return;
+        }
+
+        const viewport = this.getViewportSize();
+        if (!viewport.width || !viewport.height) {
+            return;
+        }
+
+        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
+        const rect = this.layment.getBoundingRect(true, true);
+        const padding = 20;
+        const zoomX = viewport.width / (rect.width + padding * 2);
+        const zoomY = viewport.height / (rect.height + padding * 2);
+        const unclampedZoom = Math.min(zoomX, zoomY);
+        const zoom = Math.max(Config.WORKSPACE_SCALE.MIN, Math.min(Config.WORKSPACE_SCALE.MAX, unclampedZoom));
+
+        this.canvas.setZoom(zoom);
+
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const vpt = this.canvas.viewportTransform;
+
+        vpt[4] = viewport.width / 2 - cx * zoom;
+        vpt[5] = viewport.height / 2 - cy * zoom;
+
+        this.canvas.setViewportTransform(vpt);
+
+        this.workspaceScale = zoom;
+        this.syncWorkspaceScaleInput();
+        this.resizeCanvasToContent();
+        this.canvas.requestRenderAll();
+    }
+
+    isSpacePanModifier(mouseEvent) {
+        return Boolean(mouseEvent?.spaceKey || this.isSpacePressed);
+    }
+
+    canStartPanning(mouseEvent) {
+        if (!this.isViewportZoomEngine() || !mouseEvent) {
+            return false;
+        }
+
+        const isMiddleButton = mouseEvent.button === 1;
+        const isSpaceAndLeftButton = mouseEvent.button === 0 && this.isSpacePanModifier(mouseEvent);
+        return isMiddleButton || isSpaceAndLeftButton;
+    }
+
+    setPanCursor(isGrabbing) {
+        if (!this.canvasScrollContainer) {
+            return;
+        }
+        this.canvasScrollContainer.classList.toggle('is-panning', isGrabbing);
+    }
+
+    stopPanning() {
+        if (!this.isPanning || !this.canvas) {
+            return;
+        }
+
+        this.isPanning = false;
+        this.panStart = null;
+        this.canvas.selection = true;
+        this.canvas.skipTargetFind = false;
+        this.setPanCursor(false);
+    }
+
     setupEventListeners() {
         this.bindCanvasEvents();
         this.bindUIButtonEvents();
@@ -374,6 +449,20 @@ class ContourApp {
     }
 
     bindKeyboardShortcuts() {
+        document.addEventListener('keydown', event => {
+            if (event.code !== 'Space') {
+                return;
+            }
+            this.isSpacePressed = true;
+        });
+
+        document.addEventListener('keyup', event => {
+            if (event.code !== 'Space') {
+                return;
+            }
+            this.isSpacePressed = false;
+        });
+
         document.addEventListener('keydown', event => {
             const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
             if (event.defaultPrevented || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
@@ -488,6 +577,45 @@ class ContourApp {
     }
 
     bindCanvasEvents() {
+        this.setPanCursor(false);
+
+        this.canvas.on('mouse:down', event => {
+            const nativeEvent = event.e;
+            if (!this.canStartPanning(nativeEvent)) {
+                return;
+            }
+
+            nativeEvent.preventDefault();
+            nativeEvent.stopPropagation();
+
+            this.isPanning = true;
+            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
+            this.canvas.selection = false;
+            this.canvas.skipTargetFind = true;
+            this.setPanCursor(true);
+        });
+
+        this.canvas.on('mouse:move', event => {
+            if (!this.isPanning || !this.isViewportZoomEngine()) {
+                return;
+            }
+
+            const nativeEvent = event.e;
+            const dx = nativeEvent.clientX - this.panStart.x;
+            const dy = nativeEvent.clientY - this.panStart.y;
+            const vpt = this.canvas.viewportTransform;
+
+            vpt[4] += dx;
+            vpt[5] += dy;
+
+            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
+            this.canvas.requestRenderAll();
+        });
+
+        this.canvas.on('mouse:up', () => {
+            this.stopPanning();
+        });
+
         this.canvas.on('selection:created', () => {
             this.updateButtons();
             this.updateStatusBar();
@@ -1629,8 +1757,14 @@ class ContourApp {
             return false;
         }
 
-        await this.loadWorkspace(data);
-        return true;
+        try {
+            await this.loadWorkspace(data);
+            return true;
+        } finally {
+            if (this.isViewportZoomEngine()) {
+                this.fitToLayment();
+            }
+        }
     }
 
     async loadWorkspace(data) {
