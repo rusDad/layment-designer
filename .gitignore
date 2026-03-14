@@ -2,3 +2,5 @@ backend/venv/
 domain/
 orders/
 pricing.local.json
+__pycache__/
+*.py[cod]
