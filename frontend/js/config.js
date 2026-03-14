@@ -33,7 +33,7 @@ window.Config = {
         CANVAS_PADDING: 40,
         HEADER_HEIGHT: 120,
         CANVAS_BACKGROUND: '#fafafa',
-        ZOOM_ENGINE: 'objects'
+        ZOOM_ENGINE: 'viewport'
     },
 
     LAYMENT_STYLE : {
