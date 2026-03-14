@@ -124,10 +124,10 @@ def generate_rect_pocket_gcode(
         lines.append("G0 Z20")
         lines.append(f"G0 X{current_min_x:.3f} Y{current_min_y:.3f}")
         lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
-        # Черновые проходы CCW
-        lines.append(f"G1 X{current_min_x:.3f} Y{current_max_y:.3f} F{feed}")
-        lines.append(f"G1 X{current_max_x:.3f} Y{current_max_y:.3f} F{feed}")
+        # Черновые проходы CW
         lines.append(f"G1 X{current_max_x:.3f} Y{current_min_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_max_x:.3f} Y{current_max_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_min_x:.3f} Y{current_max_y:.3f} F{feed}")
         lines.append(f"G1 X{current_min_x:.3f} Y{current_min_y:.3f} F{feed}")
         lines.append("G0 Z20")
 
@@ -147,10 +147,10 @@ def generate_rect_pocket_gcode(
     lines.append("G0 Z20")
     lines.append(f"G0 X{finish_min_x:.3f} Y{finish_min_y:.3f}")
     lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
-    # Чистовой проход CW
-    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_min_y:.3f} F{feed}")
-    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    # Чистовой проход CCW
     lines.append(f"G1 X{finish_min_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_min_y:.3f} F{feed}")
     lines.append(f"G1 X{finish_min_x:.3f} Y{finish_min_y:.3f} F{feed}")
     lines.append("G0 Z20")
 
@@ -187,9 +187,9 @@ def generate_circle_pocket_gcode(
         start_x = cx + rough_radius
         start_y = cy
         lines.append(f"G1 X{start_x:.3f} Y{start_y:.3f} F{feed}")
-        # Черновые проходы CCW (две полуокружности через R)
-        lines.append(f"G3 X{(cx - rough_radius):.3f} Y{cy:.3f} R{rough_radius:.3f} F{feed}")
-        lines.append(f"G3 X{start_x:.3f} Y{start_y:.3f} R{rough_radius:.3f} F{feed}")
+        # Черновые проходы CW (две полуокружности через R)
+        lines.append(f"G2 X{(cx - rough_radius):.3f} Y{cy:.3f} R{rough_radius:.3f} F{feed}")
+        lines.append(f"G2 X{start_x:.3f} Y{start_y:.3f} R{rough_radius:.3f} F{feed}")
         rough_radius += half_tool
 
     finish_x = cx + finish_radius
@@ -197,9 +197,9 @@ def generate_circle_pocket_gcode(
     lines.append(f"G0 Z20")
     lines.append(f"G0 X{finish_x:.3f} Y{finish_y:.3f}")
     lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
-    # Чистовой проход CW
-    lines.append(f"G2 X{(cx - finish_radius):.3f} Y{cy:.3f} R{finish_radius:.3f} F{feed}")
-    lines.append(f"G2 X{finish_x:.3f} Y{finish_y:.3f} R{finish_radius:.3f} F{feed}")
+    # Чистовой проход CCW
+    lines.append(f"G3 X{(cx - finish_radius):.3f} Y{cy:.3f} R{finish_radius:.3f} F{feed}")
+    lines.append(f"G3 X{finish_x:.3f} Y{finish_y:.3f} R{finish_radius:.3f} F{feed}")
     lines.append("G0 Z20")
 
     return lines

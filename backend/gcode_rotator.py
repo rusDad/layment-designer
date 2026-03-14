@@ -167,13 +167,13 @@ def generate_rectangle_gcode(x_start, y_start, width, height, z_depth, tool_dia,
     sx = x_start - r  
     sy = y_start - r  
     # Углы прямоугольника с оффсетом  
-    points = [  
-        (sx, sy),                # Нижний левый  
-        (sx, sy + height + 2*r),  # Верхний левый (CCW) 
-        (sx + width + 2*r, sy + height + 2*r),  # Верхний правый  
-        (sx + width + 2*r, sy),            # Нижний правый 
-        (sx, sy)                 # Замыкаем  
-    ]  
+    points = [
+        (sx, sy),  # Нижний левый
+        (sx + width + 2*r, sy),  # Нижний правый (CW)
+        (sx + width + 2*r, sy + height + 2*r),  # Верхний правый
+        (sx, sy + height + 2*r),  # Верхний левый
+        (sx, sy)  # Замыкаем
+    ]
     lines = []  
     lines.append('G0 Z20')  # Ретракт  
     lines.append(f'G0 X{sx:.3f} Y{sy:.3f}')  
