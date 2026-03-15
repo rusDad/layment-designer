@@ -43,7 +43,7 @@ window.Config = {
         FILL: '#464746',
         SAFE_AREA_STROKE: '#f1c40f',
         SAFE_AREA_STROKE_WIDTH: 1,
-        SAFE_AREA_STROKE_DASH_ARRAY: [6, 4]
+        SAFE_AREA_STROKE_DASH_ARRAY: [6, 8]
     },
 
     MATERIAL_COLORS: {
@@ -99,7 +99,7 @@ window.Config = {
             ERROR_CORNER: '#c0392b'
         },
         PRIMITIVE: {
-            STROKE: '#20aa10',  // Зеленый для примитивов
+            STROKE: '#104a10',  // Зеленый для примитивов
             FILL: '#208820',
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
