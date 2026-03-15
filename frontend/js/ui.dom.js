@@ -20,6 +20,7 @@ window.UIDom = {
     addCircle: document.getElementById('addCircleButton'),
     saveWorkspace: document.getElementById('saveWorkspaceButton'),
     loadWorkspace: document.getElementById('loadWorkspaceButton'),
+    preview3d: document.getElementById('preview3dButton'),
     export: document.getElementById('exportButton'),
     check: document.getElementById('checkLayoutButton'),
     alignLeft: document.getElementById('alignLeftButton'),

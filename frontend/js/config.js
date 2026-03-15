@@ -66,6 +66,11 @@ window.Config = {
 
     },
 
+    VIEWER_3D: {
+        URL: '/svg3d/',
+        PAYLOAD_PREFIX: 'laymentDesigner.preview3d.'
+    },
+
     // ==================== ГЕОМЕТРИЯ ====================
     GEOMETRY : {
         ALLOWED_ANGLES: [0, 90, 180, 270],

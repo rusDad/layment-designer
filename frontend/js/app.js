@@ -745,6 +745,7 @@ class ContourApp {
             }
         };
 
+        UIDom.buttons.preview3d.onclick = () => this.open3dPreview();
         UIDom.buttons.export.onclick = () => this.openCustomerModal();
 
         UIDom.buttons.check.onclick =
@@ -2057,6 +2058,112 @@ class ContourApp {
         orderResult.title.textContent = 'Не удалось создать заказ';
         orderResult.message.textContent = message;
         orderResult.details.hidden = true;
+    }
+
+    show3dPreviewError(message) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-success', 'order-result-loading');
+        orderResult.container.classList.add('order-result-error');
+        orderResult.title.textContent = '3D предпросмотр недоступен';
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+    }
+
+    open3dPreview() {
+        this.performWithScaleOne(() => {
+            let svg;
+            try {
+                svg = this.buildPreviewSvg();
+            } catch (error) {
+                console.error(error);
+                this.show3dPreviewError('Не удалось собрать SVG для 3D предпросмотра. Попробуйте ещё раз.');
+                return;
+            }
+
+            try {
+                const payloadKey = this.storePreviewSvgPayload(svg);
+                const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
+                viewerUrl.searchParams.set('payloadKey', payloadKey);
+                window.open(viewerUrl.toString(), '_blank', 'noopener');
+            } catch (error) {
+                console.error(error);
+                this.show3dPreviewError('Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).');
+            }
+        });
+    }
+
+    buildPreviewSvg() {
+        const labels = this.canvas.getObjects().filter(obj => obj?.isLabel);
+        const prev = labels.map(label => ({
+            label,
+            visible: label.visible
+        }));
+
+        labels.forEach(label => label.set('visible', false));
+        this.canvas.requestRenderAll();
+
+        try {
+            return this.canvas.toSVG();
+        } finally {
+            prev.forEach(({ label, visible }) => label.set('visible', visible));
+            this.canvas.requestRenderAll();
+        }
+    }
+
+    generatePreviewPayloadKey() {
+        const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        return `${Config.VIEWER_3D.PAYLOAD_PREFIX}${rand}`;
+    }
+
+    cleanupOldPreviewPayloads() {
+        const prefix = Config.VIEWER_3D.PAYLOAD_PREFIX;
+        const now = Date.now();
+        const maxAgeMs = 1000 * 60 * 30;
+
+        for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(prefix)) {
+                continue;
+            }
+
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) {
+                    localStorage.removeItem(key);
+                    continue;
+                }
+                const payload = JSON.parse(raw);
+                const createdAt = Number(payload?.createdAt || 0);
+                if (!Number.isFinite(createdAt) || (now - createdAt) > maxAgeMs) {
+                    localStorage.removeItem(key);
+                }
+            } catch (_error) {
+                localStorage.removeItem(key);
+            }
+        }
+    }
+
+    storePreviewSvgPayload(svg) {
+        if (!svg || typeof svg !== 'string') {
+            throw new Error('Preview SVG payload is empty');
+        }
+
+        this.cleanupOldPreviewPayloads();
+
+        const key = this.generatePreviewPayloadKey();
+        const payload = {
+            version: 1,
+            svg,
+            createdAt: Date.now()
+        };
+
+        localStorage.setItem(key, JSON.stringify(payload));
+        return key;
     }
 
 
