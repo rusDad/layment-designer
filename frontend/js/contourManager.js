@@ -143,7 +143,7 @@ class ContourManager {
       this.app.primitiveManager.primitives.forEach(obj => {
         this.resetPropertiesRecursive(obj, {
             stroke: Config.COLORS.PRIMITIVE.STROKE,
-            strokeWidth: 2,
+            strokeWidth: 1,
             opacity: 1,
             borderColor: Config.COLORS.SELECTION.BORDER,
             cornerColor: Config.COLORS.SELECTION.CORNER,
@@ -454,7 +454,7 @@ class PrimitiveManager {
                 height: size.height,
                 fill: Config.COLORS.PRIMITIVE.FILL,
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
-                strokeWidth: 2,
+                strokeWidth: 1,
                 strokeUniform: true,
                 //strokeDashArray: [1, 1],
                 originX: 'left',
@@ -474,7 +474,7 @@ class PrimitiveManager {
                 radius: size.radius,
                 fill: Config.COLORS.PRIMITIVE.FILL,
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
-                strokeWidth: 2,
+                strokeWidth: 1,
                 strokeUniform: true,
                 //strokeDashArray: [1, 1],
                 originX: 'center',

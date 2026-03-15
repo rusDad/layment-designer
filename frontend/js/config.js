@@ -43,7 +43,7 @@ window.Config = {
         FILL: '#464746',
         SAFE_AREA_STROKE: '#f1c40f',
         SAFE_AREA_STROKE_WIDTH: 1,
-        SAFE_AREA_STROKE_DASH_ARRAY: [6, 8]
+        SAFE_AREA_STROKE_DASH_ARRAY: [6, 4]
     },
 
     MATERIAL_COLORS: {
