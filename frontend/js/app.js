@@ -305,7 +305,7 @@ class ContourApp {
             this.renderCatalogList();
         } catch (err) {
                 console.error('Ошибка загрузки manifest', err);
-                alert(Config.MESSAGES.LOADING_ERROR);
+                this.showOrderResultError(Config.MESSAGES.LOADING_ERROR);
         }
     }
 
@@ -809,8 +809,14 @@ class ContourApp {
             return isValid;
         };
 
-        modal.nameInput?.addEventListener('input', syncConfirmState);
-        modal.contactInput?.addEventListener('input', syncConfirmState);
+        modal.nameInput?.addEventListener('input', () => {
+            this.clearCustomerModalFeedback();
+            syncConfirmState();
+        });
+        modal.contactInput?.addEventListener('input', () => {
+            this.clearCustomerModalFeedback();
+            syncConfirmState();
+        });
 
         modal.cancelButton?.addEventListener('click', () => this.closeCustomerModal());
 
@@ -1995,34 +2001,50 @@ class ContourApp {
         if (!orderResult.container) return;
 
         orderResult.container.hidden = true;
-        orderResult.container.classList.remove('order-result-success', 'order-result-error');
+        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info', 'order-result-loading');
+        orderResult.title.textContent = '';
         orderResult.message.textContent = '';
         orderResult.details.hidden = true;
+        orderResult.orderNumber.textContent = '—';
         orderResult.orderId.textContent = '—';
-        orderResult.paymentLink.textContent = '';
+        orderResult.statusLinkRow.hidden = true;
+        orderResult.paymentLink.textContent = 'Перейти к странице статуса';
         orderResult.paymentLink.href = '#';
         orderResult.meta.hidden = true;
         orderResult.meta.textContent = '';
         this.lastOrderResult = null;
     }
 
-    showOrderResultSuccess({ orderId, paymentUrl, width, height, total }) {
+    showOrderResultLoading(message = 'Создаём заказ. Это может занять несколько секунд.') {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
         orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-error');
+        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info');
+        orderResult.container.classList.add('order-result-loading');
+        orderResult.title.textContent = 'Оформление заказа';
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+    }
+
+    showOrderResultSuccess({ orderId, orderNumber, paymentUrl, width, height, total }) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-error', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-success');
-        orderResult.message.textContent = 'Заказ успешно создан.';
-        alert('заказ создан');
+        orderResult.title.textContent = 'Заказ создан';
+        orderResult.message.textContent = 'Мы приняли заказ в обработку. Вы можете отслеживать статус по ссылке ниже.';
 
         orderResult.details.hidden = false;
+        orderResult.orderNumber.textContent = orderNumber || '—';
         orderResult.orderId.textContent = orderId;
         orderResult.paymentLink.href = paymentUrl;
-        orderResult.paymentLink.textContent = paymentUrl;
+        orderResult.statusLinkRow.hidden = false;
         orderResult.meta.hidden = false;
         orderResult.meta.textContent = `Размер: ${width}×${height} мм • Стоимость: ${total} ₽`;
-        this.lastOrderResult = { orderId, paymentUrl, width, height, total };
+        this.lastOrderResult = { orderId, orderNumber, paymentUrl, width, height, total };
     }
 
     showOrderResultError(message) {
@@ -2030,10 +2052,10 @@ class ContourApp {
         if (!orderResult.container) return;
 
         orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success');
+        orderResult.container.classList.remove('order-result-success', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-error');
-        orderResult.message.innerHTML = message.replace(/\n/g, '<br>');
-        alert(message);
+        orderResult.title.textContent = 'Не удалось создать заказ';
+        orderResult.message.textContent = message;
         orderResult.details.hidden = true;
     }
 
@@ -2044,6 +2066,7 @@ class ContourApp {
             return;
         }
         modal.overlay.hidden = false;
+        this.clearCustomerModalFeedback();
         if (modal.confirmButton) {
             modal.confirmButton.disabled = !(modal.nameInput?.value.trim() && modal.contactInput?.value.trim());
         }
@@ -2056,6 +2079,25 @@ class ContourApp {
             return;
         }
         modal.overlay.hidden = true;
+        this.clearCustomerModalFeedback();
+    }
+
+    setCustomerModalFeedback(message) {
+        const modal = UIDom.customerModal;
+        if (!modal?.feedback) {
+            return;
+        }
+        modal.feedback.hidden = false;
+        modal.feedback.textContent = message;
+    }
+
+    clearCustomerModalFeedback() {
+        const modal = UIDom.customerModal;
+        if (!modal?.feedback) {
+            return;
+        }
+        modal.feedback.hidden = true;
+        modal.feedback.textContent = '';
     }
 
     getSanitizedCustomerFromModal() {
@@ -2070,6 +2112,7 @@ class ContourApp {
     async handleCustomerModalConfirm() {
         const customer = this.getSanitizedCustomerFromModal();
         if (!customer.name || !customer.contact) {
+            this.setCustomerModalFeedback('Заполните имя и контакт, чтобы создать заказ.');
             return;
         }
 
@@ -2088,7 +2131,8 @@ class ContourApp {
         this.exportInProgress = true;
         const startedAt = Date.now();
         exportButton.disabled = true;
-        exportButton.textContent = 'Отправка…';
+        exportButton.textContent = 'Создаём заказ…';
+        this.showOrderResultLoading();
 
         try {
             await action();
@@ -2105,7 +2149,6 @@ class ContourApp {
     }
 
     async exportData() {
-        this.clearOrderResult();
 
         const validation = this.contourManager.checkCollisionsAndHighlight();
         if (!validation.ok) {
@@ -2159,10 +2202,12 @@ class ContourApp {
 
             const result = await response.json();
             const orderId = result?.orderId || '—';
+            const orderNumber = result?.orderNumber || '—';
             const statusUrl = `status.html?orderId=${encodeURIComponent(orderId)}`;
 
             this.showOrderResultSuccess({
                 orderId,
+                orderNumber,
                 paymentUrl: statusUrl,
                 width: realWidth,
                 height: realHeight,
@@ -2170,7 +2215,7 @@ class ContourApp {
             });
         } catch (err) {
             console.error(err);
-            this.showOrderResultError('Ошибка при создании заказа: ' + err.message);
+            this.showOrderResultError('Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || ''));
         } finally {
             this.pendingCustomer = null;
         }

@@ -660,6 +660,24 @@ button:focus-visible {
     background: #fff6f7;
 }
 
+.order-result-info {
+    border-left-color: #6f8a7f;
+    background: #f7faf8;
+}
+
+.order-result-loading {
+    border-left-color: #6f8a7f;
+    background: #f4f7f6;
+}
+
+
+
+.order-result-title {
+    font-size: var(--font-base);
+    font-weight: 600;
+    color: var(--color-text);
+}
+
 .order-result-message {
     color: var(--color-text);
     font-weight: 600;
@@ -676,6 +694,23 @@ button:focus-visible {
 
 .order-result-details a {
     color: #1f7d61;
+}
+
+.order-result-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid #c5d8cf;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: #1f6f57;
+    background: #ffffff;
+}
+
+.order-result-link:hover {
+    border-color: #afc8bb;
+    background: #f9fcfa;
 }
 
 .status-page {
@@ -699,6 +734,18 @@ button:focus-visible {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+}
+
+.status-section-title {
+    margin: 0;
+    font-size: var(--font-lg);
+    color: var(--color-text);
+}
+
+.status-search-help {
+    margin: 0;
+    font-size: var(--font-sm);
+    color: var(--color-text-muted);
 }
 
 .status-search-row {
@@ -754,6 +801,13 @@ button:focus-visible {
 .customer-modal-dialog h2 {
     font-size: var(--font-lg);
     color: var(--color-text);
+    margin: 0;
+}
+
+.customer-modal-subtitle {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-sm);
 }
 
 .customer-modal-field {
@@ -764,6 +818,15 @@ button:focus-visible {
 
 .customer-modal-field label {
     color: var(--color-text-muted);
+    font-size: var(--font-sm);
+}
+
+.customer-modal-feedback {
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid #efcbd0;
+    background: #fff6f7;
+    color: #8f3642;
     font-size: var(--font-sm);
 }
 
