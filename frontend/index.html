@@ -150,12 +150,13 @@
                     <button id="exportButton" class="tool-button export-button button-primary" data-hint="Создать заказ">Создать заказ</button>
 
                     <section id="orderResult" class="order-result" hidden aria-live="polite">
+                        <div id="orderResultTitle" class="order-result-title"></div>
                         <div id="orderResultMessage" class="order-result-message"></div>
                         <div id="orderResultDetails" class="order-result-details" hidden>
+                            <div><strong>Номер заказа:</strong> <span id="orderResultOrderNumber">—</span></div>
                             <div><strong>Order ID:</strong> <span id="orderResultOrderId">—</span></div>
-                            <div>
-                                <strong>Статус заказа:</strong>
-                                <a id="orderResultPaymentLink" href="#" target="_blank" rel="noopener noreferrer"></a>
+                            <div id="orderResultStatusLinkRow" hidden>
+                                <a id="orderResultPaymentLink" class="order-result-link" href="#" target="_blank" rel="noopener noreferrer">Перейти к странице статуса</a>
                             </div>
                             <div id="orderResultMeta" hidden></div>
                         </div>
@@ -191,6 +192,7 @@
     <div id="customerModalOverlay" class="customer-modal-overlay" hidden>
         <div id="customerModalDialog" class="customer-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
             <h2 id="customerModalTitle">Создание заказа</h2>
+            <p class="customer-modal-subtitle">Укажите контактные данные, чтобы мы могли связаться по заказу.</p>
             <div class="customer-modal-field">
                 <label for="customerNameInput">Как к вам обращаться?</label>
                 <input type="text" id="customerNameInput" autocomplete="name">
@@ -199,6 +201,7 @@
                 <label for="customerContactInput">Укажите любой удобный способ связи ( Номер телефона или e-mail )</label>
                 <input type="text" id="customerContactInput" autocomplete="email">
             </div>
+            <div id="customerModalFeedback" class="customer-modal-feedback" hidden></div>
             <div class="customer-modal-actions">
                 <button id="customerModalCancelButton" class="tool-button button-secondary customer-modal-cancel">Отмена</button>
                 <button id="customerModalConfirmButton" class="tool-button export-button button-primary" disabled>Создать заказ</button>
