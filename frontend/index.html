@@ -41,53 +41,53 @@
             <main class="workspace">
                 <div class="workspace-toolbar" aria-label="Расположение и масштаб">
                     <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Основные действия">
-                        <button id="saveWorkspaceButton" class="tool-button toolbar-action-button" data-hint="Сохранить раскладку">Save</button>
-                        <button id="loadWorkspaceButton" class="tool-button toolbar-action-button" data-hint="Загрузить сохранённую раскладку">Load</button>
-                        <button id="checkLayoutButton" class="tool-button toolbar-action-button check-button" data-hint="Проверить границы и пересечения">Проверить</button>
+                        <button id="saveWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Сохранить раскладку">Save</button>
+                        <button id="loadWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Загрузить сохранённую раскладку">Load</button>
+                        <button id="checkLayoutButton" class="tool-button toolbar-action-button button-primary" data-hint="Проверить границы и пересечения">Проверить</button>
                     </div>
                     <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Действия с выделением">
-                        <button id="deleteButton" class="tool-button toolbar-action-button" disabled data-hint="Удалить выделенное">Удалить</button>
-                        <button id="rotateButton" class="tool-button toolbar-action-button" disabled data-hint="Повернуть выделенное на 90°">Повернуть</button>
+                        <button id="deleteButton" class="tool-button toolbar-action-button button-danger" disabled data-hint="Удалить выделенное">Удалить</button>
+                        <button id="rotateButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Повернуть выделенное на 90°">Повернуть</button>
                     </div>
                     <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
-                        <button id="alignLeftButton" class="tool-button icon-button" disabled data-hint="Выровнять по левому обьекту">
+                        <button id="alignLeftButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по левому обьекту">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M4 4h8M4 8h6M4 12h9"/></svg>
                         </button>
-                        <button id="alignCenterXButton" class="tool-button icon-button" disabled data-hint="Центровать по горизонтали">
+                        <button id="alignCenterXButton" class="tool-button icon-button button-icon" disabled data-hint="Центровать по горизонтали">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M3 4h10M5 8h6M2 12h12"/></svg>
                         </button>
-                        <button id="alignRightButton" class="tool-button icon-button" disabled data-hint="Выровнять по правому обьекту">
+                        <button id="alignRightButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по правому обьекту">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4h8M6 8h8M3 12h11"/></svg>
                         </button>
-                        <button id="alignTopButton" class="tool-button icon-button" disabled data-hint="Выровнять по верхнему обьекту">
+                        <button id="alignTopButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по верхнему обьекту">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 4v9M8 4v7M12 4v10"/></svg>
                         </button>
-                        <button id="alignCenterYButton" class="tool-button icon-button" disabled data-hint="Центровать по вертикали">
+                        <button id="alignCenterYButton" class="tool-button icon-button button-icon" disabled data-hint="Центровать по вертикали">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12M4 3v10M8 5v6M12 2v12"/></svg>
                         </button>
-                        <button id="alignBottomButton" class="tool-button icon-button" disabled data-hint="Выровнять по нижнему обьекту">
+                        <button id="alignBottomButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по нижнему обьекту">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 3v11M8 5v9M12 2v12"/></svg>
                         </button>
                     </div>
                     <div class="workspace-toolbar-group" role="group" aria-label="Распределение">
-                        <button id="distributeHorizontalGapsButton" class="tool-button icon-button" disabled data-hint="Распределить по горизонтали)">
+                        <button id="distributeHorizontalGapsButton" class="tool-button icon-button button-icon" disabled data-hint="Распределить по горизонтали)">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2v12M15 2v12M5 4h2v8H5zM9 4h2v8H9z"/></svg>
                         </button>
-                        <button id="distributeVerticalGapsButton" class="tool-button icon-button" disabled data-hint="Распределить по вертикали">
+                        <button id="distributeVerticalGapsButton" class="tool-button icon-button button-icon" disabled data-hint="Распределить по вертикали">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1h12M2 15h12M4 5h8v2H4zM4 9h8v2H4z"/></svg>
                         </button>
                     </div>
                     <div class="workspace-toolbar-group" role="group" aria-label="Прикрепление к краю">
-                        <button id="snapLeftButton" class="tool-button icon-button" disabled data-hint="К левому краю ложемента ">
+                        <button id="snapLeftButton" class="tool-button icon-button button-icon" disabled data-hint="К левому краю ложемента ">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M12 4l-4 4 4 4M14 4v8"/></svg>
                         </button>
-                        <button id="snapRightButton" class="tool-button icon-button" disabled data-hint="К правому краю ложемента">
+                        <button id="snapRightButton" class="tool-button icon-button button-icon" disabled data-hint="К правому краю ложемента">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4l4 4-4 4M2 4v8"/></svg>
                         </button>
-                        <button id="snapTopButton" class="tool-button icon-button" disabled data-hint="К верхнему краю ложемента">
+                        <button id="snapTopButton" class="tool-button icon-button button-icon" disabled data-hint="К верхнему краю ложемента">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 12l4-4 4 4M4 14h8"/></svg>
                         </button>
-                        <button id="snapBottomButton" class="tool-button icon-button" disabled data-hint="К нижнему краю ложемента">
+                        <button id="snapBottomButton" class="tool-button icon-button button-icon" disabled data-hint="К нижнему краю ложемента">
                             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 4l4 4 4-4M4 2h8"/></svg>
                         </button>
                     </div>
@@ -112,7 +112,7 @@
 
             <aside class="tool-panel">
                 <h2>Габариты ложемента</h2>
-                <div class="size-controls">
+                <div class="size-controls panel-card">
                     <div class="form-row">
                         <label for="laymentPreset">Размер:</label>
                         <select id="laymentPreset">
@@ -140,14 +140,14 @@
                 </div>
 
                 <h2>Инструменты</h2>
-                <div class="tool-buttons">
-                    <button id="addRectButton" class="tool-button" data-hint="Добавить прямоугольную выемку">➕ прямоугольная выемка</button>
-                    <button id="addCircleButton" class="tool-button" data-hint="Добавить круглую выемку">➕ круглая выемка</button>
+                <div class="tool-buttons panel-card">
+                    <button id="addRectButton" class="tool-button button-secondary" data-hint="Добавить прямоугольную выемку">➕ прямоугольная выемка</button>
+                    <button id="addCircleButton" class="tool-button button-secondary" data-hint="Добавить круглую выемку">➕ круглая выемка</button>
                 </div>
 
-                <section class="order-panel" aria-label="Заказ">
+                <section class="order-panel panel-card panel-card-highlight" aria-label="Заказ">
                     <h2>Заказ</h2>
-                    <button id="exportButton" class="tool-button export-button" data-hint="Создать заказ">Создать заказ</button>
+                    <button id="exportButton" class="tool-button export-button button-primary" data-hint="Создать заказ">Создать заказ</button>
 
                     <section id="orderResult" class="order-result" hidden aria-live="polite">
                         <div id="orderResultMessage" class="order-result-message"></div>
@@ -163,23 +163,25 @@
                 </section>
 
                 <h2>Подпись контура</h2>
-                <div id="labelControls" class="primitive-controls" aria-disabled="true" hidden>
+                <div id="labelControls" class="primitive-controls panel-card" aria-disabled="true">
                     <label>Текст: <input type="text" id="labelText" placeholder="Введите подпись"></label>
                     <div class="tool-buttons">
-                        <button id="addLabelBtn" class="tool-button" disabled>Добавить подпись</button>
-                        <button id="deleteLabelBtn" class="tool-button" disabled>Удалить подпись</button>
+                        <button id="addLabelBtn" class="tool-button button-secondary" disabled>Добавить подпись</button>
+                        <button id="deleteLabelBtn" class="tool-button button-danger" disabled>Удалить подпись</button>
                     </div>
                     <small>Подпись можно перетаскивать мышью в пределах контура.</small>
+                    <small class="panel-empty-state">Выберите контур, чтобы управлять подписью.</small>
                 </div>
 
                 <h2>Выемка</h2>
-                <div class="primitive-controls" id="primitiveControls" aria-disabled="true">
+                <div class="primitive-controls panel-card" id="primitiveControls" aria-disabled="true">
                     <div class="primitive-controls-header">
                         Тип: <span id="primitiveTypeLabel">—</span>
                     </div>
                     <label id="primitiveWidthRow">Ширина: <input type="number" id="primitiveWidth" min="1" step="1" disabled></label>
                     <label id="primitiveHeightRow">Высота: <input type="number" id="primitiveHeight" min="1" step="1" disabled></label>
                     <label id="primitiveRadiusRow">Радиус: <input type="number" id="primitiveRadius" min="1" step="1" disabled></label>
+                    <small class="panel-empty-state">Выберите выемку на поле, чтобы редактировать размеры.</small>
                 </div>
             </aside>
         </div>
@@ -198,8 +200,8 @@
                 <input type="text" id="customerContactInput" autocomplete="email">
             </div>
             <div class="customer-modal-actions">
-                <button id="customerModalCancelButton" class="tool-button customer-modal-cancel">Отмена</button>
-                <button id="customerModalConfirmButton" class="tool-button export-button" disabled>Создать заказ</button>
+                <button id="customerModalCancelButton" class="tool-button button-secondary customer-modal-cancel">Отмена</button>
+                <button id="customerModalConfirmButton" class="tool-button export-button button-primary" disabled>Создать заказ</button>
             </div>
         </div>
     </div>

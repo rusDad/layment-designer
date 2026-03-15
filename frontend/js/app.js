@@ -1673,7 +1673,7 @@ class ContourApp {
         const active = this.canvas.getActiveObject();
 
         if (!active || active.type === 'activeSelection') {
-            statusEl.textContent = 'Ничего не выделено';
+            statusEl.textContent = 'Выберите контур или выемку';
             return;
         }
 
@@ -1685,13 +1685,13 @@ class ContourApp {
                 const bbox = active.getBoundingRect(true);
                 const realX = this.pxToMm(bbox.left - laymentBbox.left).toFixed(1);
                 const realY = this.pxToMm(bbox.top - laymentBbox.top).toFixed(1);
-                statusEl.innerHTML = `<strong>Выемка: Прямоугольная</strong> X: ${realX} мм Y: ${realY} мм W: ${dimensions.width} мм H: ${dimensions.height} мм`;
+                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм`;
                 return;
             }
 
             const realX = this.pxToMm(active.left - laymentBbox.left).toFixed(1);
             const realY = this.pxToMm(active.top - laymentBbox.top).toFixed(1);
-            statusEl.innerHTML = `<strong>Выемка: Круглая</strong> X: ${realX} мм Y: ${realY} мм R: ${dimensions.radius} мм`;
+            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм`;
             return;
         }
 
@@ -1711,7 +1711,7 @@ class ContourApp {
         const realY = this.pxToMm(tl.y - this.layment.top).toFixed(1);
 
         const article = meta.article || '—';
-        statusEl.innerHTML = `<strong>${meta.name}</strong> article: ${article} X: ${realX} мм Y: ${realY} мм Угол: ${contour.angle}°`;
+        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°`; 
     }
 
     deleteSelected() {

@@ -140,7 +140,7 @@
         setResultType('success');
         statusResult.hidden = false;
         statusDetails.hidden = false;
-        statusMessage.textContent = 'Статус заказа получен';
+        statusMessage.textContent = 'Данные заказа обновлены';
 
         statusOrderNumber.textContent = order.orderNumber || '—';
         statusOrderId.textContent = order.orderId || '—';
