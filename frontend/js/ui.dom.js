@@ -8,6 +8,7 @@ window.UIDom = {
     laymentHeight: document.getElementById('laymentHeight'),
     workspaceScale: document.getElementById('workspaceScale'),
     baseMaterialColor: document.getElementById('baseMaterialColor'),
+    laymentThicknessMm: document.getElementById('laymentThicknessMm'),
     primitiveWidth: document.getElementById('primitiveWidth'),
     primitiveHeight: document.getElementById('primitiveHeight'),
     primitiveRadius: document.getElementById('primitiveRadius'),
