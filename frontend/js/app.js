@@ -2106,7 +2106,10 @@ class ContourApp {
                         name: contour.name || meta.name,
                         poseKey: contour.poseKey || meta.poseKey,
                         poseLabel: contour.poseLabel || meta.poseLabel,
-                        scaleOverride: contour.scaleOverride ?? meta.scaleOverride
+                        scaleOverride: contour.scaleOverride ?? meta.scaleOverride,
+                        depthOverrideMm: Number.isFinite(contour.depthOverrideMm)
+                            ? contour.depthOverrideMm
+                            : (Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined)
                     };
                     await this.contourManager.addContour(
                         `/contours/${metadata.assets.svg}`,
@@ -2161,9 +2164,9 @@ class ContourApp {
                     const x = this.layment.left + primitive.x;
                     const y = this.layment.top + primitive.y;
                     if (primitive.type === 'rect') {
-                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height });
+                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height }, { pocketDepthMm: primitive.pocketDepthMm });
                     } else if (primitive.type === 'circle') {
-                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius });
+                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius }, { pocketDepthMm: primitive.pocketDepthMm });
                     }
                 }
             });

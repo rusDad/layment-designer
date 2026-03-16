@@ -43,20 +43,26 @@ def _format_contour_comment(contour_id: str, angle: float) -> str:
     return f"' CONTOUR id={contour_id} angle={angle}"
 
 
-def _format_primitive_comment(primitive_index: int, primitive: dict[str, Any]) -> str:
-    primitive_type = primitive.get("type")
+def _primitive_value(primitive: Any, key: str) -> Any:
+    if isinstance(primitive, dict):
+        return primitive.get(key)
+    return getattr(primitive, key, None)
+
+
+def _format_primitive_comment(primitive_index: int, primitive: Any) -> str:
+    primitive_type = _primitive_value(primitive, "type")
 
     if primitive_type == "rect":
         return (
             f"' PRIMITIVE #{primitive_index} type=rect "
-            f"x={primitive.get('x')} y={primitive.get('y')} "
-            f"width={primitive.get('width')} height={primitive.get('height')}"
+            f"x={_primitive_value(primitive, 'x')} y={_primitive_value(primitive, 'y')} "
+            f"width={_primitive_value(primitive, 'width')} height={_primitive_value(primitive, 'height')}"
         )
 
     if primitive_type == "circle":
         return (
             f"' PRIMITIVE #{primitive_index} type=circle "
-            f"x={primitive.get('x')} y={primitive.get('y')} radius={primitive.get('radius')}"
+            f"x={_primitive_value(primitive, 'x')} y={_primitive_value(primitive, 'y')} radius={_primitive_value(primitive, 'radius')}"
         )
 
     return f"' PRIMITIVE #{primitive_index} type={primitive_type}"
@@ -220,6 +226,8 @@ def build_final_gcode(order_data) -> List[str]:
     final_gcode.append("G0 Z20")
 
     for contour in order_data.contours:
+        # TODO: apply future contour depth seam on backend:
+        # effectiveDepthMm = basePocketDepthMm + depthOverrideMm.
         final_gcode.append(_format_contour_comment(contour.id, contour.angle))
         contour_lines = load_rotated_fragment(contour.id, contour.angle)
         cnc_x, cnc_y = contour.y, contour.x  # приведение системы координат фронтенда к координатам станка
@@ -235,14 +243,15 @@ def build_final_gcode(order_data) -> List[str]:
         final_gcode.append("' PRIMITIVES START")
 
     for primitive_index, primitive in enumerate(primitives, start=1):
+        # TODO: support primitive absolute pocket depth (pocketDepthMm).
         final_gcode.append(_format_primitive_comment(primitive_index, primitive))
-        primitive_type = primitive.get("type")
+        primitive_type = _primitive_value(primitive, "type")
 
         if primitive_type == "rect":
-            x = _to_float(primitive.get("x"), "x", primitive_index)
-            y = _to_float(primitive.get("y"), "y", primitive_index)
-            width = _to_float(primitive.get("width"), "width", primitive_index)
-            height = _to_float(primitive.get("height"), "height", primitive_index)
+            x = _to_float(_primitive_value(primitive, "x"), "x", primitive_index)
+            y = _to_float(_primitive_value(primitive, "y"), "y", primitive_index)
+            width = _to_float(_primitive_value(primitive, "width"), "width", primitive_index)
+            height = _to_float(_primitive_value(primitive, "height"), "height", primitive_index)
 
             cnc_x = y
             cnc_y = x
@@ -263,9 +272,9 @@ def build_final_gcode(order_data) -> List[str]:
             continue
 
         if primitive_type == "circle":
-            x = _to_float(primitive.get("x"), "x", primitive_index)
-            y = _to_float(primitive.get("y"), "y", primitive_index)
-            radius = _to_float(primitive.get("radius"), "radius", primitive_index)
+            x = _to_float(_primitive_value(primitive, "x"), "x", primitive_index)
+            y = _to_float(_primitive_value(primitive, "y"), "y", primitive_index)
+            radius = _to_float(_primitive_value(primitive, "radius"), "radius", primitive_index)
 
             cnc_cx = y
             cnc_cy = x
