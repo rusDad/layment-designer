@@ -164,10 +164,10 @@ def upsert_category(data: UpsertCategoryRequest):
 def create_item(data: CreateItemRequest):
     try:
         normalized_pose_key = normalize_pose_key(data.poseKey)
+        item_id = generate_item_id(data.article, normalized_pose_key)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    item_id = generate_item_id(data.article, normalized_pose_key)
     default_label = _normalize_default_label(data.defaultLabel)
     pose_label = _normalize_pose_label(data.poseLabel)
 
@@ -189,6 +189,15 @@ def create_item(data: CreateItemRequest):
     )
 
     if existing_item:
+        if existing_item.get("article") != data.article:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Generated id collision: "
+                    f"id '{item_id}' is already used by article "
+                    f"'{existing_item.get('article')}', cannot use with article '{data.article}'."
+                )
+            )
         existing_item["name"] = data.name
         existing_item["brand"] = data.brand
         existing_item["category"] = category_slug
