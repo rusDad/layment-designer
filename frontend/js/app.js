@@ -32,6 +32,7 @@ class ContourApp {
         this.isSpacePressed = false;
         this.primaryPointerDown = false;
         this.primaryDownStartedOutsideCanvas = false;
+        this.pointerDownStartedInProtectedUi = false;
         this.suppressCanvasUntilMouseUp = false;
 
         this.init();
@@ -528,6 +529,21 @@ class ContourApp {
         return this.canvas.wrapperEl.contains(target);
     }
 
+    isProtectedUiTarget(target) {
+        if (!(target instanceof Node)) {
+            return false;
+        }
+
+        const element = target instanceof Element ? target : target.parentElement;
+        if (!element) {
+            return false;
+        }
+
+        return !!element.closest(
+            '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable=""], [contenteditable="true"]'
+        );
+    }
+
     clearBrowserSelection() {
         const selection = window.getSelection?.();
         if (selection && selection.rangeCount > 0) {
@@ -545,6 +561,7 @@ class ContourApp {
         this.panStart = null;
         this.primaryPointerDown = false;
         this.primaryDownStartedOutsideCanvas = false;
+        this.pointerDownStartedInProtectedUi = false;
         this.suppressCanvasUntilMouseUp = false;
         this.canvas.selection = true;
         this.canvas.skipTargetFind = false;
@@ -571,11 +588,15 @@ class ContourApp {
                 return;
             }
 
+            const startedInsideCanvas = this.isInsideCanvas(event.target);
+            const startedInProtectedUi = !startedInsideCanvas && this.isProtectedUiTarget(event.target);
+
             this.primaryPointerDown = true;
-            this.primaryDownStartedOutsideCanvas = !this.isInsideCanvas(event.target);
+            this.primaryDownStartedOutsideCanvas = !startedInsideCanvas;
+            this.pointerDownStartedInProtectedUi = startedInProtectedUi;
             this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas;
 
-            if (this.suppressCanvasUntilMouseUp) {
+            if (this.suppressCanvasUntilMouseUp && !this.pointerDownStartedInProtectedUi) {
                 this.stopPanning();
                 this.canvas.discardActiveObject();
                 this.canvas.requestRenderAll();
@@ -606,8 +627,12 @@ class ContourApp {
 
             this.suppressCanvasUntilMouseUp = true;
             this.stopPanning();
-            this.canvas.discardActiveObject();
-            this.clearBrowserSelection();
+
+            if (!this.pointerDownStartedInProtectedUi) {
+                this.canvas.discardActiveObject();
+                this.clearBrowserSelection();
+            }
+
             event.preventDefault();
             event.stopPropagation();
             this.canvas.requestRenderAll();
