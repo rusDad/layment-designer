@@ -2028,7 +2028,7 @@ class ContourApp {
         orderResult.details.hidden = true;
     }
 
-    showOrderResultSuccess({ orderId, orderNumber, paymentUrl, width, height, total }) {
+    showOrderResultSuccess({ orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total }) {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
@@ -2044,8 +2044,8 @@ class ContourApp {
         orderResult.paymentLink.href = paymentUrl;
         orderResult.statusLinkRow.hidden = false;
         orderResult.meta.hidden = false;
-        orderResult.meta.textContent = `Размер: ${width}×${height} мм • Стоимость: ${total} ₽`;
-        this.lastOrderResult = { orderId, orderNumber, paymentUrl, width, height, total };
+        orderResult.meta.textContent = `Размер: ${width}×${height}×${laymentThicknessMm ?? 35} мм • Стоимость: ${total} ₽`;
+        this.lastOrderResult = { orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total };
     }
 
     showOrderResultError(message) {
@@ -2318,6 +2318,7 @@ class ContourApp {
                 paymentUrl: statusUrl,
                 width: realWidth,
                 height: realHeight,
+                laymentThicknessMm: result?.pricePreview?.laymentThicknessMm ?? 35,
                 total: result?.pricePreview?.total ?? '—'
             });
         } catch (err) {

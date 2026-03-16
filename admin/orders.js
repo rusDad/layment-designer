@@ -75,6 +75,13 @@ const humanizeColor = (color) => {
   return '—';
 };
 
+const humanizeThickness = (thickness) => {
+  if (thickness === 35 || thickness === 65) {
+    return `${thickness} мм`;
+  }
+  return '—';
+};
+
 const createBadge = (label, active) => {
   const span = document.createElement('span');
   span.className = `badge${active ? ' ok' : ''}`;
@@ -167,7 +174,7 @@ const renderOrdersList = () => {
 
     const dim = document.createElement('div');
     dim.className = 'muted';
-    dim.textContent = `Размер: ${order.width ?? '—'} x ${order.height ?? '—'} мм`;
+    dim.textContent = `Размер: ${order.width ?? '—'} x ${order.height ?? '—'} x ${order.laymentThicknessMm ?? '—'} мм`;
 
     const created = document.createElement('div');
     created.className = 'muted';
@@ -193,6 +200,7 @@ const updateMeta = (details) => {
   const orderMeta = details.orderMeta || {};
   const customer = details.customer || {};
   const baseMaterialColor = orderMeta?.baseMaterialColor;
+  const laymentThicknessMm = details.laymentThicknessMm ?? orderMeta?.laymentThicknessMm;
 
   const safeOrderId = escapeHtml(details.orderId || '—');
   const safeCustomerName = escapeHtml(customer.name || '—');
@@ -203,11 +211,13 @@ const updateMeta = (details) => {
     <div><strong>Шифр (orderId):</strong> ${safeOrderId}</div>
     <div><strong>Заказчик:</strong> ${safeCustomerName}</div>
     <div><strong>Контакт:</strong> ${safeCustomerContact}</div>
+    <div><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
+    <div><strong>Толщина:</strong> ${humanizeThickness(laymentThicknessMm)}</div>
     <div><strong>Цвет основы:</strong> ${humanizeColor(baseMaterialColor)}</div>
+    <div><strong>Статус:</strong> ${status.produced ? 'produced' : status.confirmed ? 'confirmed' : 'created'}</div>
     <div><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
     <div><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
     <div><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
-    <div><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
   `;
 
   const contours = Array.isArray(details.contours) ? details.contours : [];
