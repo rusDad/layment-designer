@@ -8,7 +8,7 @@ from typing import Any, List, Optional, Dict, Literal
 from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import Path
-import tempfile
+from tempfile import NamedTemporaryFile
 import logging
 import base64
 import binascii
@@ -97,26 +97,27 @@ def _write_json(file_path: Path, data: Dict[str, Any]) -> None:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
-def _atomic_write_json(file_path: Path, data: Dict[str, Any]) -> None:
+def _write_json_atomic(file_path: Path, data: Dict[str, Any]) -> None:
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Optional[Path] = None
+    with NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=file_path.parent,
+        prefix=f".{file_path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temp_file:
+        json.dump(data, temp_file, ensure_ascii=False, indent=2)
+        temp_file.flush()
+        os.fsync(temp_file.fileno())
+        temp_path = Path(temp_file.name)
+
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=file_path.parent,
-            prefix=f".{file_path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temp_file:
-            json.dump(data, temp_file, ensure_ascii=False, indent=2)
-            temp_file.flush()
-            os.fsync(temp_file.fileno())
-            temp_path = Path(temp_file.name)
         os.replace(temp_path, file_path)
-    finally:
-        if temp_path and temp_path.exists():
+    except Exception:
+        if temp_path.exists():
             temp_path.unlink()
+        raise
 
 
 def _load_order_status(order_dir: Path) -> Dict[str, Any]:
@@ -131,23 +132,27 @@ def _read_order_number(order_dir: Path) -> Optional[str]:
     return None
 
 
-def _allocate_order_number(orders_dir: Path) -> str:
+def _order_sequence_file(orders_dir: Path) -> Path:
+    return orders_dir / ".order_sequence.json"
+
+
+def _allocate_next_order_number(orders_dir: Path) -> str:
     orders_dir.mkdir(parents=True, exist_ok=True)
-    sequence_path = orders_dir / ".order_sequence.json"
-    lock_path = orders_dir / ".order_sequence.lock"
+    sequence_file = _order_sequence_file(orders_dir)
+    lock_file = orders_dir / ".order_sequence.lock"
 
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+    with lock_file.open("a", encoding="utf-8") as lock_fp:
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
+        try:
+            sequence_data = _read_json_if_exists(sequence_file) or {}
+            last_number = sequence_data.get("lastNumber")
+            if not isinstance(last_number, int) or last_number < 0:
+                last_number = 0
 
-        sequence_payload = _read_json_if_exists(sequence_path) or {}
-        last_number = sequence_payload.get("lastNumber")
-        if not isinstance(last_number, int) or last_number < 0:
-            last_number = 0
-
-        next_number = last_number + 1
-        _atomic_write_json(sequence_path, {"lastNumber": next_number})
-
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            next_number = last_number + 1
+            _write_json_atomic(sequence_file, {"lastNumber": next_number})
+        finally:
+            fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
 
     return f"K-{next_number:05d}"
 
@@ -218,10 +223,12 @@ def _max_iso_timestamp(*values: Any) -> Optional[str]:
 
 
 def _order_preview_png_path(order_dir: Path, order_number: Optional[str]) -> Optional[Path]:
-    if order_number:
-        numbered_preview = order_dir / f"{order_number}.png"
-        if numbered_preview.exists() and numbered_preview.is_file():
-            return numbered_preview
+    if not order_number:
+        return None
+
+    numbered_preview = order_dir / f"{order_number}.png"
+    if numbered_preview.exists() and numbered_preview.is_file():
+        return numbered_preview
     return None
 
 
@@ -295,7 +302,7 @@ async def export_layment(payload: Dict[str, Any]):
         order_id = uuid4().hex[:12]
         orders_dir = _orders_dir()
         orders_dir.mkdir(parents=True, exist_ok=True)
-        order_number = _allocate_order_number(orders_dir)
+        order_number = _allocate_next_order_number(orders_dir)
 
         while (orders_dir / order_id).exists():
             order_id = uuid4().hex[:12]
