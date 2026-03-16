@@ -134,7 +134,14 @@ def calculate_price_preview(order_data: "ExportRequest") -> Dict[str, Any]:
     height = order_data.orderMeta.height
 
     area_m2 = (width * height) / 1_000_000
-    material_cost = round(area_m2 * float(config.get("wasteK", 0)) * float(config.get("materialPricePerM2", 0)))
+    layment_thickness_mm = order_data.orderMeta.laymentThicknessMm
+    thickness_coefficient = 1 if layment_thickness_mm == 35 else 2
+    material_cost = round(
+        area_m2
+        * float(config.get("wasteK", 0))
+        * float(config.get("materialPricePerM2", 0))
+        * thickness_coefficient
+    )
 
     perimeter_m = (2 * (width + height)) / 1000
 
@@ -164,6 +171,8 @@ def calculate_price_preview(order_data: "ExportRequest") -> Dict[str, Any]:
         "material": material_cost,
         "cutting": cutting_cost,
         "total": total,
+        "laymentThicknessMm": layment_thickness_mm,
+        "thicknessCoefficient": thickness_coefficient,
         "cuttingMeters": cutting_m,
         "areaM2": area_m2,
         "missingContourIds": missing_contour_ids,
