@@ -29,6 +29,9 @@ class ContourApp {
         this.isPanning = false;
         this.panStart = null;
         this.isSpacePressed = false;
+        this.primaryPointerDown = false;
+        this.primaryDownStartedOutsideCanvas = false;
+        this.suppressCanvasUntilMouseUp = false;
 
         this.init();
     }
@@ -515,7 +518,41 @@ class ContourApp {
         this.setPanCursor(false);
     }
 
+    isInsideCanvas(target) {
+        if (!this.canvas?.wrapperEl || !(target instanceof Node)) {
+            return false;
+        }
+
+        return this.canvas.wrapperEl.contains(target);
+    }
+
+    clearBrowserSelection() {
+        const selection = window.getSelection?.();
+        if (selection && selection.rangeCount > 0) {
+            selection.removeAllRanges();
+        }
+    }
+
+    resetPointerInteraction() {
+        if (!this.canvas) {
+            return;
+        }
+
+        this.stopPanning();
+        this.isPanning = false;
+        this.panStart = null;
+        this.primaryPointerDown = false;
+        this.primaryDownStartedOutsideCanvas = false;
+        this.suppressCanvasUntilMouseUp = false;
+        this.canvas.selection = true;
+        this.canvas.skipTargetFind = false;
+        this.setPanCursor(false);
+        this.clearBrowserSelection();
+        this.canvas.requestRenderAll();
+    }
+
     setupEventListeners() {
+        this.bindGlobalPointerSafety();
         this.bindCanvasEvents();
         this.bindUIButtonEvents();
         this.bindInputEvents();
@@ -524,6 +561,55 @@ class ContourApp {
         this.bindCustomerModalEvents();
         this.bindKeyboardShortcuts();
         this.syncWorkspaceScaleInput();
+    }
+
+    bindGlobalPointerSafety() {
+        document.addEventListener('mousedown', event => {
+            if (event.button !== 0) {
+                return;
+            }
+
+            this.primaryPointerDown = true;
+            this.primaryDownStartedOutsideCanvas = !this.isInsideCanvas(event.target);
+            this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas;
+
+            if (this.suppressCanvasUntilMouseUp) {
+                this.stopPanning();
+                this.canvas.discardActiveObject();
+                this.canvas.requestRenderAll();
+            }
+        }, true);
+
+        window.addEventListener('mouseup', event => {
+            if (event.button !== 0) {
+                return;
+            }
+            this.resetPointerInteraction();
+        }, true);
+
+        window.addEventListener('blur', () => {
+            this.resetPointerInteraction();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.resetPointerInteraction();
+            }
+        });
+
+        this.canvas.wrapperEl.addEventListener('mouseenter', event => {
+            if (!this.primaryPointerDown || !this.primaryDownStartedOutsideCanvas) {
+                return;
+            }
+
+            this.suppressCanvasUntilMouseUp = true;
+            this.stopPanning();
+            this.canvas.discardActiveObject();
+            this.clearBrowserSelection();
+            event.preventDefault();
+            event.stopPropagation();
+            this.canvas.requestRenderAll();
+        });
     }
 
     bindKeyboardShortcuts() {
@@ -659,6 +745,16 @@ class ContourApp {
 
         this.canvas.on('mouse:down', event => {
             const nativeEvent = event.e;
+
+            if (this.suppressCanvasUntilMouseUp && nativeEvent?.button === 0) {
+                nativeEvent.preventDefault();
+                nativeEvent.stopPropagation();
+                this.stopPanning();
+                this.canvas.discardActiveObject();
+                this.canvas.requestRenderAll();
+                return;
+            }
+
             if (!this.canStartPanning(nativeEvent)) {
                 return;
             }
@@ -674,11 +770,18 @@ class ContourApp {
         });
 
         this.canvas.on('mouse:move', event => {
+            const nativeEvent = event.e;
+
+            if (this.suppressCanvasUntilMouseUp && this.primaryPointerDown) {
+                nativeEvent?.preventDefault?.();
+                this.stopPanning();
+                return;
+            }
+
             if (!this.isPanning || !this.isViewportZoomEngine()) {
                 return;
             }
 
-            const nativeEvent = event.e;
             const dx = nativeEvent.clientX - this.panStart.x;
             const dy = nativeEvent.clientY - this.panStart.y;
             const vpt = this.canvas.viewportTransform;

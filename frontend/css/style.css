@@ -81,6 +81,29 @@ button:focus-visible {
     border-color: var(--color-primary);
 }
 
+
+.app-header,
+.catalog-panel,
+.catalog-nav,
+.catalog-list,
+.catalog-row,
+.tool-panel,
+.panel-card,
+.workspace,
+.workspace-toolbar,
+.workspace-toolbar-group,
+.canvas-scroll-container,
+.status-bar {
+    user-select: none;
+}
+
+input,
+select,
+textarea,
+[contenteditable="true"] {
+    user-select: text;
+}
+
 .app-container {
     display: flex;
     flex-direction: column;
