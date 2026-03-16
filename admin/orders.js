@@ -84,7 +84,7 @@ const humanizeThickness = (thickness) => {
 
 const createBadge = (label, active) => {
   const span = document.createElement('span');
-  span.className = `badge${active ? ' ok' : ''}`;
+  span.className = `badge${active ? ' ok' : ' badge-warning'}`;
   span.textContent = `${label}: ${active ? 'yes' : 'no'}`;
   return span;
 };
@@ -207,17 +207,15 @@ const updateMeta = (details) => {
   const safeCustomerContact = escapeHtml(customer.contact || '—');
 
   orderMetaEl.innerHTML = `
-    <div><strong>Номер заказа:</strong> ${details.orderNumber || '—'}</div>
-    <div><strong>Шифр (orderId):</strong> ${safeOrderId}</div>
-    <div><strong>Заказчик:</strong> ${safeCustomerName}</div>
-    <div><strong>Контакт:</strong> ${safeCustomerContact}</div>
-    <div><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
-    <div><strong>Толщина:</strong> ${humanizeThickness(laymentThicknessMm)}</div>
-    <div><strong>Цвет основы:</strong> ${humanizeColor(baseMaterialColor)}</div>
-    <div><strong>Статус:</strong> ${status.produced ? 'produced' : status.confirmed ? 'confirmed' : 'created'}</div>
-    <div><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
-    <div><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
-    <div><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
+    <div class="order-meta-item"><strong>Номер заказа:</strong> ${details.orderNumber || '—'}</div>
+    <div class="order-meta-item"><strong>Шифр (orderId):</strong> ${safeOrderId}</div>
+    <div class="order-meta-item"><strong>Заказчик:</strong> ${safeCustomerName}</div>
+    <div class="order-meta-item"><strong>Контакт:</strong> ${safeCustomerContact}</div>
+    <div class="order-meta-item"><strong>Цвет основы:</strong> ${humanizeColor(baseMaterialColor)}</div>
+    <div class="order-meta-item"><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
+    <div class="order-meta-item"><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
+    <div class="order-meta-item"><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
+    <div class="order-meta-item"><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
   `;
 
   const contours = Array.isArray(details.contours) ? details.contours : [];
