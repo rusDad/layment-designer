@@ -12,6 +12,7 @@ class ContourApp {
         this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.availableContours = [];
+        this.availableArticleEntries = [];
         this.availableCategories = [];
         this.categoryLabels = {};
         this.currentCategory = null;
@@ -321,7 +322,8 @@ class ContourApp {
             this.categoryLabels = data.categories || {};
 
             this.availableContours = data.items.filter(i => i.enabled);
-            this.availableCategories = this.buildCategories(this.availableContours);
+            this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
+            this.availableCategories = this.buildCategories(this.availableArticleEntries);
             this.ensureValidCategory();
             this.renderCatalogNav();
             this.renderCatalogList();
@@ -1609,6 +1611,43 @@ class ContourApp {
         return Array.from(categories.keys()).sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
+    buildArticleEntries(items) {
+        const entries = new Map();
+        items.forEach(item => {
+            const article = (item?.article || item?.id || "").trim();
+            if (!article) {
+                return;
+            }
+            if (!entries.has(article)) {
+                entries.set(article, {
+                    article,
+                    name: item.name || "",
+                    category: item.category || "",
+                    variants: []
+                });
+            }
+            const entry = entries.get(article);
+            entry.variants.push(item);
+            if (!entry.name && item.name) {
+                entry.name = item.name;
+            }
+        });
+
+        return Array.from(entries.values())
+            .map(entry => ({
+                ...entry,
+                variants: entry.variants.slice().sort((a, b) => ((a.poseLabel || a.poseKey || "").localeCompare(b.poseLabel || b.poseKey || "", "ru")))
+            }))
+            .sort((a, b) => `${a.article} ${a.name}`.localeCompare(`${b.article} ${b.name}`, "ru"));
+    }
+
+    getVariantDisplayLabel(item) {
+        if (!item) {
+            return "Базовый";
+        }
+        return item.poseLabel || item.poseKey || "Базовый";
+    }
+
     getCategoryLabel(item) {
         const raw = (item.category || '').trim();
         if (!raw) {
@@ -1656,7 +1695,7 @@ class ContourApp {
         const list = UIDom.panels.catalogList;
         list.innerHTML = '';
 
-        if (!this.availableContours.length) {
+        if (!this.availableArticleEntries.length) {
             return;
         }
 
@@ -1668,12 +1707,12 @@ class ContourApp {
                 return;
             }
 
-            const items = this.availableContours.filter(item => this.matchesItemQuery(item));
+            const items = this.availableArticleEntries.filter(item => this.matchesItemQuery(item));
             this.renderItemRows(list, items, { showCategoryLabel: true });
             return;
         }
 
-        const items = this.availableContours
+        const items = this.availableArticleEntries
             .filter(item => this.getCategoryLabel(item) === this.currentCategory)
             .filter(item => this.matchesItemQuery(item));
         this.renderItemRows(list, items);
@@ -1684,12 +1723,17 @@ class ContourApp {
         if (!query) {
             return true;
         }
+
+        const variants = Array.isArray(item.variants) ? item.variants : [item];
         const fields = [
             item.article,
-            item.name
+            item.name,
+            ...variants.map(variant => variant?.poseLabel),
+            ...variants.map(variant => variant?.poseKey),
+            ...variants.map(variant => variant?.name)
         ]
             .filter(Boolean)
-            .map(value => value.toLowerCase());
+            .map(value => String(value).toLowerCase());
         return fields.some(value => value.includes(query));
     }
 
@@ -1732,29 +1776,47 @@ class ContourApp {
             return;
         }
 
-        items.forEach(item => {
+        items.forEach(entry => {
+            const selectedVariant = entry.variants[0];
             const row = document.createElement('div');
             row.className = 'catalog-row';
-            row.addEventListener('click', () => this.addContour(item));
 
-            const previewWrapper = this.createPreviewElement(item);
+            const previewWrapper = this.createPreviewElement(selectedVariant);
 
             const meta = document.createElement('div');
             meta.className = 'catalog-item-meta';
 
             const article = document.createElement('div');
             article.className = 'catalog-item-article';
-            article.textContent = item.article || '';
+            article.textContent = entry.article || '';
 
             const name = document.createElement('div');
             name.className = 'catalog-item-name';
-            name.textContent = item.name || '';
+            name.textContent = entry.name || selectedVariant?.name || '';
 
             meta.appendChild(article);
             meta.appendChild(name);
 
+            if (entry.variants.length > 1) {
+                const variantSelect = document.createElement('select');
+                variantSelect.className = 'catalog-variant-select';
+                entry.variants.forEach((variant, index) => {
+                    const option = document.createElement('option');
+                    option.value = String(index);
+                    option.textContent = this.getVariantDisplayLabel(variant);
+                    variantSelect.appendChild(option);
+                });
+                variantSelect.addEventListener('click', event => event.stopPropagation());
+                variantSelect.addEventListener('change', event => {
+                    const variant = entry.variants[Number(event.target.value)] || entry.variants[0];
+                    row.dataset.selectedVariantIndex = event.target.value;
+                    name.textContent = variant?.name || entry.name || '';
+                });
+                meta.appendChild(variantSelect);
+            }
+
             if (showCategoryLabel) {
-                const category = this.getCategoryLabel(item);
+                const category = this.getCategoryLabel(entry);
                 if (category) {
                     const categoryLabel = document.createElement('div');
                     categoryLabel.className = 'catalog-item-article';
@@ -1769,7 +1831,15 @@ class ContourApp {
             addButton.textContent = '+';
             addButton.addEventListener('click', event => {
                 event.stopPropagation();
-                this.addContour(item);
+                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
+                const variant = entry.variants[variantIndex] || entry.variants[0];
+                this.addContour(variant);
+            });
+
+            row.addEventListener('click', () => {
+                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
+                const variant = entry.variants[variantIndex] || entry.variants[0];
+                this.addContour(variant);
             });
 
             row.appendChild(previewWrapper);
@@ -2030,7 +2100,14 @@ class ContourApp {
                         console.warn('Контур не найден в manifest', contour.id);
                         continue;
                     }
-                    const metadata = { ...meta, scaleOverride: contour.scaleOverride ?? meta.scaleOverride };
+                    const metadata = {
+                        ...meta,
+                        article: contour.article || meta.article,
+                        name: contour.name || meta.name,
+                        poseKey: contour.poseKey || meta.poseKey,
+                        poseLabel: contour.poseLabel || meta.poseLabel,
+                        scaleOverride: contour.scaleOverride ?? meta.scaleOverride
+                    };
                     await this.contourManager.addContour(
                         `/contours/${metadata.assets.svg}`,
                         { x: this.layment.left, y: this.layment.top },

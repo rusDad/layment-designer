@@ -44,8 +44,6 @@ const downloadDxfLink = document.getElementById('downloadDxfLink');
 let ordersCache = [];
 let selectedOrderId = null;
 let selectedOrderDetails = null;
-let itemsById = null;
-let itemsLoadPromise = null;
 
 const fmt = (value) => {
   if (!value) {
@@ -89,62 +87,19 @@ const createBadge = (label, active) => {
   return span;
 };
 
-const ensureItemsLoaded = async () => {
-  if (itemsById) {
-    return itemsById;
-  }
-  if (itemsLoadPromise) {
-    return itemsLoadPromise;
+const formatContentsSummaryLine = (item) => {
+  if (!item || typeof item !== 'object') {
+    return '—';
   }
 
-  itemsLoadPromise = (async () => {
-    try {
-      const res = await fetch(`${ADMIN_API_BASE}/items`);
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-
-      const payload = JSON.parse(text) || {};
-      const list = Array.isArray(payload.items) ? payload.items : [];
-      itemsById = list.reduce((acc, item) => {
-        if (item && item.id) {
-          acc[item.id] = {
-            article: item.article || '',
-            name: item.name || ''
-          };
-        }
-        return acc;
-      }, {});
-    } catch (err) {
-      console.warn('Failed to load items catalog for order composition summary', err);
-      itemsById = {};
-    } finally {
-      itemsLoadPromise = null;
-    }
-
-    return itemsById;
-  })();
-
-  return itemsLoadPromise;
-};
-
-const formatContourSummaryLine = (contour) => {
-  const contourId = contour && contour.id ? contour.id : '—';
-  const item = itemsById && contourId ? itemsById[contourId] : null;
-
-  if (!item) {
-    return contourId;
-  }
-
-  const article = item.article || '';
-  const name = item.name || '';
+  const article = item.article ? String(item.article) : '';
+  const name = item.name ? String(item.name) : '';
 
   if (article && name) {
     return `${article} - ${name}`;
   }
 
-  return article || name || contourId;
+  return article || name || String(item.catalogItemId || item.id || '—');
 };
 
 const renderOrdersList = () => {
@@ -218,9 +173,13 @@ const updateMeta = (details) => {
     <div class="order-meta-item"><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
   `;
 
+  const contentsSnapshot = Array.isArray(details.contentsSnapshot) ? details.contentsSnapshot : [];
   const contours = Array.isArray(details.contours) ? details.contours : [];
-  contoursSummaryPreEl.textContent = contours.map(formatContourSummaryLine).join('\n') || '[]';
-  contoursDetailsPreEl.textContent = JSON.stringify(contours, null, 2);
+  contoursSummaryPreEl.textContent = contentsSnapshot.map(formatContentsSummaryLine).join('\n') || '[]';
+  contoursDetailsPreEl.textContent = JSON.stringify({
+    contentsSnapshot,
+    contours
+  }, null, 2);
 
   const files = details.files || {};
   if (files.gcodeNc) {
@@ -324,7 +283,6 @@ const selectOrder = async (orderId, options = {}) => {
     }
 
     selectedOrderDetails = JSON.parse(text);
-    await ensureItemsLoaded();
     updateMeta(selectedOrderDetails);
   } catch (err) {
     statusEl.textContent = err.toString();

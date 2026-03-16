@@ -3,6 +3,8 @@ const ADMIN_API_BASE = `${APP_BASE_PREFIX}/admin/api`;
 const article = document.getElementById('article');
 const name = document.getElementById('name');
 const brand = document.getElementById('brand');
+const poseKey = document.getElementById('poseKey');
+const poseLabel = document.getElementById('poseLabel');
 const defaultLabel = document.getElementById('defaultLabel');
 const categorySelect = document.getElementById('categorySelect');
 const newCategorySlug = document.getElementById('newCategorySlug');
@@ -143,6 +145,8 @@ const resetItemForm = () => {
   article.value = '';
   name.value = '';
   brand.value = '';
+  poseKey.value = '';
+  poseLabel.value = '';
   defaultLabel.value = '';
   setCategoryValue('');
   scaleOverride.value = 1.0;
@@ -161,6 +165,8 @@ const fillItemForm = (item) => {
   article.value = item.article || '';
   name.value = item.name || '';
   brand.value = item.brand || '';
+  poseKey.value = item.poseKey || '';
+  poseLabel.value = item.poseLabel || '';
   defaultLabel.value = item.defaultLabel || '';
   setCategoryValue(item.category || '');
   scaleOverride.value = item.scaleOverride ?? 1.0;
@@ -208,7 +214,8 @@ const renderItems = (items) => {
 
     const subtitle = document.createElement('div');
     subtitle.className = 'item-subtitle';
-    subtitle.textContent = `id: ${item.id} · enabled: ${item.enabled ? 'yes' : 'no'}`;
+    const poseMeta = item.poseKey ? ` · pose: ${item.poseLabel || item.poseKey}` : '';
+    subtitle.textContent = `id: ${item.id}${poseMeta} · enabled: ${item.enabled ? 'yes' : 'no'}`;
     meta.appendChild(subtitle);
 
     const files = document.createElement('div');
@@ -269,6 +276,8 @@ createBtn.addEventListener('click', async () => {
     name: name.value.trim(),
     brand: brand.value.trim(),
     defaultLabel: defaultLabel.value.trim(),
+    poseKey: poseKey.value.trim(),
+    poseLabel: poseLabel.value.trim(),
     category: categorySelect.value.trim(),
     scaleOverride: parseFloat(scaleOverride.value || 1.0),
     cuttingLengthMeters: parseFloat(cuttingLengthMeters.value || 0),
