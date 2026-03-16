@@ -319,6 +319,8 @@ class ContourApp {
                 return acc;
             }, {});
             this.categoryLabels = data.categories || {};
+            // TODO(sets): expand manifest.sets into plain contours before export/add-to-canvas flow.
+            this.manifestSets = Array.isArray(data.sets) ? data.sets : [];
 
             this.availableContours = data.items.filter(i => i.enabled);
             this.availableCategories = this.buildCategories(this.availableContours);
@@ -2031,6 +2033,9 @@ class ContourApp {
                         continue;
                     }
                     const metadata = { ...meta, scaleOverride: contour.scaleOverride ?? meta.scaleOverride };
+                    if (typeof contour.depthOverrideMm === 'number') {
+                        metadata.depthOverrideMm = contour.depthOverrideMm;
+                    }
                     await this.contourManager.addContour(
                         `/contours/${metadata.assets.svg}`,
                         { x: this.layment.left, y: this.layment.top },
@@ -2084,9 +2089,17 @@ class ContourApp {
                     const x = this.layment.left + primitive.x;
                     const y = this.layment.top + primitive.y;
                     if (primitive.type === 'rect') {
-                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height });
+                        this.primitiveManager.addPrimitive(
+                            'rect',
+                            { x, y },
+                            { width: primitive.width, height: primitive.height, pocketDepthMm: primitive.pocketDepthMm }
+                        );
                     } else if (primitive.type === 'circle') {
-                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius });
+                        this.primitiveManager.addPrimitive(
+                            'circle',
+                            { x, y },
+                            { radius: primitive.radius, pocketDepthMm: primitive.pocketDepthMm }
+                        );
                     }
                 }
             });

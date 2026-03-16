@@ -370,7 +370,8 @@ class ContourManager {
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
-                scaleOverride: meta.scaleOverride ?? 1
+                scaleOverride: meta.scaleOverride ?? 1,
+                depthOverrideMm: meta.depthOverrideMm
             };
         });
     }
@@ -395,6 +396,7 @@ class ContourManager {
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1,
+                depthOverrideMm: meta.depthOverrideMm,
                 placementId: obj.placementId
             };
         });
@@ -424,7 +426,8 @@ class ContourManager {
                     : undefined,
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
-                    : undefined
+                    : undefined,
+                pocketDepthMm: obj.pocketDepthMm
             };
         });
     }
@@ -494,6 +497,7 @@ class PrimitiveManager {
         }
 
         if (obj) {
+            obj.pocketDepthMm = size?.pocketDepthMm;
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);

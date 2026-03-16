@@ -110,12 +110,18 @@ curl -sS -X POST http://localhost:8001/api/export-layment \
   -H "Content-Type: application/json" \
   -d '{
     "orderMeta": { "width": 565, "height": 375, "units": "mm", "coordinateSystem": "origin-top-left" },
-    "contours": [ { "id": "<id>", "x": 10, "y": 10, "angle": 0, "scaleOverride": 1 } ],
-    "primitives": [],
+    "contours": [ { "id": "<id>", "x": 10, "y": 10, "angle": 0, "scaleOverride": 1, "depthOverrideMm": 0 } ],
+    "primitives": [ { "type": "rect", "x": 20, "y": 20, "width": 40, "height": 30, "pocketDepthMm": 10 } ],
     "labels": []
   }' | jq
 
  Экспорт возвращает JSON (в т.ч. orderId и orderNumber). Скачивание производственных файлов — через admin endpoints:
+
+ Примечание по расширяемому контракту (additive/optional):
+ - `manifest.items[].machining.basePocketDepthMm`;
+ - `manifest.sets[]` (наборы, раскрываются в обычные contours до export);
+ - `contours[].depthOverrideMm`;
+ - `primitives[].pocketDepthMm`.
 
 3)  Admin: создание item + загрузка файлов + формат manifest.assets:
 

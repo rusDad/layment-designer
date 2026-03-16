@@ -108,6 +108,11 @@ class CreateItemRequest(BaseModel):
     enabled: bool = True
     defaultLabel: Optional[str] = None
 
+    class MachiningConfig(BaseModel):
+        basePocketDepthMm: float
+
+    machining: Optional[MachiningConfig] = None
+
 
 class UpsertCategoryRequest(BaseModel):
     slug: str
@@ -182,6 +187,11 @@ def create_item(data: CreateItemRequest):
             existing_item.pop("defaultLabel", None)
         else:
             existing_item["defaultLabel"] = default_label
+        if "machining" in data.model_fields_set:
+            if data.machining is None:
+                existing_item.pop("machining", None)
+            else:
+                existing_item["machining"] = data.machining.model_dump()
         mode = "updated"
     else:
         new_item = {
@@ -196,6 +206,8 @@ def create_item(data: CreateItemRequest):
         }
         if default_label is not None:
             new_item["defaultLabel"] = default_label
+        if data.machining is not None:
+            new_item["machining"] = data.machining.model_dump()
         manifest["items"].append(new_item)
         mode = "created"
 
@@ -526,6 +538,7 @@ def list_items():
                 "cuttingLengthMeters": i.get("cuttingLengthMeters", 0),
                 "enabled": i.get("enabled", True),
                 "defaultLabel": i.get("defaultLabel"),
+                "machining": i.get("machining"),
                 "assets": i.get("assets"),
                 "files": _item_files_status(i, preview_dir),
                 "previewUrl": _item_preview_url(i, preview_dir)

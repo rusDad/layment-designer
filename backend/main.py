@@ -54,6 +54,9 @@ class ContourPlacement(BaseModel):
     y: float
     angle: float
     scaleOverride: Optional[float] = None
+    # TODO(depth): effective contour depth = basePocketDepthMm + depthOverrideMm.
+    depthOverrideMm: Optional[float] = None
+
 
 
 class LabelPlacement(BaseModel):
