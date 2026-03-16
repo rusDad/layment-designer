@@ -43,6 +43,7 @@ class ContourApp {
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
         this.syncLabelControlsFromSelection();
+        this.fitToLayment();
         await this.loadWorkspaceFromStorage();
     }
 

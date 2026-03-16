@@ -340,15 +340,31 @@ button:focus-visible {
 }
 
 .button-icon {
-    border-color: transparent;
-    background: transparent;
-    color: #66756f;
+    border-color: var(--color-border);
+    background: #f7fbf9;
+    color: #5b6b64;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+
 .button-icon:hover:not(:disabled) {
-    background: #edf4f0;
-    border-color: #d8e4dd;
-    color: #34433e;
+    background: #eef5f1;
+    border-color: #bfcdc5;
+    color: #30403a;
+}
+
+.button-icon:active:not(:disabled) {
+    background: #e5efe9;
+    border-color: #aebfb5;
+    color: #22302b;
+    transform: translateY(0.5px);
+}
+
+.button-icon:disabled {
+    background: #f4f7f5;
+    border-color: var(--color-border-soft);
+    color: #a8b4ae;
+    box-shadow: none;
 }
 
 .icon-button svg {
