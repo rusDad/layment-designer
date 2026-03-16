@@ -367,6 +367,9 @@ class ContourManager {
             return {
                 id: meta.id,
                 article: meta.article,
+                name: meta.name,
+                poseKey: meta.poseKey,
+                poseLabel: meta.poseLabel,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
@@ -391,6 +394,9 @@ class ContourManager {
             return {
                 id: meta.id,
                 article: meta.article,
+                name: meta.name,
+                poseKey: meta.poseKey,
+                poseLabel: meta.poseLabel,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),

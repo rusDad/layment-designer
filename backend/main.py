@@ -50,6 +50,10 @@ class CustomerInfo(BaseModel):
 
 class ContourPlacement(BaseModel):
     id: str
+    article: Optional[str] = None
+    name: Optional[str] = None
+    poseKey: Optional[str] = None
+    poseLabel: Optional[str] = None
     x: float
     y: float
     angle: float
@@ -232,50 +236,104 @@ def _order_preview_png_path(order_dir: Path, order_number: Optional[str]) -> Opt
     return None
 
 
-def _build_order_contents(order_payload: Dict[str, Any]) -> List[Dict[str, str]]:
+def _manifest_items_by_id() -> Dict[str, Dict[str, Any]]:
+    if not MANIFEST_PATH.exists():
+        return {}
+
+    try:
+        with MANIFEST_PATH.open("r", encoding="utf-8") as manifest_file:
+            manifest = json.load(manifest_file)
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to read manifest for order contents", exc_info=True)
+        return {}
+
+    items = manifest.get("items")
+    if not isinstance(items, list):
+        return {}
+
+    indexed: Dict[str, Dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        if isinstance(item_id, str) and item_id:
+            indexed[item_id] = item
+    return indexed
+
+
+def _build_order_contents_snapshot(order_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     contours = order_payload.get("contours") if isinstance(order_payload, dict) else None
     if not isinstance(contours, list) or not contours:
         return []
 
-    manifest_items_by_id: Dict[str, Dict[str, Any]] = {}
-    if MANIFEST_PATH.exists():
-        try:
-            with MANIFEST_PATH.open("r", encoding="utf-8") as manifest_file:
-                manifest = json.load(manifest_file)
-            items = manifest.get("items")
-            if isinstance(items, list):
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    item_id = item.get("id")
-                    if isinstance(item_id, str) and item_id:
-                        manifest_items_by_id[item_id] = item
-        except (OSError, json.JSONDecodeError):
-            logger.warning("Failed to read manifest for order contents", exc_info=True)
+    manifest_items = _manifest_items_by_id()
+    snapshot: List[Dict[str, Any]] = []
 
-    composition: List[Dict[str, str]] = []
     for contour in contours:
         if not isinstance(contour, dict):
             continue
-
         contour_id = contour.get("id")
         if not isinstance(contour_id, str) or not contour_id:
             continue
 
-        manifest_item = manifest_items_by_id.get(contour_id)
-        if manifest_item:
-            article = manifest_item.get("article")
-            name = manifest_item.get("name")
-        else:
-            article = contour.get("article")
-            name = "(не найдено в каталоге)"
+        manifest_item = manifest_items.get(contour_id) or {}
+        article = contour.get("article") or manifest_item.get("article") or contour_id
+        name = contour.get("name") or manifest_item.get("name") or "(не найдено в каталоге)"
 
-        composition.append({
-            "article": article if isinstance(article, str) and article else contour_id,
-            "name": name if isinstance(name, str) and name else "(не найдено в каталоге)",
-        })
+        row: Dict[str, Any] = {
+            "catalogItemId": contour_id,
+            "article": article,
+            "name": name,
+        }
 
-    return composition
+        pose_key = contour.get("poseKey")
+        if not isinstance(pose_key, str) or not pose_key.strip():
+            pose_key = manifest_item.get("poseKey")
+        if isinstance(pose_key, str) and pose_key.strip():
+            row["poseKey"] = pose_key.strip()
+
+        snapshot.append(row)
+
+    return snapshot
+
+
+def _read_order_contents_snapshot(order_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_snapshot = order_payload.get("contentsSnapshot") if isinstance(order_payload, dict) else None
+    if isinstance(raw_snapshot, list):
+        normalized: List[Dict[str, Any]] = []
+        for item in raw_snapshot:
+            if not isinstance(item, dict):
+                continue
+            article = item.get("article")
+            name = item.get("name")
+            catalog_item_id = item.get("catalogItemId") or item.get("id")
+            if not isinstance(catalog_item_id, str) or not catalog_item_id:
+                continue
+            normalized_item: Dict[str, Any] = {
+                "catalogItemId": catalog_item_id,
+                "article": article if isinstance(article, str) and article else catalog_item_id,
+                "name": name if isinstance(name, str) and name else "(не найдено в каталоге)",
+            }
+            pose_key = item.get("poseKey")
+            if isinstance(pose_key, str) and pose_key.strip():
+                normalized_item["poseKey"] = pose_key.strip()
+            normalized.append(normalized_item)
+        if normalized:
+            return normalized
+
+    # Fallback for payloads without explicit snapshot.
+    return _build_order_contents_snapshot(order_payload)
+
+
+def _build_order_contents(order_payload: Dict[str, Any]) -> List[Dict[str, str]]:
+    snapshot = _read_order_contents_snapshot(order_payload)
+    return [
+        {
+            "article": item.get("article") if isinstance(item.get("article"), str) and item.get("article") else item.get("catalogItemId", "—"),
+            "name": item.get("name") if isinstance(item.get("name"), str) and item.get("name") else "(не найдено в каталоге)",
+        }
+        for item in snapshot
+    ]
 
 
 @public_router.get("/contours/manifest")
@@ -320,6 +378,7 @@ async def export_layment(payload: Dict[str, Any]):
 
             stored_payload = dict(payload)
             stored_payload["orderNumber"] = order_number
+            stored_payload["contentsSnapshot"] = _build_order_contents_snapshot(stored_payload)
             stored_payload_order_meta = stored_payload.get("orderMeta")
             if isinstance(stored_payload_order_meta, dict):
                 stored_payload_order_meta["pricePreview"] = price_preview
@@ -531,6 +590,7 @@ def get_order_details(order_id: str):
         "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
         "customer": order_payload.get("customer") if isinstance(order_payload.get("customer"), dict) else None,
         "contours": order_payload.get("contours") or [],
+        "contentsSnapshot": _read_order_contents_snapshot(order_payload),
         "primitives": order_payload.get("primitives") or [],
         "files": {
             "gcodeNc": f"/admin/api/orders/{order_id}/artifacts/cnc.nc",
