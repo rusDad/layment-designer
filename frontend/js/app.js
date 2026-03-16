@@ -24,6 +24,7 @@ class ContourApp {
         this.exportInProgress = false;
         this.lastOrderResult = null;
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
+        this.laymentThicknessMm = 35;
         this.pendingCustomer = null;
         this.isPanning = false;
         this.panStart = null;
@@ -37,6 +38,7 @@ class ContourApp {
         this.initializeServices();
         this.createLayment();
         this.initializeMaterialColor();
+        this.initializeLaymentThickness();
         await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
@@ -263,6 +265,22 @@ class ContourApp {
 
         colorInput.value = this.baseMaterialColor;
         this.applyMaterialColorToCutouts();
+    }
+
+    getValidLaymentThickness(value) {
+        const thickness = Number(value);
+        if (thickness === 35 || thickness === 65) {
+            return thickness;
+        }
+        return 35;
+    }
+
+    initializeLaymentThickness() {
+        this.laymentThicknessMm = this.getValidLaymentThickness(this.laymentThicknessMm);
+        const thicknessInput = UIDom.inputs.laymentThicknessMm;
+        if (thicknessInput) {
+            thicknessInput.value = String(this.laymentThicknessMm);
+        }
     }
 
     getMaterialColorHex(colorKey = this.baseMaterialColor) {
@@ -874,6 +892,13 @@ class ContourApp {
 
             this.baseMaterialColor = selectedColor;
             this.applyMaterialColorToCutouts();
+            this.scheduleWorkspaceSave();
+        });
+
+        UIDom.inputs.laymentThicknessMm?.addEventListener('change', e => {
+            const thickness = this.getValidLaymentThickness(e.target.value);
+            e.target.value = String(thickness);
+            this.laymentThicknessMm = thickness;
             this.scheduleWorkspaceSave();
         });
 
@@ -1806,6 +1831,7 @@ class ContourApp {
             },
             workspaceScale: 1,
             baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
             contours: this.contourManager.getWorkspaceContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
             labels: this.labelManager.getWorkspaceLabelsData()
@@ -1879,6 +1905,11 @@ class ContourApp {
                 UIDom.inputs.baseMaterialColor.value = this.baseMaterialColor;
             }
             this.applyMaterialColorToCutouts();
+
+            this.laymentThicknessMm = this.getValidLaymentThickness(data.laymentThicknessMm);
+            if (UIDom.inputs.laymentThicknessMm) {
+                UIDom.inputs.laymentThicknessMm.value = String(this.laymentThicknessMm);
+            }
 
             UIDom.inputs.laymentWidth.value = width;
             UIDom.inputs.laymentHeight.value = height;
@@ -2072,8 +2103,123 @@ class ContourApp {
         orderResult.details.hidden = true;
     }
 
+    checkOutOfBoundsOnlyAndHighlight() {
+        const worldScale = this.getWorldScale();
+        if (worldScale !== 1) {
+            console.warn('Out-of-bounds check must run with world scale=1. Use performWithScaleOne().');
+            return {
+                ok: false,
+                issues: {
+                    outOfBoundsContours: 0,
+                    collisionContours: 0,
+                    outOfBoundsPrimitives: 0
+                }
+            };
+        }
+
+        const issues = {
+            outOfBoundsContours: 0,
+            collisionContours: 0,
+            outOfBoundsPrimitives: 0
+        };
+
+        const layment = this.canvas?.layment;
+        if (!layment) {
+            return { ok: true, issues };
+        }
+
+        const problematic = new Set();
+
+        this.contourManager.contours.forEach(obj => {
+            this.contourManager.resetPropertiesRecursive(obj, {
+                stroke: Config.COLORS.CONTOUR.NORMAL,
+                strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER,
+                fill: Config.COLORS.CONTOUR.FILL
+            });
+        });
+
+        this.primitiveManager.primitives.forEach(obj => {
+            this.contourManager.resetPropertiesRecursive(obj, {
+                stroke: Config.COLORS.PRIMITIVE.STROKE,
+                strokeWidth: 1,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER,
+                fill: Config.COLORS.PRIMITIVE.FILL
+            });
+        });
+
+        const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
+        const lWidth = layment.width * layment.scaleX;
+        const lHeight = layment.height * layment.scaleY;
+
+        this.contourManager.contours.forEach(obj => {
+            const box = obj.getBoundingRect(true);
+            if (box.left < layment.left + padding
+                || box.top < layment.top + padding
+                || box.left + box.width > layment.left + lWidth - padding
+                || box.top + box.height > layment.top + lHeight - padding) {
+                problematic.add(obj);
+                issues.outOfBoundsContours += 1;
+            }
+        });
+
+        this.primitiveManager.primitives.forEach(obj => {
+            const box = obj.getBoundingRect(true);
+            if (box.left < layment.left + padding
+                || box.top < layment.top + padding
+                || box.left + box.width > layment.left + lWidth - padding
+                || box.top + box.height > layment.top + lHeight - padding) {
+                problematic.add(obj);
+                issues.outOfBoundsPrimitives += 1;
+            }
+        });
+
+        problematic.forEach(obj => {
+            if (obj.primitiveType) {
+                obj.set({
+                    stroke: Config.COLORS.PRIMITIVE.ERROR,
+                    strokeWidth: 3,
+                    opacity: 0.85
+                });
+            } else {
+                this.contourManager.resetPropertiesRecursive(obj, {
+                    stroke: Config.COLORS.CONTOUR.ERROR,
+                    strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,
+                    opacity: 0.85,
+                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
+                });
+            }
+            obj.setCoords();
+        });
+
+        this.canvas.renderAll();
+        return {
+            ok: problematic.size === 0,
+            issues
+        };
+    }
+
+    formatOutOfBoundsOnlyMessage(issues) {
+        const hasOutOfBounds = (issues.outOfBoundsContours + issues.outOfBoundsPrimitives) > 0;
+        if (!hasOutOfBounds) {
+            return Config.MESSAGES.EXPORT_ERROR;
+        }
+        return Config.MESSAGES.OUT_OF_BOUNDS_ERROR;
+    }
+
     open3dPreview() {
         this.performWithScaleOne(() => {
+            const boundsValidation = this.checkOutOfBoundsOnlyAndHighlight();
+            if (!boundsValidation.ok) {
+                this.show3dPreviewError(this.formatOutOfBoundsOnlyMessage(boundsValidation.issues));
+                return;
+            }
+
             let svg;
             try {
                 svg = this.buildPreviewSvg();
@@ -2157,8 +2303,10 @@ class ContourApp {
 
         const key = this.generatePreviewPayloadKey();
         const payload = {
-            version: 1,
+            version: 2,
             svg,
+            baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
             createdAt: Date.now()
         };
 
@@ -2280,6 +2428,7 @@ class ContourApp {
             units: "mm",
             coordinateSystem: "origin-top-left",
             baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
             laymentType,
             canvasPng: layoutPng,
             workspaceSnapshot: this.buildWorkspaceSnapshot()
