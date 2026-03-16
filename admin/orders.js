@@ -75,6 +75,13 @@ const humanizeColor = (color) => {
   return '—';
 };
 
+const humanizeThickness = (thickness) => {
+  if (thickness === 35 || thickness === 65) {
+    return `${thickness} мм`;
+  }
+  return '—';
+};
+
 const createBadge = (label, active) => {
   const span = document.createElement('span');
   span.className = `badge${active ? ' ok' : ' badge-warning'}`;
@@ -167,7 +174,7 @@ const renderOrdersList = () => {
 
     const dim = document.createElement('div');
     dim.className = 'muted';
-    dim.textContent = `Размер: ${order.width ?? '—'} x ${order.height ?? '—'} мм`;
+    dim.textContent = `Размер: ${order.width ?? '—'} x ${order.height ?? '—'} x ${order.laymentThicknessMm ?? '—'} мм`;
 
     const created = document.createElement('div');
     created.className = 'muted';
@@ -193,6 +200,7 @@ const updateMeta = (details) => {
   const orderMeta = details.orderMeta || {};
   const customer = details.customer || {};
   const baseMaterialColor = orderMeta?.baseMaterialColor;
+  const laymentThicknessMm = details.laymentThicknessMm ?? orderMeta?.laymentThicknessMm;
 
   const safeOrderId = escapeHtml(details.orderId || '—');
   const safeCustomerName = escapeHtml(customer.name || '—');
