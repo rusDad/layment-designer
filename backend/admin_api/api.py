@@ -172,6 +172,16 @@ def create_item(data: CreateItemRequest):
     )
 
     if existing_item:
+        if existing_item.get("article") != data.article:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Generated id collision: "
+                    f"id '{item_id}' is already used by article "
+                    f"'{existing_item.get('article')}', cannot use article '{data.article}'"
+                )
+            )
+
         existing_item["name"] = data.name
         existing_item["brand"] = data.brand
         existing_item["category"] = category_slug
