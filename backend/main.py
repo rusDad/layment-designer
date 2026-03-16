@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from admin_api.api import router as admin_router
 from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH
 from pydantic import BaseModel
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Optional, Dict, Literal
 from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import Path
@@ -37,6 +37,7 @@ class OrderMeta(BaseModel):
     coordinateSystem: Optional[str] = None
     baseMaterialColor: Optional[str] = None
     laymentType: Optional[str] = None
+    laymentThicknessMm: Literal[35, 65] = 35
     pricePreview: Optional[Dict[str, Any]] = None
     workspaceSnapshot: Optional[Dict[str, Any]] = None
     canvasPng: Optional[str] = None
@@ -435,6 +436,7 @@ def get_order_status(order_id: str):
         "contents": _build_order_contents(order_payload),
         "customer": customer,
         "baseMaterialColor": order_meta.get("baseMaterialColor"),
+        "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
     }
 
     preview_path = _order_preview_png_path(order_dir, order_number)
@@ -488,6 +490,7 @@ def list_orders():
             "produced": bool(status_data.get("produced", False)),
             "width": order_meta.get("width"),
             "height": order_meta.get("height"),
+            "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
             "hasLayoutPng": (order_dir / f"{order_number}.png").exists() if order_number else False,
         })
 
@@ -518,6 +521,7 @@ def get_order_details(order_id: str):
         "orderNumber": order_number,
         "status": status_data,
         "orderMeta": order_meta,
+        "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
         "customer": order_payload.get("customer") if isinstance(order_payload.get("customer"), dict) else None,
         "contours": order_payload.get("contours") or [],
         "primitives": order_payload.get("primitives") or [],

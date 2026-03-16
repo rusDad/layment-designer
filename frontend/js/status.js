@@ -51,6 +51,7 @@
     const statusState = document.getElementById('statusState');
     const statusCustomerName = document.getElementById('statusCustomerName');
     const statusBaseMaterialColor = document.getElementById('statusBaseMaterialColor');
+    const statusLaymentThickness = document.getElementById('statusLaymentThickness');
     const statusPrice = document.getElementById('statusPrice');
     const statusCreatedAt = document.getElementById('statusCreatedAt');
     const statusConfirmedAt = document.getElementById('statusConfirmedAt');
@@ -174,6 +175,15 @@
         return String(color) || '—';
     }
 
+
+    function humanizeThickness(thickness) {
+        if (thickness === 35 || thickness === 65) {
+            return `${thickness} мм`;
+        }
+
+        return '—';
+    }
+
     function showSuccess(order) {
         const state = order.state || 'created';
         const tone = stateTone[state] || 'info';
@@ -191,6 +201,7 @@
         statusState.textContent = readableState;
         statusCustomerName.textContent = order.customer?.name || '—';
         statusBaseMaterialColor.textContent = humanizeColor(order.baseMaterialColor);
+        statusLaymentThickness.textContent = humanizeThickness(order.laymentThicknessMm);
         statusPrice.textContent = order.price && order.price.total != null ? String(order.price.total) : '—';
         statusCreatedAt.textContent = formatDateTime(order.createdAt);
         statusConfirmedAt.textContent = formatDateTime(order.confirmedAt);
