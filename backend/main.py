@@ -58,6 +58,20 @@ class ContourPlacement(BaseModel):
     y: float
     angle: float
     scaleOverride: Optional[float] = None
+    # Future seam: effective contour depth will be resolved on backend as
+    # machining.basePocketDepthMm + depthOverrideMm.
+    depthOverrideMm: Optional[float] = None
+
+
+class PrimitivePlacement(BaseModel):
+    type: str
+    x: float
+    y: float
+    width: Optional[float] = None
+    height: Optional[float] = None
+    radius: Optional[float] = None
+    # Future seam: primitives use absolute depth value.
+    pocketDepthMm: Optional[float] = None
 
 
 class LabelPlacement(BaseModel):
@@ -71,7 +85,7 @@ class LabelPlacement(BaseModel):
 class ExportRequest(BaseModel):
     orderMeta: OrderMeta
     contours: List[ContourPlacement]
-    primitives: Optional[List[Dict[str, Any]]] = None
+    primitives: Optional[List[PrimitivePlacement]] = None
     labels: Optional[List[LabelPlacement]] = None
     customer: Optional[CustomerInfo] = None
 

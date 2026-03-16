@@ -240,12 +240,12 @@ def _emit_entities(
         _write_lwpolyline(lines, "CONTOURS", placed, order_height=order_height, handle=_entity_handle(), cad_like=cad_like)
 
     for primitive in (order_data.primitives or []):
-        primitive_type = primitive.get("type") if isinstance(primitive, dict) else None
+        primitive_type = _value_from_obj_or_dict(primitive, "type")
         if primitive_type == "rect":
-            x = _to_float(primitive.get("x"))
-            y = _to_float(primitive.get("y"))
-            width = _to_float(primitive.get("width"))
-            height = _to_float(primitive.get("height"))
+            x = _to_float(_value_from_obj_or_dict(primitive, "x"))
+            y = _to_float(_value_from_obj_or_dict(primitive, "y"))
+            width = _to_float(_value_from_obj_or_dict(primitive, "width"))
+            height = _to_float(_value_from_obj_or_dict(primitive, "height"))
             if width <= 0 or height <= 0:
                 continue
             rect_vertices = [
@@ -259,9 +259,9 @@ def _emit_entities(
             _write_circle(
                 lines,
                 "PRIMITIVES",
-                x=_to_float(primitive.get("x")),
-                y=_to_float(primitive.get("y")),
-                radius=_to_float(primitive.get("radius")),
+                x=_to_float(_value_from_obj_or_dict(primitive, "x")),
+                y=_to_float(_value_from_obj_or_dict(primitive, "y")),
+                radius=_to_float(_value_from_obj_or_dict(primitive, "radius")),
                 order_height=order_height,
                 handle=_entity_handle(),
                 cad_like=cad_like,

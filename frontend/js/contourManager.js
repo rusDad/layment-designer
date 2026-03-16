@@ -373,7 +373,8 @@ class ContourManager {
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
-                scaleOverride: meta.scaleOverride ?? 1
+                scaleOverride: meta.scaleOverride ?? 1,
+                depthOverrideMm: Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined
             };
         });
     }
@@ -401,6 +402,7 @@ class ContourManager {
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1,
+                depthOverrideMm: Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined,
                 placementId: obj.placementId
             };
         });
@@ -430,7 +432,8 @@ class ContourManager {
                     : undefined,
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
-                    : undefined
+                    : undefined,
+                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined
             };
         });
     }
@@ -450,7 +453,7 @@ class PrimitiveManager {
         this.primitives = [];
     }
 
-    addPrimitive(type, position, size) {
+    addPrimitive(type, position, size, options = {}) {
         let obj;
         if (type === 'rect') {
             obj = new fabric.Rect({
@@ -500,6 +503,9 @@ class PrimitiveManager {
         }
 
         if (obj) {
+            if (Number.isFinite(options.pocketDepthMm)) {
+                obj.pocketDepthMm = options.pocketDepthMm;
+            }
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);

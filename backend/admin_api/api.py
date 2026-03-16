@@ -1,7 +1,7 @@
 # admin/api.py
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 import re
 from admin_api.manifest_service import load_manifest, save_manifest_atomic
 from admin_api.id_utils import generate_item_id, normalize_pose_key
@@ -107,6 +107,25 @@ def preview_id(data: PreviewIdRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+
+
+class ItemMachining(BaseModel):
+    basePocketDepthMm: Optional[float] = None
+
+
+class ManifestSetPlacement(BaseModel):
+    itemId: str
+    x: float
+    y: float
+    angle: float = 0
+
+
+class ManifestSet(BaseModel):
+    id: str
+    name: str
+    enabled: bool = True
+    placements: List[ManifestSetPlacement] = Field(default_factory=list)
+
 class CreateItemRequest(BaseModel):
     article: str = Field(..., min_length=1)
     name: str
@@ -118,12 +137,17 @@ class CreateItemRequest(BaseModel):
     defaultLabel: Optional[str] = None
     poseKey: Optional[str] = None
     poseLabel: Optional[str] = None
+    machining: Optional[ItemMachining] = None
 
 
 class UpsertCategoryRequest(BaseModel):
     slug: str
     label: str
     force: bool = False
+
+
+class UpsertManifestSetsRequest(BaseModel):
+    sets: List[ManifestSet]
 
 
 @router.get("/categories")
@@ -135,6 +159,23 @@ def list_categories():
         "categories": _sorted_categories(categories)
     }
 
+
+
+
+@router.get("/manifest/sets")
+def get_manifest_sets():
+    manifest = load_manifest()
+    sets = manifest.get("sets")
+    return {"sets": sets if isinstance(sets, list) else []}
+
+
+@router.put("/manifest/sets")
+def upsert_manifest_sets(data: UpsertManifestSetsRequest):
+    manifest = load_manifest()
+    manifest["sets"] = [entry.model_dump(exclude_none=True) for entry in data.sets]
+    manifest["version"] = manifest.get("version", 1) + 1
+    save_manifest_atomic(manifest)
+    return {"sets": manifest["sets"], "count": len(manifest["sets"])}
 
 @router.post("/categories")
 def upsert_category(data: UpsertCategoryRequest):
@@ -218,6 +259,12 @@ def create_item(data: CreateItemRequest):
             existing_item.pop("defaultLabel", None)
         else:
             existing_item["defaultLabel"] = default_label
+        if data.machining is not None:
+            machining_payload = data.machining.model_dump(exclude_none=True)
+            if machining_payload:
+                existing_item["machining"] = machining_payload
+            else:
+                existing_item.pop("machining", None)
         mode = "updated"
     else:
         new_item = {
@@ -236,6 +283,9 @@ def create_item(data: CreateItemRequest):
                 new_item["poseLabel"] = pose_label
         if default_label is not None:
             new_item["defaultLabel"] = default_label
+        machining_payload = data.machining.model_dump(exclude_none=True) if data.machining is not None else None
+        if machining_payload:
+            new_item["machining"] = machining_payload
         manifest["items"].append(new_item)
         mode = "created"
 
@@ -568,6 +618,7 @@ def list_items():
                 "defaultLabel": i.get("defaultLabel"),
                 "poseKey": i.get("poseKey"),
                 "poseLabel": i.get("poseLabel"),
+                "machining": i.get("machining"),
                 "assets": i.get("assets"),
                 "files": _item_files_status(i, preview_dir),
                 "previewUrl": _item_preview_url(i, preview_dir)
