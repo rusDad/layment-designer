@@ -832,6 +832,7 @@ class ContourApp {
     bindUIButtonEvents() {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
+        UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
         UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
         UIDom.buttons.loadWorkspace.onclick = async () => {
             this.cancelAutosave();
@@ -1271,6 +1272,9 @@ class ContourApp {
         UIDom.buttons.delete.disabled = !has;
         UIDom.buttons.rotate.disabled = !has || !!active?.primitiveType;
 
+        const duplicateTargets = this.getDuplicateSelectionObjects();
+        UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
+
         const alignDisabled = selectedCount < 2;
         UIDom.buttons.alignLeft.disabled = alignDisabled;
         UIDom.buttons.alignCenterX.disabled = alignDisabled;
@@ -1288,6 +1292,27 @@ class ContourApp {
         UIDom.buttons.snapRight.disabled = snapDisabled;
         UIDom.buttons.snapTop.disabled = snapDisabled;
         UIDom.buttons.snapBottom.disabled = snapDisabled;
+    }
+
+
+    getDuplicateSelectionObjects() {
+        const active = this.canvas.getActiveObject();
+        if (!active) {
+            return [];
+        }
+
+        if (active.type === 'activeSelection') {
+            return active.getObjects().filter(obj => this.isDuplicateTarget(obj));
+        }
+
+        return this.isDuplicateTarget(active) ? [active] : [];
+    }
+
+    isDuplicateTarget(obj) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
+            return false;
+        }
+        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
     }
 
     getSingleSelectedPrimitive() {
@@ -1895,6 +1920,110 @@ class ContourApp {
       this.scheduleWorkspaceSave();
     }
 
+
+    async duplicateSelected() {
+        const DUPLICATE_OFFSET = 16;
+        const selected = this.getDuplicateSelectionObjects();
+        if (!selected.length) {
+            return;
+        }
+
+        const newObjects = [];
+
+        await this.batchRender(async () => {
+            this.canvas.discardActiveObject();
+
+            for (const obj of selected) {
+                if (!obj || obj.isLabel || obj === this.layment || obj === this.safeArea) {
+                    continue;
+                }
+
+                if (obj.primitiveType === 'rect') {
+                    const copy = this.primitiveManager.addPrimitive(
+                        'rect',
+                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
+                        { width: obj.width, height: obj.height },
+                        { pocketDepthMm: obj.pocketDepthMm }
+                    );
+                    copy.set({
+                        scaleX: obj.scaleX,
+                        scaleY: obj.scaleY,
+                        stroke: obj.stroke,
+                        strokeWidth: obj.strokeWidth,
+                        fill: obj.fill,
+                        opacity: obj.opacity,
+                        angle: obj.angle || 0
+                    });
+                    copy.setCoords();
+                    newObjects.push(copy);
+                    continue;
+                }
+
+                if (obj.primitiveType === 'circle') {
+                    const copy = this.primitiveManager.addPrimitive(
+                        'circle',
+                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
+                        { radius: obj.radius },
+                        { pocketDepthMm: obj.pocketDepthMm }
+                    );
+                    copy.set({
+                        scaleX: obj.scaleX,
+                        scaleY: obj.scaleY,
+                        stroke: obj.stroke,
+                        strokeWidth: obj.strokeWidth,
+                        fill: obj.fill,
+                        opacity: obj.opacity
+                    });
+                    copy.setCoords();
+                    newObjects.push(copy);
+                    continue;
+                }
+
+                const meta = this.contourManager.metadataMap.get(obj);
+                if (!meta?.assets?.svg) {
+                    continue;
+                }
+
+                const contourCenter = obj.getCenterPoint();
+                await this.contourManager.addContour(
+                    `/contours/${meta.assets.svg}`,
+                    { x: contourCenter.x + DUPLICATE_OFFSET, y: contourCenter.y + DUPLICATE_OFFSET },
+                    meta
+                );
+                const duplicatedContour = this.contourManager.contours[this.contourManager.contours.length - 1];
+                duplicatedContour.set({ angle: obj.angle || 0 });
+                duplicatedContour.setCoords();
+                newObjects.push(duplicatedContour);
+
+                const sourceLabel = this.labelManager.getLabelByPlacementId(obj.placementId);
+                if (sourceLabel) {
+                    const dx = sourceLabel.left - contourCenter.x;
+                    const dy = sourceLabel.top - contourCenter.y;
+                    const duplicatedCenter = duplicatedContour.getCenterPoint();
+                    const duplicatedLabel = this.labelManager.createLabel({
+                        placementId: duplicatedContour.placementId,
+                        text: sourceLabel.text || '',
+                        left: duplicatedCenter.x + dx,
+                        top: duplicatedCenter.y + dy,
+                        fontSize: sourceLabel.fontSize
+                    });
+                    if (duplicatedLabel) {
+                        duplicatedLabel.set({ angle: sourceLabel.angle || 0 });
+                        duplicatedLabel.setCoords();
+                    }
+                }
+            }
+        });
+
+        this.restoreActiveSelection(newObjects);
+        this.canvas.requestRenderAll();
+        this.updateButtons();
+        this.updateStatusBar();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncLabelControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
     rotateSelected() {
         const obj = this.canvas.getActiveObject();
         if (!obj || obj.primitiveType || obj.isLabel) return;  // Нет поворота для примитивов и labels
@@ -2418,6 +2547,68 @@ class ContourApp {
     }
 
 
+
+    getColorLabel(colorKey) {
+        if (colorKey === 'blue') {
+            return 'синий';
+        }
+        return 'зелёный';
+    }
+
+    buildCustomerModalSummaryData() {
+        const width = Math.round(this.layment?.width || 0);
+        const height = Math.round(this.layment?.height || 0);
+        const thickness = this.getValidLaymentThickness(this.laymentThicknessMm);
+        const colorLabel = this.getColorLabel(this.baseMaterialColor);
+
+        const grouped = new Map();
+        for (const contour of this.contourManager.contours) {
+            const meta = this.contourManager.metadataMap.get(contour) || {};
+            const key = (meta.article || meta.id || contour.contourId || '—').toString();
+            const name = meta.name ? String(meta.name) : '';
+            if (!grouped.has(key)) {
+                grouped.set(key, { article: key, name, count: 0 });
+            }
+            const item = grouped.get(key);
+            item.count += 1;
+            if (!item.name && name) {
+                item.name = name;
+            }
+        }
+
+        const composition = Array.from(grouped.values()).sort((a, b) => a.article.localeCompare(b.article, 'ru'));
+
+        return { width, height, thickness, colorLabel, composition };
+    }
+
+    renderCustomerModalSummary() {
+        const modal = UIDom.customerModal;
+        if (!modal?.summaryMeta || !modal.summaryComposition || !modal.summaryEmpty) {
+            return;
+        }
+
+        const summary = this.buildCustomerModalSummaryData();
+        modal.summaryMeta.innerHTML = `
+            <div><strong>Размер:</strong> ${summary.width} × ${summary.height} мм</div>
+            <div><strong>Толщина:</strong> ${summary.thickness} мм</div>
+            <div><strong>Цвет:</strong> ${summary.colorLabel}</div>
+        `;
+
+        modal.summaryComposition.innerHTML = '';
+        if (!summary.composition.length) {
+            modal.summaryEmpty.hidden = false;
+            return;
+        }
+
+        modal.summaryEmpty.hidden = true;
+        for (const item of summary.composition) {
+            const li = document.createElement('li');
+            const suffix = item.name ? ` — ${item.name}` : '';
+            li.textContent = `${item.article}${suffix} × ${item.count}`;
+            modal.summaryComposition.appendChild(li);
+        }
+    }
+
     openCustomerModal() {
         const modal = UIDom.customerModal;
         if (!modal?.overlay) {
@@ -2425,6 +2616,7 @@ class ContourApp {
         }
         modal.overlay.hidden = false;
         this.clearCustomerModalFeedback();
+        this.renderCustomerModalSummary();
         if (modal.confirmButton) {
             modal.confirmButton.disabled = !(modal.nameInput?.value.trim() && modal.contactInput?.value.trim());
         }

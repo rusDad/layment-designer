@@ -47,6 +47,7 @@
                     </div>
                     <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Действия с выделением">
                         <button id="deleteButton" class="tool-button toolbar-action-button button-danger" disabled data-hint="Удалить выделенное">Удалить</button>
+                        <button id="duplicateButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Дублировать выделенное">Дублировать</button>
                         <button id="rotateButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Повернуть выделенное на 90°">Повернуть</button>
                     </div>
                     <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
@@ -201,6 +202,14 @@
         <div id="customerModalDialog" class="customer-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="customerModalTitle">
             <h2 id="customerModalTitle">Создание заказа</h2>
             <p class="customer-modal-subtitle">Укажите контактные данные, чтобы мы могли связаться по заказу.</p>
+            <section class="customer-modal-summary" aria-label="Сводка заказа">
+                <div class="customer-modal-summary-meta" id="customerModalSummaryMeta"></div>
+                <div class="customer-modal-summary-composition">
+                    <div class="customer-modal-summary-title">Состав:</div>
+                    <ul id="customerModalSummaryComposition" class="customer-modal-summary-list"></ul>
+                    <p id="customerModalSummaryEmpty" class="customer-modal-summary-empty" hidden>В составе нет артикулов</p>
+                </div>
+            </section>
             <div class="customer-modal-field">
                 <label for="customerNameInput">Как к вам обращаться?</label>
                 <input type="text" id="customerNameInput" autocomplete="name">
