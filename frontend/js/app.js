@@ -20,6 +20,7 @@ class ContourApp {
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
         this.isSyncingPrimitiveControls = false;
+        this.isSyncingTextControls = false;
         this.exportButtonDefaultText = UIDom.buttons.export?.textContent || 'Завершить';
         this.exportCooldownMs = 5000;
         this.exportInProgress = false;
@@ -49,7 +50,7 @@ class ContourApp {
         await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.syncTextControlsFromSelection();
         this.fitToLayment();
         await this.loadWorkspaceFromStorage();
     }
@@ -739,7 +740,7 @@ class ContourApp {
                         this.updateButtons();
                         this.updateStatusBar();
                         this.syncPrimitiveControlsFromSelection();
-                        this.syncLabelControlsFromSelection();
+                        this.syncTextControlsFromSelection();
                     }
                     break;
                 default:
@@ -855,21 +856,21 @@ class ContourApp {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+            this.syncTextControlsFromSelection();
         });
 
         this.canvas.on('selection:updated', () => {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+            this.syncTextControlsFromSelection();
         });
 
         this.canvas.on('selection:cleared', () => {
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+            this.syncTextControlsFromSelection();
         });
 
         this.canvas.on('object:moving', event => {
@@ -897,7 +898,7 @@ class ContourApp {
                 this.scheduleWorkspaceSave();
             }
             this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+            this.syncTextControlsFromSelection();
             this.updateStatusBar();
         });
     }    
@@ -1068,9 +1069,20 @@ class ContourApp {
         UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
 
-        UIDom.labels.textInput?.addEventListener('input', event => this.applyLabelTextFromInput(event.target.value));
-        UIDom.labels.addBtn?.addEventListener('click', () => this.addLabelForSelection());
-        UIDom.labels.deleteBtn?.addEventListener('click', () => this.deleteLabelForSelection());
+        UIDom.texts.list?.addEventListener('change', () => {
+            if (this.isSyncingTextControls) {
+                return;
+            }
+            this.syncTextControlsFromSelection();
+        });
+        UIDom.texts.value?.addEventListener('input', event => this.applyTextValueFromInput(event.target.value));
+        UIDom.texts.fontSize?.addEventListener('change', event => this.applyTextFontSizeFromInput(event.target.value));
+        UIDom.texts.angle?.addEventListener('change', event => this.applyTextAngleFromInput(event.target.value));
+        UIDom.texts.addFreeBtn?.addEventListener('click', () => this.addFreeTextForSelection());
+        UIDom.texts.addAttachedBtn?.addEventListener('click', () => this.addAttachedTextForSelection());
+        UIDom.texts.attachBtn?.addEventListener('click', () => this.attachSelectedTextToSelectionContour());
+        UIDom.texts.detachBtn?.addEventListener('click', () => this.detachSelectedText());
+        UIDom.texts.deleteBtn?.addEventListener('click', () => this.deleteSelectedText());
     }
 
 
@@ -1273,7 +1285,7 @@ class ContourApp {
         this.restoreActiveSelection(selected);
         this.updateButtons();
         this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.syncTextControlsFromSelection();
     }
 
     distributeSelected(mode) {
@@ -1318,7 +1330,7 @@ class ContourApp {
         this.restoreActiveSelection(selected);
         this.updateButtons();
         this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.syncTextControlsFromSelection();
     }
 
     snapSelectedToSide(side) {
@@ -1359,7 +1371,7 @@ class ContourApp {
         this.restoreActiveSelection(selected);
         this.updateButtons();
         this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.syncTextControlsFromSelection();
     }
 
     updateButtons() {
@@ -1486,7 +1498,7 @@ class ContourApp {
     }
 
 
-    getSelectedContourForLabel() {
+    getSelectedContourForText() {
         const active = this.canvas.getActiveObject();
         if (!active || active.type === 'activeSelection' || active.primitiveType || active.isTextObject || active === this.layment || active === this.safeArea) {
             return null;
@@ -1494,7 +1506,7 @@ class ContourApp {
         return active;
     }
 
-    getSelectedLabelObject() {
+    getSelectedTextObject() {
         const active = this.canvas.getActiveObject();
         if (!active || active.type === 'activeSelection') {
             return null;
@@ -1502,107 +1514,172 @@ class ContourApp {
         return active.isTextObject ? active : null;
     }
 
-    setLabelPanelEnabled(enabled) {
-        const panel = UIDom.labels.panel;
-        if (!panel) {
-            return;
-        }
+    setTextPanelEnabled(enabled) {
+        const panel = UIDom.texts.panel;
+        if (!panel) return;
         panel.hidden = !enabled;
         panel.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-        if (UIDom.labels.textInput) UIDom.labels.textInput.disabled = !enabled;
-        if (!enabled) {
-            if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = true;
-            if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = true;
-        }
     }
 
-    syncLabelControlsFromSelection() {
-        const contour = this.getSelectedContourForLabel();
-        const selectedLabel = this.getSelectedLabelObject();
-
-        if (!contour && !selectedLabel) {
-            this.setLabelPanelEnabled(false);
-            if (UIDom.labels.textInput) UIDom.labels.textInput.value = '';
-            return;
-        }
-
-        this.setLabelPanelEnabled(true);
-
-        if (selectedLabel) {
-            if (UIDom.labels.textInput) UIDom.labels.textInput.value = selectedLabel.text || '';
-            if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = true;
-            if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = false;
-            return;
-        }
-
-        const label = this.textManager.getAttachedTextByPlacementId(contour.placementId);
-        const meta = this.contourManager.metadataMap.get(contour);
-        if (UIDom.labels.textInput) {
-            UIDom.labels.textInput.value = label ? (label.text || '') : (meta?.defaultLabel || '');
-        }
-        if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = Boolean(label);
-        if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = !label;
+    getAttachedTextsForContour(contour) {
+        if (!contour?.placementId) return [];
+        return this.textManager.texts.filter(textObj => textObj.kind === 'attached' && textObj.ownerPlacementId === contour.placementId);
     }
 
-    applyLabelTextFromInput(value) {
-        const selectedLabel = this.getSelectedLabelObject();
-        const contour = this.getSelectedContourForLabel();
-        const targetLabel = selectedLabel || (contour ? this.textManager.getAttachedTextByPlacementId(contour.placementId) : null);
+    fillTextForm(textObj) {
+        if (UIDom.texts.value) UIDom.texts.value.value = textObj?.text || '';
+        if (UIDom.texts.fontSize) UIDom.texts.fontSize.value = Number(textObj?.fontSize) || '';
+        if (UIDom.texts.angle) UIDom.texts.angle.value = Number(textObj?.angle) || 0;
+        if (UIDom.texts.kind) UIDom.texts.kind.textContent = textObj?.kind || '—';
+        if (UIDom.texts.role) UIDom.texts.role.textContent = textObj?.role || '—';
+        if (UIDom.texts.owner) UIDom.texts.owner.textContent = Number.isFinite(textObj?.ownerPlacementId) ? String(textObj.ownerPlacementId) : '—';
+    }
 
-        if (!targetLabel) {
+    syncTextControlsFromSelection() {
+        const contour = this.getSelectedContourForText();
+        const selectedText = this.getSelectedTextObject();
+        const ownerContour = selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null;
+        const targetContour = contour || ownerContour;
+        const list = UIDom.texts.list;
+
+        if (!selectedText && !targetContour) {
+            this.setTextPanelEnabled(false);
+            if (list) list.innerHTML = '';
+            this.fillTextForm(null);
             return;
         }
 
-        targetLabel.set({ text: value });
-        targetLabel.dirty = true;
-        targetLabel.setCoords();
+        this.setTextPanelEnabled(true);
+        const freeTexts = this.textManager.texts.filter(textObj => textObj.kind === 'free');
+        const listTexts = targetContour
+            ? [...this.getAttachedTextsForContour(targetContour), ...freeTexts]
+            : (selectedText ? [selectedText] : []);
+
+        if (list) {
+            this.isSyncingTextControls = true;
+            list.innerHTML = '';
+            listTexts.forEach((textObj, index) => {
+                textObj.uiId = textObj.uiId || `text-${Date.now()}-${index}`;
+                const option = document.createElement('option');
+                option.value = textObj.uiId;
+                option.textContent = `${index + 1}. ${textObj.kind} · ${textObj.role} · owner ${Number.isFinite(textObj.ownerPlacementId) ? textObj.ownerPlacementId : '—'}`;
+                list.appendChild(option);
+            });
+            if (selectedText?.uiId) list.value = selectedText.uiId;
+            list.disabled = listTexts.length === 0;
+            this.isSyncingTextControls = false;
+        }
+
+        const fromList = listTexts.find(textObj => textObj.uiId === list?.value) || null;
+        const formText = selectedText || fromList || listTexts[0] || null;
+        if (list && formText?.uiId) {
+            this.isSyncingTextControls = true;
+            list.value = formText.uiId;
+            this.isSyncingTextControls = false;
+        }
+        this.fillTextForm(formText);
+
+        if (UIDom.texts.value) UIDom.texts.value.disabled = !formText;
+        if (UIDom.texts.fontSize) UIDom.texts.fontSize.disabled = !formText;
+        if (UIDom.texts.angle) UIDom.texts.angle.disabled = !formText;
+        if (UIDom.texts.addFreeBtn) UIDom.texts.addFreeBtn.disabled = false;
+        if (UIDom.texts.addAttachedBtn) UIDom.texts.addAttachedBtn.disabled = !targetContour;
+        if (UIDom.texts.attachBtn) UIDom.texts.attachBtn.disabled = !(formText && formText.kind === 'free' && targetContour);
+        if (UIDom.texts.detachBtn) UIDom.texts.detachBtn.disabled = !(formText && formText.kind === 'attached');
+        if (UIDom.texts.deleteBtn) UIDom.texts.deleteBtn.disabled = !formText;
+    }
+
+    getEditingTextObject() {
+        const selected = this.getSelectedTextObject();
+        if (selected) return selected;
+        const listValue = UIDom.texts.list?.value;
+        return this.textManager.texts.find(textObj => textObj.uiId === listValue) || null;
+    }
+
+    applyTextValueFromInput(value) {
+        const textObj = this.getEditingTextObject();
+        if (!textObj) return;
+        textObj.set({ text: value });
+        textObj.dirty = true;
+        textObj.setCoords();
         this.canvas.requestRenderAll();
         this.scheduleWorkspaceSave();
-        this.syncLabelControlsFromSelection();
     }
 
-    addLabelForSelection() {
-        const contour = this.getSelectedContourForLabel();
-        if (!contour) {
-            return;
-        }
-
-        const text = UIDom.labels.textInput?.value ?? '';
-        const label = this.textManager.createAttachedText(contour, { text, role: 'custom' });
-        if (!label) {
-            return;
-        }
-
-        this.canvas.setActiveObject(label);
+    applyTextFontSizeFromInput(value) {
+        const textObj = this.getEditingTextObject();
+        const fontSize = Number(value);
+        if (!textObj || !Number.isFinite(fontSize) || fontSize <= 0) return;
+        textObj.set({ fontSize });
+        textObj.fontSizeMm = fontSize;
+        textObj.setCoords();
         this.canvas.requestRenderAll();
-        this.syncLabelControlsFromSelection();
         this.scheduleWorkspaceSave();
     }
 
-    deleteLabelForSelection() {
-        const selectedLabel = this.getSelectedLabelObject();
-        if (selectedLabel) {
-            this.textManager.removeText(selectedLabel);
-            this.canvas.discardActiveObject();
-            this.canvas.requestRenderAll();
-            this.syncLabelControlsFromSelection();
-            this.scheduleWorkspaceSave();
-            return;
+    applyTextAngleFromInput(value) {
+        const textObj = this.getEditingTextObject();
+        const angle = Number(value);
+        if (!textObj || !Number.isFinite(angle)) return;
+        textObj.set({ angle });
+        if (textObj.kind === 'attached') {
+            this.textManager.updateAttachedTextAnchorFromAbsolute(textObj);
         }
-
-        const contour = this.getSelectedContourForLabel();
-        if (!contour) {
-            return;
-        }
-
-        const label = this.textManager.getAttachedTextByPlacementId(contour.placementId);
-        if (!label) {
-            return;
-        }
-
-        this.textManager.removeText(label);
+        textObj.setCoords();
         this.canvas.requestRenderAll();
-        this.syncLabelControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    addFreeTextForSelection() {
+        const text = UIDom.texts.value?.value || '';
+        const left = this.layment.left + 20;
+        const top = this.layment.top + 20;
+        const textObj = this.textManager.createFreeText({ text, left, top, role: 'user-text' });
+        this.canvas.setActiveObject(textObj);
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    addAttachedTextForSelection() {
+        const selectedText = this.getSelectedTextObject();
+        const contour = this.getSelectedContourForText() || (selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null);
+        if (!contour) return;
+        const text = UIDom.texts.value?.value || '';
+        const textObj = this.textManager.createAttachedText(contour, { text, role: 'user-text' });
+        if (!textObj) return;
+        this.canvas.setActiveObject(textObj);
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    attachSelectedTextToSelectionContour() {
+        const textObj = this.getEditingTextObject();
+        const contour = this.getSelectedContourForText();
+        if (!textObj || !contour) return;
+        this.textManager.attachTextToContour(textObj, contour, 'user-text');
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    detachSelectedText() {
+        const textObj = this.getEditingTextObject();
+        if (!textObj || textObj.kind !== 'attached') return;
+        this.textManager.detachText(textObj);
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    deleteSelectedText() {
+        const selectedText = this.getEditingTextObject();
+        if (!selectedText) return;
+        this.textManager.removeText(selectedText);
+        this.canvas.discardActiveObject();
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
         this.scheduleWorkspaceSave();
     }
 
@@ -2012,7 +2089,7 @@ class ContourApp {
       this.updateButtons();
       this.updateStatusBar?.();
       this.syncPrimitiveControlsFromSelection();
-      this.syncLabelControlsFromSelection();
+      this.syncTextControlsFromSelection();
       this.scheduleWorkspaceSave();
     }
 
@@ -2095,7 +2172,7 @@ class ContourApp {
                 if (sourceLabel) {
                     const duplicatedLabel = this.textManager.createAttachedText(duplicatedContour, {
                         text: sourceLabel.text || '',
-                        role: sourceLabel.role || 'custom',
+                        role: sourceLabel.role || 'user-text',
                         fontSizeMm: sourceLabel.fontSizeMm || sourceLabel.fontSize,
                         localOffsetX: sourceLabel.localOffsetX,
                         localOffsetY: sourceLabel.localOffsetY,
@@ -2113,7 +2190,7 @@ class ContourApp {
         this.updateButtons();
         this.updateStatusBar();
         this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.syncTextControlsFromSelection();
         this.scheduleWorkspaceSave();
     }
 
@@ -2338,7 +2415,7 @@ class ContourApp {
                 this.updateButtons();
                 this.updateStatusBar();
                 this.syncPrimitiveControlsFromSelection();
-                this.syncLabelControlsFromSelection();
+                this.syncTextControlsFromSelection();
             });
         } finally {
             this.isRestoringWorkspace = false;

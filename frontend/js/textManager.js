@@ -79,7 +79,7 @@ class TextManager {
         textObj.setCoords();
     }
 
-    buildTextObject({ text = '', left, top, fontSizeMm, role = 'custom', kind = 'free', ownerPlacementId = null }) {
+    buildTextObject({ text = '', left, top, fontSizeMm, role = 'user-text', kind = 'free', ownerPlacementId = null }) {
         const textObj = new fabric.IText(text, {
             left,
             top,
@@ -121,7 +121,7 @@ class TextManager {
         return textObj;
     }
 
-    createFreeText({ text = '', left, top, fontSizeMm, role = 'custom' }) {
+    createFreeText({ text = '', left, top, fontSizeMm, role = 'user-text' }) {
         const textObj = this.buildTextObject({ text, left, top, fontSizeMm, role, kind: 'free', ownerPlacementId: null });
         this.texts.push(textObj);
         this.canvas.add(textObj);
@@ -129,7 +129,7 @@ class TextManager {
         return textObj;
     }
 
-    createAttachedText(contourObj, { text = '', role = 'custom', fontSizeMm, left, top, localOffsetX, localOffsetY, localAngle } = {}) {
+    createAttachedText(contourObj, { text = '', role = 'user-text', fontSizeMm, left, top, localOffsetX, localOffsetY, localAngle } = {}) {
         if (!contourObj?.placementId) {
             return null;
         }
@@ -193,7 +193,7 @@ class TextManager {
             });
     }
 
-    attachTextToContour(textObj, contourObj, role = 'custom') {
+    attachTextToContour(textObj, contourObj, role = 'user-text') {
         if (!textObj?.isTextObject || !contourObj?.placementId) {
             return;
         }
@@ -210,7 +210,7 @@ class TextManager {
             return;
         }
         textObj.kind = 'free';
-        textObj.role = 'custom';
+        textObj.role = 'user-text';
         textObj.ownerPlacementId = null;
         textObj.localOffsetX = 0;
         textObj.localOffsetY = 0;
@@ -315,7 +315,7 @@ class TextManager {
         const tl = textObj.aCoords.tl;
         return {
             kind: textObj.kind === 'attached' ? 'attached' : 'free',
-            role: typeof textObj.role === 'string' && textObj.role.trim() ? textObj.role : 'custom',
+            role: typeof textObj.role === 'string' && textObj.role.trim() ? textObj.role : 'user-text',
             ownerPlacementId: Number.isFinite(textObj.ownerPlacementId) ? textObj.ownerPlacementId : null,
             text: typeof textObj.text === 'string' ? textObj.text : '',
             fontSizeMm: Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM,
@@ -350,7 +350,7 @@ class TextManager {
 
         return {
             kind,
-            role: typeof rawText.role === 'string' && rawText.role.trim() ? rawText.role : 'custom',
+            role: typeof rawText.role === 'string' && rawText.role.trim() ? rawText.role : 'user-text',
             ownerPlacementId,
             text: typeof rawText.text === 'string' ? rawText.text : '',
             fontSizeMm: Number(rawText.fontSizeMm) || Config.LABELS.FONT_SIZE_MM,
