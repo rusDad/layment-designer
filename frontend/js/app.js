@@ -789,7 +789,8 @@ class ContourApp {
                     left: obj.left + dx,
                     top: obj.top + dy
                 });
-                this.syncObjectTextState(obj, { rememberContourLastPosition: true });
+                obj.setCoords();
+                this.syncAttachedTextFollowersForOwner(obj, { rememberContourLastPosition: true });
             });
             active.setCoords();
         } else {
@@ -797,7 +798,8 @@ class ContourApp {
                 left: active.left + dx,
                 top: active.top + dy
             });
-            this.syncObjectTextState(active, { rememberContourLastPosition: true });
+            active.setCoords();
+            this.syncAttachedTextFollowersForOwner(active, { rememberContourLastPosition: true });
         }
 
         this.canvas.requestRenderAll();
@@ -1204,6 +1206,19 @@ class ContourApp {
         return !!obj && !obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea;
     }
 
+    syncAttachedTextFollowersForOwner(obj, { rememberContourLastPosition = false } = {}) {
+        if (!this.isContourObject(obj)) {
+            return;
+        }
+
+        if (rememberContourLastPosition) {
+            obj._lastLeft = obj.left;
+            obj._lastTop = obj.top;
+        }
+
+        this.textManager.syncAttachedTextsForContour(obj);
+    }
+
     syncObjectTextState(obj, { rememberContourLastPosition = false } = {}) {
         if (!obj) {
             return;
@@ -1242,7 +1257,8 @@ class ContourApp {
             left: obj.left + deltaX,
             top: obj.top + deltaY
         });
-        this.syncObjectTextState(obj, { rememberContourLastPosition: true });
+        obj.setCoords();
+        this.syncAttachedTextFollowersForOwner(obj, { rememberContourLastPosition: true });
     }
 
     finalizeArrangeOperation() {

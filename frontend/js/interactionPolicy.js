@@ -62,29 +62,33 @@
         return canDuplicate(ctx, obj);
     }
 
-    function canParticipateInAlign(ctx, obj) {
+    function isPrimaryArrangeTarget(ctx, obj) {
         return isArrangeTarget(ctx, obj);
+    }
+
+    function canParticipateInAlign(ctx, obj) {
+        return isPrimaryArrangeTarget(ctx, obj);
     }
 
     function canParticipateInSnap(ctx, obj) {
-        return isArrangeTarget(ctx, obj);
+        return isPrimaryArrangeTarget(ctx, obj);
     }
 
     function canParticipateInDistribute(ctx, obj) {
-        return isArrangeTarget(ctx, obj);
+        return isPrimaryArrangeTarget(ctx, obj);
     }
 
     function canJoinGroup(ctx, obj) {
         return canSelect(ctx, obj);
     }
 
-    function shouldFollowOwnerMove(ctx, obj) {
-        return !!obj?.isTextObject && obj.kind === 'attached';
+    function shouldFollowOwnerMove(ctx, obj, owner) {
+        return !!owner && !!obj?.isTextObject && obj.kind === 'attached' && obj.ownerPlacementId === owner.placementId;
     }
 
     function getArrangeSelectionObjects(ctx, targets) {
         const list = Array.isArray(targets) ? targets : [];
-        return list.filter(obj => isArrangeTarget(ctx, obj));
+        return list.filter(obj => isPrimaryArrangeTarget(ctx, obj));
     }
 
     function getDuplicateSelectionObjects(ctx, targets) {
@@ -129,6 +133,7 @@
         canDuplicate,
         isArrangeTarget,
         isDuplicateTarget,
+        isPrimaryArrangeTarget,
         canParticipateInAlign,
         canParticipateInSnap,
         canParticipateInDistribute,

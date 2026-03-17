@@ -24,6 +24,10 @@
         }
 
         const result = await handler(ctx);
+        const changedObjects = Array.isArray(ctx.changedObjects) ? ctx.changedObjects : [];
+        const followers = collectFollowers(changedObjects, ctx, app);
+        applyFollowerUpdates(followers, action, payload, ctx, app);
+
         finalizeCanvasAction(app, {
             scheduleWorkspaceSave: ctx.skipAutosave !== true
         });
@@ -77,6 +81,7 @@
 
             const nextAngle = (obj.angle + 90) % 360;
             app.contourManager.rotateContour(obj, nextAngle);
+            ctx.changedObjects = [obj];
             return { angle: nextAngle, object: obj };
         },
         duplicate: async (ctx) => {
@@ -193,12 +198,16 @@
             updated.push(obj);
         }
 
+        const followers = collectFollowers(updated, ctx, ctx?.app);
+        applyFollowerUpdates(followers, ctx?.actionName, {}, ctx, ctx?.app);
+        ctx.changedObjects = updated;
         return updated;
     }
 
-    function collectFollowers(ctx, owners) {
-        const app = ctx?.app;
-        const policy = ctx?.policy || global.InteractionPolicy;
+    function collectFollowers(changedObjects, ctx, appArg) {
+        const app = appArg || ctx?.app;
+        const policy = ctx?.policy || app?.interactionPolicy || global.InteractionPolicy;
+        const owners = changedObjects;
         const ownerList = Array.isArray(owners) ? owners : (owners ? [owners] : []);
         const followers = [];
 
@@ -219,8 +228,9 @@
         return followers;
     }
 
-    function applyFollowerUpdates(ctx, followerPairs, updater) {
-        if (typeof updater !== 'function') {
+    function applyFollowerUpdates(followerPairs, action, payload, ctx, appArg) {
+        const app = appArg || ctx?.app;
+        if (!app?.textManager) {
             return [];
         }
 
@@ -228,12 +238,17 @@
         const updated = [];
 
         list.forEach(pair => {
-            if (!pair?.follower) {
+            const follower = pair?.follower;
+            const owner = pair?.owner;
+            if (!follower || !owner || !follower.isTextObject || follower.kind !== 'attached') {
                 return;
             }
-            updater(pair.follower, pair.owner, ctx);
-            pair.follower.setCoords?.();
-            updated.push(pair.follower);
+
+            app.textManager.syncAttachedTextsForContour(owner);
+            app.textManager.clampTextToContourBounds(follower);
+            app.textManager.updateAttachedTextAnchorFromAbsolute(follower);
+            follower.setCoords?.();
+            updated.push(follower);
         });
 
         return updated;
