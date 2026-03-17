@@ -45,13 +45,20 @@ window.UIDom = {
     primitiveControls: document.getElementById('primitiveControls'),
   },
 
-
-
-  labels: {
-    panel: document.getElementById('labelControls'),
-    textInput: document.getElementById('labelText'),
-    addBtn: document.getElementById('addLabelBtn'),
-    deleteBtn: document.getElementById('deleteLabelBtn'),
+  texts: {
+    panel: document.getElementById('textControls'),
+    list: document.getElementById('textList'),
+    value: document.getElementById('textValue'),
+    fontSize: document.getElementById('textFontSize'),
+    angle: document.getElementById('textAngle'),
+    kind: document.getElementById('textKind'),
+    role: document.getElementById('textRole'),
+    owner: document.getElementById('textOwner'),
+    addFreeBtn: document.getElementById('addFreeTextBtn'),
+    addAttachedBtn: document.getElementById('addAttachedTextBtn'),
+    attachBtn: document.getElementById('attachTextBtn'),
+    detachBtn: document.getElementById('detachTextBtn'),
+    deleteBtn: document.getElementById('deleteTextBtn'),
   },
 
   primitive: {
@@ -69,9 +76,6 @@ window.UIDom = {
     categorySelect: document.getElementById('categorySelect'),
     searchInput: document.getElementById('catalogSearch'),
   },
-
-
-
 
   customerModal: {
     overlay: document.getElementById('customerModalOverlay'),

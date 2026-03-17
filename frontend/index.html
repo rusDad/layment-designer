@@ -172,15 +172,25 @@
                     </section>
                 </section>
 
-                <h2>Подпись контура</h2>
-                <div id="labelControls" class="primitive-controls panel-card" aria-disabled="true">
-                    <label>Текст: <input type="text" id="labelText" placeholder="Введите подпись"></label>
+                <h2>Тексты</h2>
+                <div id="textControls" class="primitive-controls panel-card" aria-disabled="true">
+                    <label>Список: <select id="textList" disabled></select></label>
+                    <label>Текст: <input type="text" id="textValue" placeholder="Введите текст" disabled></label>
+                    <label>Размер: <input type="number" id="textFontSize" min="1" step="1" disabled></label>
+                    <label>Угол: <input type="number" id="textAngle" step="1" disabled></label>
+                    <div class="primitive-controls-header">Тип: <span id="textKind">—</span></div>
+                    <div class="primitive-controls-header">Роль: <span id="textRole">—</span></div>
+                    <div class="primitive-controls-header">Owner: <span id="textOwner">—</span></div>
                     <div class="tool-buttons">
-                        <button id="addLabelBtn" class="tool-button button-secondary" disabled>Добавить подпись</button>
-                        <button id="deleteLabelBtn" class="tool-button button-danger" disabled>Удалить подпись</button>
+                        <button id="addFreeTextBtn" class="tool-button button-secondary">Добавить free</button>
+                        <button id="addAttachedTextBtn" class="tool-button button-secondary">Добавить attached</button>
                     </div>
-                    <small>Подпись можно перетаскивать мышью в пределах выбранного контура.</small>
-                    <small class="panel-empty-state">Выберите контур, чтобы управлять подписью.</small>
+                    <div class="tool-buttons">
+                        <button id="attachTextBtn" class="tool-button button-secondary" disabled>Attach</button>
+                        <button id="detachTextBtn" class="tool-button button-secondary" disabled>Detach</button>
+                        <button id="deleteTextBtn" class="tool-button button-danger" disabled>Delete</button>
+                    </div>
+                    <small class="panel-empty-state">Выберите контур или текст для управления.</small>
                 </div>
 
                 <h2>Выемка</h2>
