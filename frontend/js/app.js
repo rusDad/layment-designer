@@ -488,7 +488,7 @@ class ContourApp {
         }
 
         return !!element.closest(
-            '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable=""], [contenteditable="true"]'
+            '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])'
         );
     }
 
@@ -542,7 +542,10 @@ class ContourApp {
             this.primaryPointerDown = true;
             this.primaryDownStartedOutsideCanvas = !startedInsideCanvas;
             this.pointerDownStartedInProtectedUi = startedInProtectedUi;
-            this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas;
+            // External drag safety should apply only to truly external sources.
+            // Legitimate UI controls (forms/modals/catalog inputs) must keep focus
+            // and should not arm canvas suppression.
+            this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas && !this.pointerDownStartedInProtectedUi;
 
             if (this.suppressCanvasUntilMouseUp && !this.pointerDownStartedInProtectedUi) {
                 this.stopPanning();
@@ -569,17 +572,13 @@ class ContourApp {
         });
 
         this.canvas.wrapperEl.addEventListener('mouseenter', event => {
-            if (!this.primaryPointerDown || !this.primaryDownStartedOutsideCanvas) {
+            if (!this.primaryPointerDown || !this.suppressCanvasUntilMouseUp) {
                 return;
             }
 
-            this.suppressCanvasUntilMouseUp = true;
             this.stopPanning();
-
-            if (!this.pointerDownStartedInProtectedUi) {
-                this.canvas.discardActiveObject();
-                this.clearBrowserSelection();
-            }
+            this.canvas.discardActiveObject();
+            this.clearBrowserSelection();
 
             event.preventDefault();
             event.stopPropagation();
