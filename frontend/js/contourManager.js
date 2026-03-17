@@ -12,7 +12,7 @@
 class ContourManager {
     constructor(canvas, app) {
         this.canvas = canvas;
-        this.app = app;  // Reference to ContourApp for scale helpers
+        this.app = app;
         this.svgLoader = new SVGLoader();
         this.contours = [];
         this.metadataMap = new WeakMap();
@@ -22,11 +22,11 @@ class ContourManager {
         fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);   //Отдельный конфиг для группы 
     }
 
-    async addContour(svgUrl, position, scale, metadata) {
+    async addContour(svgUrl, position, metadata) {
         const group = await this.svgLoader.createFabricObjectFromSVG(svgUrl);
 
         const scaleOverride = metadata.scaleOverride ?? 1;
-        const factor = scale * Config.CONVERSION.SCALE_FACTOR * scaleOverride;
+        const factor = Config.CONVERSION.SCALE_FACTOR * scaleOverride;
 
         group.set({
             left: position.x,
@@ -91,18 +91,6 @@ class ContourManager {
         this.metadataMap = new WeakMap();
         this.canvas.renderAll();
     }
-
-    scaleAllContours(ratio) {
-        this.contours.forEach(obj => {
-            obj.scaleX *= ratio;
-            obj.scaleY *= ratio;
-            obj.left *= ratio;
-            obj.top *= ratio;
-            obj.setCoords();
-        });
-        this.canvas.renderAll();
-    }
-
     checkCollisionsAndHighlight() {
       const emptyResult = {
         ok: true,
@@ -112,15 +100,6 @@ class ContourManager {
             outOfBoundsPrimitives: 0
         }
       };
-
-      const worldScale = this.app.getWorldScale();
-      if (worldScale !== 1) {
-        console.warn('Collision check must run with world scale=1. Use performWithScaleOne().');
-        return {
-            ...emptyResult,
-            ok: false
-        };
-      }
 
       const problematic = new Set();
       const outOfBoundsContours = new Set();
@@ -524,13 +503,13 @@ class PrimitiveManager {
         let changed = false;
 
         if (obj.primitiveType === 'rect') {
-            const realWidth = this.app.pxToMm(obj.width * obj.scaleX);
-            const realHeight = this.app.pxToMm(obj.height * obj.scaleY);
+            const realWidth = (obj.width * obj.scaleX);
+            const realHeight = (obj.height * obj.scaleY);
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
             const clampedWidth = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, realWidth));
             const clampedHeight = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, realHeight));
-            const targetScaledW = this.app.mmToPx(clampedWidth);
-            const targetScaledH = this.app.mmToPx(clampedHeight);
+            const targetScaledW = clampedWidth;
+            const targetScaledH = clampedHeight;
             const targetScaleX = targetScaledW / obj.width;
             const targetScaleY = targetScaledH / obj.height;
 
@@ -540,10 +519,10 @@ class PrimitiveManager {
                 changed = true;
             }
         } else if (obj.primitiveType === 'circle') {
-            const realRadius = this.app.pxToMm(obj.radius * obj.scaleX);
+            const realRadius = (obj.radius * obj.scaleX);
             const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
             const clampedRadius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, realRadius));
-            const targetScaledR = this.app.mmToPx(clampedRadius);
+            const targetScaledR = clampedRadius;
             const targetScale = targetScaledR / obj.radius;
 
             if (Math.abs(targetScale - obj.scaleX) > 0.0001 || Math.abs(targetScale - obj.scaleY) > 0.0001) {
@@ -570,15 +549,15 @@ class PrimitiveManager {
         if (obj.primitiveType === 'rect') {
             return {
                 type: 'rect',
-                width: Math.round(this.app.pxToMm(obj.width * obj.scaleX)),
-                height: Math.round(this.app.pxToMm(obj.height * obj.scaleY))
+                width: Math.round((obj.width * obj.scaleX)),
+                height: Math.round((obj.height * obj.scaleY))
             };
         }
 
         if (obj.primitiveType === 'circle') {
             return {
                 type: 'circle',
-                radius: Math.round(this.app.pxToMm(obj.radius * obj.scaleX))
+                radius: Math.round((obj.radius * obj.scaleX))
             };
         }
 
@@ -598,8 +577,8 @@ class PrimitiveManager {
             }
             const width = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, dimensions.width));
             const height = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, dimensions.height));
-            const targetScaledW = this.app.mmToPx(width);
-            const targetScaledH = this.app.mmToPx(height);
+            const targetScaledW = width;
+            const targetScaledH = height;
             obj.set({
                 scaleX: targetScaledW / obj.width,
                 scaleY: targetScaledH / obj.height
@@ -615,7 +594,7 @@ class PrimitiveManager {
                 return false;
             }
             const radius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, dimensions.radius));
-            const targetScaledR = this.app.mmToPx(radius);
+            const targetScaledR = radius;
             const targetScale = targetScaledR / obj.radius;
             obj.set({ scaleX: targetScale, scaleY: targetScale });
             obj.setCoords();
