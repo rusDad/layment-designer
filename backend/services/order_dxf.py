@@ -268,14 +268,15 @@ def _emit_entities(
             )
 
     if include_labels:
-        for label in (getattr(order_data, "labels", None) or []):
-            text = _sanitize_text(_value_from_obj_or_dict(label, "text", ""))
+        text_entries = (getattr(order_data, "texts", None) or getattr(order_data, "labels", None) or [])
+        for text_entry in text_entries:
+            text = _sanitize_text(_value_from_obj_or_dict(text_entry, "text", ""))
             if not text:
                 continue
 
-            x = _to_float(_value_from_obj_or_dict(label, "x"))
-            y = _to_float(_value_from_obj_or_dict(label, "y"))
-            font_size = _to_float(_value_from_obj_or_dict(label, "fontSizeMm", 4.0), 4.0)
+            x = _to_float(_value_from_obj_or_dict(text_entry, "x"))
+            y = _to_float(_value_from_obj_or_dict(text_entry, "y"))
+            font_size = _to_float(_value_from_obj_or_dict(text_entry, "fontSizeMm", 4.0), 4.0)
             height = font_size if font_size > 0 else 4.0
 
             _write_text(

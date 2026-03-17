@@ -2816,6 +2816,10 @@ class ContourApp {
             ? "with-tools"
             : "empty";
 
+        const contours = this.buildExportContours();
+        const primitives = this.buildExportPrimitives();
+        const texts = this.buildExportTexts();
+
         //  КОНТРАКТ
         const data = {
             orderMeta: {
@@ -2832,9 +2836,9 @@ class ContourApp {
             layoutPng,
             layoutSvg,
 
-            contours: this.contourManager.getContoursData(),
-            primitives: this.contourManager.getPrimitivesData(),
-            labels: this.textManager.getExportTextsData(),
+            contours,
+            primitives,
+            texts,
             customer: this.pendingCustomer
         };
 
@@ -2872,6 +2876,52 @@ class ContourApp {
         } finally {
             this.pendingCustomer = null;
         }
+    }
+
+    buildExportContours() {
+        return this.contourManager.getContoursData();
+    }
+
+    buildExportPrimitives() {
+        return this.contourManager.getPrimitivesData();
+    }
+
+    buildExportTexts() {
+        const layment = this.canvas?.layment;
+        if (!layment) {
+            return [];
+        }
+
+        return this.textManager.texts
+            .map(textObj => {
+                if (!textObj?.isTextObject) {
+                    return null;
+                }
+
+                const isAttached = textObj.kind === 'attached';
+                const ownerContourId = isAttached && Number.isFinite(textObj.ownerPlacementId)
+                    ? String(textObj.ownerPlacementId)
+                    : null;
+
+                const absolute = isAttached
+                    ? this.textManager.computeAbsoluteTextPosition(textObj)
+                    : {
+                        left: textObj.left ?? 0,
+                        top: textObj.top ?? 0,
+                        angle: textObj.angle ?? 0
+                    };
+
+                return {
+                    kind: isAttached ? 'attached' : 'free',
+                    text: typeof textObj.text === 'string' ? textObj.text : '',
+                    x: Math.round((absolute.left ?? 0) - layment.left),
+                    y: Math.round((absolute.top ?? 0) - layment.top),
+                    angle: Number.isFinite(absolute.angle) ? absolute.angle : 0,
+                    fontSizeMm: Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM,
+                    ownerContourId
+                };
+            })
+            .filter(Boolean);
     }
 
     createLaymentPreviewPng(padPx = 20) {
