@@ -48,16 +48,30 @@
         return true;
     }
 
-    function canParticipateInAlign(ctx, obj) {
+    function isArrangeTarget(ctx, obj) {
+        if (!obj || isProtectedObject(ctx, obj) || obj.isTextObject) {
+            return false;
+        }
         return canMove(ctx, obj);
+    }
+
+    function isDuplicateTarget(ctx, obj) {
+        if (!obj || isProtectedObject(ctx, obj) || obj.isTextObject) {
+            return false;
+        }
+        return canDuplicate(ctx, obj);
+    }
+
+    function canParticipateInAlign(ctx, obj) {
+        return isArrangeTarget(ctx, obj);
     }
 
     function canParticipateInSnap(ctx, obj) {
-        return canMove(ctx, obj);
+        return isArrangeTarget(ctx, obj);
     }
 
     function canParticipateInDistribute(ctx, obj) {
-        return canMove(ctx, obj);
+        return isArrangeTarget(ctx, obj);
     }
 
     function canJoinGroup(ctx, obj) {
@@ -68,14 +82,42 @@
         return !!obj?.isTextObject && obj.kind === 'attached';
     }
 
-    function resolveActionTargets(ctx, activeObject) {
+    function getArrangeSelectionObjects(ctx, targets) {
+        const list = Array.isArray(targets) ? targets : [];
+        return list.filter(obj => isArrangeTarget(ctx, obj));
+    }
+
+    function getDuplicateSelectionObjects(ctx, targets) {
+        const list = Array.isArray(targets) ? targets : [];
+        return list.filter(obj => isDuplicateTarget(ctx, obj));
+    }
+
+    function resolveActionTargets(ctx, activeObject, actionName = null) {
         if (!activeObject) {
             return [];
         }
-        if (activeObject.type === 'activeSelection') {
-            return activeObject.getObjects().filter(Boolean);
+
+        const targets = activeObject.type === 'activeSelection'
+            ? activeObject.getObjects().filter(Boolean)
+            : [activeObject];
+
+        if (actionName === 'arrange' || actionName === 'align' || actionName === 'snap' || actionName === 'distribute') {
+            return getArrangeSelectionObjects(ctx, targets);
         }
-        return [activeObject];
+
+        if (actionName === 'duplicate') {
+            return getDuplicateSelectionObjects(ctx, targets);
+        }
+
+        if (actionName === 'delete') {
+            return targets.filter(obj => canDelete(ctx, obj));
+        }
+
+        if (actionName === 'rotate') {
+            return targets.filter(obj => canRotate(ctx, obj));
+        }
+
+        return targets;
     }
 
     const api = {
@@ -85,11 +127,15 @@
         canMove,
         canRotate,
         canDuplicate,
+        isArrangeTarget,
+        isDuplicateTarget,
         canParticipateInAlign,
         canParticipateInSnap,
         canParticipateInDistribute,
         canJoinGroup,
         shouldFollowOwnerMove,
+        getArrangeSelectionObjects,
+        getDuplicateSelectionObjects,
         resolveActionTargets
     };
 
