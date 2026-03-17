@@ -155,9 +155,9 @@ class ContourApp {
         this.textManager = new TextManager(this.canvas, this, this.contourManager);
     }
 
-    resolveActionTargets(activeObject) {
+    resolveActionTargets(activeObject, actionName = null) {
         if (this.interactionPolicy?.resolveActionTargets) {
-            return this.interactionPolicy.resolveActionTargets(this, activeObject);
+            return this.interactionPolicy.resolveActionTargets(this, activeObject, actionName);
         }
 
         if (!activeObject) {
@@ -1167,18 +1167,7 @@ class ContourApp {
 
     getArrangeSelectionObjects() {
         const active = this.canvas.getActiveObject();
-        const targets = this.resolveActionTargets(active);
-        return targets.filter(obj => this.isArrangeTarget(obj));
-    }
-
-    isArrangeTarget(obj) {
-        if (!obj || obj === this.layment || obj === this.safeArea || obj.isTextObject) {
-            return false;
-        }
-        if (this.interactionPolicy?.canParticipateInAlign) {
-            return this.interactionPolicy.canParticipateInAlign(this, obj);
-        }
-        return !!obj.primitiveType || (!obj.primitiveType && !obj.isTextObject);
+        return this.resolveActionTargets(active, 'arrange');
     }
 
     temporarilyUngroupActiveSelection() {
@@ -1393,8 +1382,8 @@ class ContourApp {
         const active = this.canvas.getActiveObject();
         const has = !!active;
 
-        const deleteAllowed = has && (!this.interactionPolicy?.canDelete || this.interactionPolicy.canDelete(this, active));
-        const rotateAllowed = has && (!this.interactionPolicy?.canRotate || this.interactionPolicy.canRotate(this, active));
+        const deleteAllowed = has && this.resolveActionTargets(active, 'delete').length > 0;
+        const rotateAllowed = this.resolveActionTargets(active, 'rotate').length > 0;
 
         UIDom.buttons.delete.disabled = !deleteAllowed;
         UIDom.buttons.rotate.disabled = !rotateAllowed;
@@ -1402,7 +1391,7 @@ class ContourApp {
         const duplicateTargets = this.getDuplicateSelectionObjects();
         UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
 
-        const alignDisabled = selectedCount < 2 || selected.some(obj => this.interactionPolicy?.canParticipateInAlign && !this.interactionPolicy.canParticipateInAlign(this, obj));
+        const alignDisabled = selectedCount < 2;
         UIDom.buttons.alignLeft.disabled = alignDisabled;
         UIDom.buttons.alignCenterX.disabled = alignDisabled;
         UIDom.buttons.alignRight.disabled = alignDisabled;
@@ -1410,11 +1399,11 @@ class ContourApp {
         UIDom.buttons.alignCenterY.disabled = alignDisabled;
         UIDom.buttons.alignBottom.disabled = alignDisabled;
 
-        const distributeDisabled = selectedCount < 3 || selected.some(obj => this.interactionPolicy?.canParticipateInDistribute && !this.interactionPolicy.canParticipateInDistribute(this, obj));
+        const distributeDisabled = selectedCount < 3;
         UIDom.buttons.distributeHorizontalGaps.disabled = distributeDisabled;
         UIDom.buttons.distributeVerticalGaps.disabled = distributeDisabled;
 
-        const snapDisabled = selectedCount < 1 || selected.some(obj => this.interactionPolicy?.canParticipateInSnap && !this.interactionPolicy.canParticipateInSnap(this, obj));
+        const snapDisabled = selectedCount < 1;
         UIDom.buttons.snapLeft.disabled = snapDisabled;
         UIDom.buttons.snapRight.disabled = snapDisabled;
         UIDom.buttons.snapTop.disabled = snapDisabled;
@@ -1424,18 +1413,7 @@ class ContourApp {
 
     getDuplicateSelectionObjects() {
         const active = this.canvas.getActiveObject();
-        const targets = this.resolveActionTargets(active);
-        return targets.filter(obj => this.isDuplicateTarget(obj));
-    }
-
-    isDuplicateTarget(obj) {
-        if (!obj || obj === this.layment || obj === this.safeArea || obj.isTextObject) {
-            return false;
-        }
-        if (this.interactionPolicy?.canDuplicate) {
-            return this.interactionPolicy.canDuplicate(this, obj);
-        }
-        return !!obj.primitiveType || (!obj.primitiveType && !obj.isTextObject);
+        return this.resolveActionTargets(active, 'duplicate');
     }
 
     getSingleSelectedPrimitive() {
@@ -2072,9 +2050,7 @@ class ContourApp {
         const active = this.canvas.getActiveObject();
         if (!active) return;
 
-        const objects = (active.type === 'activeSelection')
-        ? active.getObjects().slice()
-        : [active];
+        const objects = this.resolveActionTargets(active, 'delete');
         // КРИТИЧНО: сначала убираем activeSelection, потом удаляем объекты
         this.batchRender(() => {
             this.canvas.discardActiveObject();
@@ -2124,10 +2100,6 @@ class ContourApp {
             this.canvas.discardActiveObject();
 
             for (const obj of selected) {
-                if (!obj || obj.isTextObject || obj === this.layment || obj === this.safeArea) {
-                    continue;
-                }
-
                 if (obj.primitiveType === 'rect') {
                     const copy = this.primitiveManager.addPrimitive(
                         'rect',
@@ -2212,11 +2184,9 @@ class ContourApp {
     }
 
     rotateSelected() {
-        const obj = this.canvas.getActiveObject();
-        if (!obj || (this.interactionPolicy?.canRotate && !this.interactionPolicy.canRotate(this, obj))) {
-            return;
-        }
-        if (!this.interactionPolicy?.canRotate && (obj.primitiveType || obj.isTextObject)) {
+        const active = this.canvas.getActiveObject();
+        const [obj] = this.resolveActionTargets(active, 'rotate');
+        if (!obj) {
             return;
         }
         const next = (obj.angle + 90) % 360;
