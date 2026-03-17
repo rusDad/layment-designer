@@ -79,6 +79,29 @@ class TextManager {
         textObj.setCoords();
     }
 
+
+    applyTextSemanticMeta(textObj) {
+        if (!textObj?.isTextObject) {
+            return;
+        }
+
+        const objectMetaApi = this.app?.objectMetaApi || window.ObjectMeta;
+        if (!objectMetaApi?.patchObjectMeta) {
+            return;
+        }
+
+        const isAttached = textObj.kind === 'attached';
+        objectMetaApi.patchObjectMeta(textObj, {
+            objectRole: 'text',
+            isLocked: false,
+            groupId: null,
+            selectionMode: 'default',
+            followMode: isAttached ? 'followBoundObject' : 'none',
+            boundToId: isAttached ? (textObj.ownerPlacementId ?? null) : null,
+            placementId: textObj.placementId ?? null
+        });
+    }
+
     buildTextObject({ text = '', left, top, fontSizeMm, role = 'user-text', kind = 'free', ownerPlacementId = null }) {
         const textObj = new fabric.IText(text, {
             left,
@@ -107,6 +130,7 @@ class TextManager {
         textObj.localOffsetY = 0;
         textObj.localAngle = 0;
         textObj.excludeFromExport = true;
+        this.applyTextSemanticMeta(textObj);
 
         textObj.on('moving', () => {
             this.canvas.requestRenderAll();
@@ -201,6 +225,7 @@ class TextManager {
         textObj.role = role;
         textObj.ownerPlacementId = contourObj.placementId;
         textObj.lockRotation = true;
+        this.applyTextSemanticMeta(textObj);
         this.updateAttachedTextAnchorFromAbsolute(textObj);
         this.syncAttachedTextsForContour(contourObj);
     }
@@ -216,6 +241,7 @@ class TextManager {
         textObj.localOffsetY = 0;
         textObj.localAngle = 0;
         textObj.lockRotation = false;
+        this.applyTextSemanticMeta(textObj);
     }
 
     removeText(textObj) {

@@ -54,6 +54,17 @@ class ContourManager {
         group.contourId = metadata.id;
         group.placementId = this.nextPlacementSeq++;
 
+        const objectMetaApi = this.app?.objectMetaApi || window.ObjectMeta;
+        objectMetaApi?.initObjectMeta?.(group, {
+            objectRole: 'contour',
+            isLocked: false,
+            groupId: null,
+            selectionMode: 'default',
+            followMode: 'none',
+            boundToId: null,
+            placementId: group.placementId
+        });
+
         group.on('rotating', () => this.snapToAllowedAngle(group));
         group.on('modified', () => this.snapToAllowedAngle(group));
 
@@ -485,6 +496,16 @@ class PrimitiveManager {
             if (Number.isFinite(options.pocketDepthMm)) {
                 obj.pocketDepthMm = options.pocketDepthMm;
             }
+            const objectMetaApi = this.app?.objectMetaApi || window.ObjectMeta;
+            objectMetaApi?.initObjectMeta?.(obj, {
+                objectRole: 'primitive',
+                isLocked: false,
+                groupId: null,
+                selectionMode: 'default',
+                followMode: 'none',
+                boundToId: null,
+                placementId: null
+            });
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);
