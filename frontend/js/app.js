@@ -2153,7 +2153,7 @@ class ContourApp {
     buildWorkspaceSnapshot() {
         const layment = this.canvas.layment;
         return {
-            schemaVersion: 2,
+            schemaVersion: 3,
             savedAt: new Date().toISOString(),
             layment: {
                 width: Math.round(layment.width),
@@ -2165,7 +2165,7 @@ class ContourApp {
             laymentThicknessMm: this.laymentThicknessMm,
             contours: this.contourManager.getWorkspaceContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
-            labels: this.textManager.getWorkspaceTextsData()
+            texts: this.textManager.getWorkspaceTextsData()
         };
     }
 
@@ -2197,7 +2197,7 @@ class ContourApp {
             return false;
         }
 
-        if (data.schemaVersion !== 2) {
+        if (data.schemaVersion !== 3) {
             console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
             return false;
         }
@@ -2292,32 +2292,33 @@ class ContourApp {
             const maxPlacementId = placementIds.length ? Math.max(...placementIds) : 0;
             this.contourManager.nextPlacementSeq = maxPlacementId + 1;
 
-            const savedTexts = Array.isArray(data.texts) ? data.texts : (Array.isArray(data.labels) ? data.labels : []);
-            if (savedTexts.length > 0) {
-                for (const labelData of savedTexts) {
-                    const ownerPlacementId = Number.isFinite(labelData.ownerPlacementId)
-                        ? labelData.ownerPlacementId
-                        : labelData.placementId;
-                    const contour = this.contourManager.contours.find(c => c.placementId === ownerPlacementId);
-                    if (!contour) {
-                        continue;
-                    }
-                    this.textManager.createAttachedText(contour, {
-                        text: labelData.text,
-                        role: labelData.role || 'custom',
-                        left: this.layment.left + labelData.x,
-                        top: this.layment.top + labelData.y,
-                        fontSizeMm: labelData.fontSizeMm,
-                        localOffsetX: labelData.localOffsetX,
-                        localOffsetY: labelData.localOffsetY,
-                        localAngle: labelData.localAngle
+            const savedTexts = this.textManager.normalizeWorkspaceTexts(data.texts);
+            for (const savedText of savedTexts) {
+                if (savedText.kind === 'free') {
+                    this.textManager.createFreeText({
+                        text: savedText.text,
+                        role: savedText.role,
+                        left: this.layment.left + savedText.x,
+                        top: this.layment.top + savedText.y,
+                        fontSizeMm: savedText.fontSizeMm
                     });
+                    continue;
                 }
-            } else {
-                for (const contour of this.contourManager.contours) {
-                    const meta = this.contourManager.metadataMap.get(contour);
-                    this.textManager.ensureDefaultTextForContour(contour, meta?.defaultLabel);
+
+                const contour = this.contourManager.contours.find(c => c.placementId === savedText.ownerPlacementId);
+                if (!contour) {
+                    continue;
                 }
+                this.textManager.createAttachedText(contour, {
+                    text: savedText.text,
+                    role: savedText.role,
+                    left: this.layment.left + savedText.x,
+                    top: this.layment.top + savedText.y,
+                    fontSizeMm: savedText.fontSizeMm,
+                    localOffsetX: savedText.localOffsetX,
+                    localOffsetY: savedText.localOffsetY,
+                    localAngle: savedText.localAngle
+                });
             }
 
             await this.batchRender(() => {
