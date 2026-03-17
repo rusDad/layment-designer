@@ -2223,6 +2223,8 @@ class ContourApp {
                     );
                     const added = this.contourManager.contours[this.contourManager.contours.length - 1];
                     added.placementId = contour.placementId;
+                    this.objectMetaApi?.patchObjectMeta?.(added, { placementId: contour.placementId });
+                    this.objectMetaApi?.applyInteractionState?.(added);
                     added.angle = contour.angle || 0;
                     added.setCoords();
                     const targetX = this.layment.left + contour.x;

@@ -87,6 +87,7 @@
         duplicate: async (ctx) => {
             const DUPLICATE_OFFSET = 16;
             const { app, canvas } = ctx;
+            const objectMetaApi = app?.objectMetaApi || global.ObjectMeta;
             const selected = app.getDuplicateSelectionObjects();
             if (!selected.length) {
                 ctx.skipAutosave = true;
@@ -114,6 +115,8 @@
                             opacity: obj.opacity,
                             angle: obj.angle || 0
                         });
+                        objectMetaApi?.copyObjectMeta?.(obj, copy);
+                        objectMetaApi?.applyInteractionState?.(copy);
                         copy.setCoords();
                         newObjects.push(copy);
                         continue;
@@ -134,6 +137,8 @@
                             fill: obj.fill,
                             opacity: obj.opacity
                         });
+                        objectMetaApi?.copyObjectMeta?.(obj, copy);
+                        objectMetaApi?.applyInteractionState?.(copy);
                         copy.setCoords();
                         newObjects.push(copy);
                         continue;
@@ -152,6 +157,11 @@
                     );
 
                     const duplicatedContour = app.contourManager.contours[app.contourManager.contours.length - 1];
+                    objectMetaApi?.copyObjectMeta?.(obj, duplicatedContour);
+                    objectMetaApi?.patchObjectMeta?.(duplicatedContour, {
+                        placementId: duplicatedContour.placementId
+                    });
+                    objectMetaApi?.applyInteractionState?.(duplicatedContour);
                     duplicatedContour.set({ angle: obj.angle || 0 });
                     duplicatedContour.setCoords();
                     newObjects.push(duplicatedContour);
@@ -171,6 +181,12 @@
                     });
 
                     if (duplicatedLabel) {
+                        objectMetaApi?.copyObjectMeta?.(sourceLabel, duplicatedLabel);
+                        objectMetaApi?.patchObjectMeta?.(duplicatedLabel, {
+                            followMode: 'followBoundObject',
+                            boundToId: duplicatedLabel.ownerPlacementId
+                        });
+                        objectMetaApi?.applyInteractionState?.(duplicatedLabel);
                         duplicatedLabel.setCoords();
                     }
                 }
