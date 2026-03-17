@@ -34,6 +34,8 @@ class ContourApp {
         this.primaryDownStartedOutsideCanvas = false;
         this.pointerDownStartedInProtectedUi = false;
         this.suppressCanvasUntilMouseUp = false;
+        this.pendingPointerResetRenderRaf = null;
+        this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
 
         this.init();
     }
@@ -499,7 +501,71 @@ class ContourApp {
         }
     }
 
-    resetPointerInteraction() {
+    isEditableElement(element) {
+        if (!(element instanceof Element)) {
+            return false;
+        }
+
+        return !!element.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+    }
+
+    isEditableTarget(target) {
+        if (!(target instanceof Node)) {
+            return false;
+        }
+
+        const element = target instanceof Element ? target : target.parentElement;
+        return this.isEditableElement(element);
+    }
+
+    logPointerFocus(eventName, target) {
+        if (!this.pointerFocusDebug) {
+            return;
+        }
+
+        const active = document.activeElement;
+        console.debug('[pointer-focus-debug]', eventName, {
+            targetTag: target instanceof Element ? target.tagName : target?.nodeName,
+            activeTag: active?.tagName,
+            activeId: active?.id || null,
+            activeClass: active?.className || null
+        });
+    }
+
+    schedulePointerResetRender() {
+        if (!this.canvas) {
+            return;
+        }
+
+        if (this.pendingPointerResetRenderRaf !== null) {
+            cancelAnimationFrame(this.pendingPointerResetRenderRaf);
+            this.pendingPointerResetRenderRaf = null;
+        }
+
+        this.pendingPointerResetRenderRaf = requestAnimationFrame(() => {
+            this.pendingPointerResetRenderRaf = null;
+            if (this.isEditableElement(document.activeElement)) {
+                return;
+            }
+            this.canvas.requestRenderAll();
+        });
+    }
+
+    finishActiveTextEditing() {
+        if (!this.canvas) {
+            return;
+        }
+
+        const activeObject = this.canvas.getActiveObject();
+        if (!activeObject || activeObject.type !== 'i-text' || !activeObject.isEditing) {
+            return;
+        }
+
+        activeObject.exitEditing();
+        activeObject.hiddenTextarea?.blur?.();
+    }
+
+    resetPointerInteraction({ soft = false } = {}) {
         if (!this.canvas) {
             return;
         }
@@ -515,7 +581,16 @@ class ContourApp {
         this.canvas.skipTargetFind = false;
         this.setPanCursor(false);
         this.clearBrowserSelection();
-        this.canvas.requestRenderAll();
+
+        if (soft) {
+            if (this.pendingPointerResetRenderRaf !== null) {
+                cancelAnimationFrame(this.pendingPointerResetRenderRaf);
+                this.pendingPointerResetRenderRaf = null;
+            }
+            return;
+        }
+
+        this.schedulePointerResetRender();
     }
 
     setupEventListeners() {
@@ -535,6 +610,8 @@ class ContourApp {
             if (event.button !== 0) {
                 return;
             }
+
+            this.logPointerFocus('mousedown', event.target);
 
             const startedInsideCanvas = this.isInsideCanvas(event.target);
             const startedInProtectedUi = !startedInsideCanvas && this.isProtectedUiTarget(event.target);
@@ -558,6 +635,19 @@ class ContourApp {
             if (event.button !== 0) {
                 return;
             }
+
+            this.logPointerFocus('mouseup', event.target);
+
+            const endedOnEditableUi = this.isEditableTarget(event.target);
+            if (!this.isInsideCanvas(event.target)) {
+                this.finishActiveTextEditing();
+            }
+
+            if (endedOnEditableUi) {
+                this.resetPointerInteraction({ soft: true });
+                return;
+            }
+
             this.resetPointerInteraction();
         }, true);
 
