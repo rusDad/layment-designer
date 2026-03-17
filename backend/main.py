@@ -74,19 +74,22 @@ class PrimitivePlacement(BaseModel):
     pocketDepthMm: Optional[float] = None
 
 
-class LabelPlacement(BaseModel):
-    contourId: str
+class ExportTextPlacement(BaseModel):
+    kind: str
     text: str
     x: float
     y: float
+    angle: Optional[float] = None
     fontSizeMm: Optional[float] = None
+    ownerContourId: Optional[str] = None
 
 
 class ExportRequest(BaseModel):
     orderMeta: OrderMeta
     contours: List[ContourPlacement]
     primitives: Optional[List[PrimitivePlacement]] = None
-    labels: Optional[List[LabelPlacement]] = None
+    texts: Optional[List[ExportTextPlacement]] = None
+    labels: Optional[List[ExportTextPlacement]] = None
     customer: Optional[CustomerInfo] = None
 
 
