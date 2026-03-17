@@ -74,7 +74,7 @@ class PrimitivePlacement(BaseModel):
     pocketDepthMm: Optional[float] = None
 
 
-class ExportTextPlacement(BaseModel):
+class TextPlacement(BaseModel):
     kind: str
     text: str
     x: float
@@ -88,8 +88,7 @@ class ExportRequest(BaseModel):
     orderMeta: OrderMeta
     contours: List[ContourPlacement]
     primitives: Optional[List[PrimitivePlacement]] = None
-    texts: Optional[List[ExportTextPlacement]] = None
-    labels: Optional[List[ExportTextPlacement]] = None
+    texts: Optional[List[TextPlacement]] = None
     customer: Optional[CustomerInfo] = None
 
 
@@ -430,11 +429,11 @@ async def export_layment(payload: Dict[str, Any]):
                 output_file.write('\n'.join(final_gcode))
 
             dxf_content, missing_contours = generate_order_layout_dxf(order_data)
-            dxf_cad_content, missing_contours_cad = generate_order_layout_dxf_cad(order_data, include_labels=True)
+            dxf_cad_content, missing_contours_cad = generate_order_layout_dxf_cad(order_data, include_texts=True)
             with (staging_dir / f"{order_number}_minimal.dxf").open('w', encoding='utf-8') as dxf_file:
                 dxf_file.write(dxf_content)
-            with (staging_dir / f"{order_number}.dxf").open('w', encoding='utf-8') as dxf_labels_file:
-                dxf_labels_file.write(dxf_cad_content)
+            with (staging_dir / f"{order_number}.dxf").open('w', encoding='utf-8') as dxf_texts_file:
+                dxf_texts_file.write(dxf_cad_content)
             meta["dxf"] = {
                 "generated": len(missing_contours) == 0,
                 "missingContours": missing_contours,
