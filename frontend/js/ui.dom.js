@@ -17,6 +17,7 @@ window.UIDom = {
   buttons: {
     delete: document.getElementById('deleteButton'),
     rotate: document.getElementById('rotateButton'),
+    duplicate: document.getElementById('duplicateButton'),
     addRect: document.getElementById('addRectButton'),
     addCircle: document.getElementById('addCircleButton'),
     saveWorkspace: document.getElementById('saveWorkspaceButton'),
@@ -78,6 +79,9 @@ window.UIDom = {
     nameInput: document.getElementById('customerNameInput'),
     contactInput: document.getElementById('customerContactInput'),
     feedback: document.getElementById('customerModalFeedback'),
+    summaryMeta: document.getElementById('customerModalSummaryMeta'),
+    summaryComposition: document.getElementById('customerModalSummaryComposition'),
+    summaryEmpty: document.getElementById('customerModalSummaryEmpty'),
     confirmButton: document.getElementById('customerModalConfirmButton'),
     cancelButton: document.getElementById('customerModalCancelButton'),
   },

@@ -859,6 +859,48 @@ textarea,
     font-size: var(--font-sm);
 }
 
+
+.customer-modal-summary {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: #f9fbfa;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.customer-modal-summary-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--color-text);
+    font-size: var(--font-sm);
+}
+
+.customer-modal-summary-title {
+    color: var(--color-text-muted);
+    font-size: var(--font-sm);
+}
+
+.customer-modal-summary-list {
+    margin: 4px 0 0;
+    padding-left: 18px;
+    max-height: 140px;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--color-text);
+    font-size: var(--font-sm);
+}
+
+.customer-modal-summary-empty {
+    margin: 4px 0 0;
+    color: var(--color-text-muted);
+    font-size: var(--font-sm);
+}
+
 .customer-modal-field {
     display: flex;
     flex-direction: column;

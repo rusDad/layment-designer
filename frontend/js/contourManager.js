@@ -490,7 +490,9 @@ class PrimitiveManager {
             this.canvas.add(obj);
             this.canvas.setActiveObject(obj);
             this.canvas.renderAll();
+            return obj;
         }
+        return null;
     }
 
     validatePrimitive(obj) {
