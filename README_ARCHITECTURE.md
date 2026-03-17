@@ -24,7 +24,7 @@ Layment Designer — производственно-ориентированны
 - Принимает экспорт от frontend (`POST /api/export-layment`).
 - Сохраняет заказ: входной JSON + превью.
 - Генерирует итоговый G-code детерминированно из подготовленных NC-фрагментов домена.
-- Генерирует DXF артефакты заказа (контуры/примитивы + отдельный DXF под labels).
+- Генерирует DXF артефакты заказа (контуры/примитивы + отдельный DXF под тексты маркировки).
 
 ### 3) Domain (файловый каталог)
 Хранит “истину” о доступных инструментах и их производственных ассетах:
@@ -79,7 +79,7 @@ Layment Designer — производственно-ориентированны
 - `<orderNumber>.nc` — внутренний артефакт производства для ЧПУ (основной G-code);
 - `<orderNumber>.png` / `<orderNumber>.svg` — визуальный слепок раскладки для контроля и документооборота;
 - `<orderNumber>.dxf` — DXF раскладки (контуры/примитивы);
-- `<orderNumber>_labels.dxf` — DXF с включёнными `labels` (для лазерной маркировки).
+- `<orderNumber>_labels.dxf` — DXF с включёнными `texts` (для лазерной маркировки).
 
 
 Канонический flow:
@@ -122,7 +122,7 @@ curl -sS -X POST http://localhost:8001/api/export-layment \
     "orderMeta": { "width": 565, "height": 375, "units": "mm", "coordinateSystem": "origin-top-left" },
     "contours": [ { "id": "<id>", "x": 10, "y": 10, "angle": 0, "scaleOverride": 1 } ],
     "primitives": [],
-    "labels": []
+    "texts": []
   }' | jq
 
  Экспорт возвращает JSON (в т.ч. orderId и orderNumber). Скачивание производственных файлов — через admin endpoints:
