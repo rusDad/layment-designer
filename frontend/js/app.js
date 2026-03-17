@@ -769,33 +769,19 @@ class ContourApp {
 
         if (active.type === 'activeSelection') {
             active.getObjects().forEach(obj => {
-                if (!obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea) {
-                    obj._lastLeft = obj.left;
-                    obj._lastTop = obj.top;
-                }
                 obj.set({
                     left: obj.left + dx,
                     top: obj.top + dy
                 });
-                obj.setCoords();
-                if (!obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea) {
-                    this.textManager.syncAttachedTextsForContour(obj);
-                }
+                this.syncObjectTextState(obj, { rememberContourLastPosition: true });
             });
             active.setCoords();
         } else {
-            if (!active.primitiveType && !active.isTextObject && active !== this.layment && active !== this.safeArea) {
-                active._lastLeft = active.left;
-                active._lastTop = active.top;
-            }
             active.set({
                 left: active.left + dx,
                 top: active.top + dy
             });
-            active.setCoords();
-            if (!active.primitiveType && !active.isTextObject && active !== this.layment && active !== this.safeArea) {
-                this.textManager.syncAttachedTextsForContour(active);
-            }
+            this.syncObjectTextState(active, { rememberContourLastPosition: true });
         }
 
         this.canvas.requestRenderAll();
@@ -887,10 +873,7 @@ class ContourApp {
         });
 
         this.canvas.on('object:moving', event => {
-            const target = event.target;
-            if (target && !target.primitiveType && !target.isTextObject && target !== this.layment && target !== this.safeArea) {
-                this.textManager.syncAttachedTextsForContour(target);
-            }
+            this.syncObjectTextState(event.target);
             this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
@@ -900,16 +883,15 @@ class ContourApp {
             this.updateStatusBar();
         });
 
-        this.canvas.on('object:rotating', () => {
+        this.canvas.on('object:rotating', event => {
+            this.syncObjectTextState(event.target);
             this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
 
         this.canvas.on('object:modified', event => {
             const target = event.target;
-            if (target && !target.primitiveType && !target.isTextObject && target !== this.layment && target !== this.safeArea) {
-                this.textManager.syncAttachedTextsForContour(target);
-            }
+            this.syncObjectTextState(target);
             this.canvas.requestRenderAll();
             if (this.shouldAutosaveForObject(target)) {
                 this.scheduleWorkspaceSave();
@@ -1204,22 +1186,49 @@ class ContourApp {
         this.canvas.requestRenderAll();
     }
 
-    applyDeltaToObject(obj, deltaX, deltaY) {
-        const isContour = !obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea;
-        if (isContour) {
-            obj._lastLeft = obj.left;
-            obj._lastTop = obj.top;
+    isContourObject(obj) {
+        return !!obj && !obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea;
+    }
+
+    syncObjectTextState(obj, { rememberContourLastPosition = false } = {}) {
+        if (!obj) {
+            return;
         }
 
+        if (obj.type === 'activeSelection') {
+            obj.getObjects().forEach(item => this.syncObjectTextState(item, { rememberContourLastPosition }));
+            obj.setCoords();
+            return;
+        }
+
+        if (this.isContourObject(obj)) {
+            if (rememberContourLastPosition) {
+                obj._lastLeft = obj.left;
+                obj._lastTop = obj.top;
+            }
+            obj.setCoords();
+            this.textManager.syncAttachedTextsForContour(obj);
+            return;
+        }
+
+        if (obj.isTextObject) {
+            if (obj.kind === 'attached') {
+                this.textManager.clampTextToContourBounds(obj);
+                this.textManager.updateAttachedTextAnchorFromAbsolute(obj);
+            }
+            obj.setCoords();
+            return;
+        }
+
+        obj.setCoords();
+    }
+
+    applyDeltaToObject(obj, deltaX, deltaY) {
         obj.set({
             left: obj.left + deltaX,
             top: obj.top + deltaY
         });
-        obj.setCoords();
-
-        if (isContour) {
-            this.textManager.syncAttachedTextsForContour(obj);
-        }
+        this.syncObjectTextState(obj, { rememberContourLastPosition: true });
     }
 
     finalizeArrangeOperation() {

@@ -109,18 +109,10 @@ class TextManager {
         textObj.excludeFromExport = true;
 
         textObj.on('moving', () => {
-            if (textObj.kind === 'attached') {
-                this.clampTextToContourBounds(textObj);
-                this.updateAttachedTextAnchorFromAbsolute(textObj);
-            }
             this.canvas.requestRenderAll();
         });
 
         textObj.on('modified', () => {
-            if (textObj.kind === 'attached') {
-                this.clampTextToContourBounds(textObj);
-                this.updateAttachedTextAnchorFromAbsolute(textObj);
-            }
             textObj.text = textObj.text ?? '';
             textObj.fontSizeMm = Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM;
             this.app.scheduleWorkspaceSave();
