@@ -12,6 +12,7 @@ class ContourApp {
         this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.availableContours = [];
+        this.availableArticleEntries = [];
         this.availableCategories = [];
         this.categoryLabels = {};
         this.currentCategory = null;
@@ -24,7 +25,17 @@ class ContourApp {
         this.exportInProgress = false;
         this.lastOrderResult = null;
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
+        this.laymentThicknessMm = 35;
         this.pendingCustomer = null;
+        this.isPanning = false;
+        this.panStart = null;
+        this.isSpacePressed = false;
+        this.primaryPointerDown = false;
+        this.primaryDownStartedOutsideCanvas = false;
+        this.pointerDownStartedInProtectedUi = false;
+        this.suppressCanvasUntilMouseUp = false;
+        this.pendingPointerResetRenderRaf = null;
+        this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
 
         this.init();
     }
@@ -34,10 +45,12 @@ class ContourApp {
         this.initializeServices();
         this.createLayment();
         this.initializeMaterialColor();
+        this.initializeLaymentThickness();
         await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
         this.syncLabelControlsFromSelection();
+        this.fitToLayment();
         await this.loadWorkspaceFromStorage();
     }
 
@@ -55,6 +68,7 @@ class ContourApp {
             selection: true,
             preserveObjectStacking: true
         });
+        this.canvas.renderOnAddRemove = false;
 
         const resizeCanvas = () => {
             const size = getCanvasSize();
@@ -83,6 +97,24 @@ class ContourApp {
         };
     }
 
+
+    async batchRender(callback) {
+        if (!this.canvas) {
+            return await callback();
+        }
+
+        const originalRenderAll = this.canvas.renderAll;
+        this.canvas._objectsDirty = true;
+        this.canvas.renderAll = () => {};
+
+        try {
+            return await callback();
+        } finally {
+            this.canvas.renderAll = originalRenderAll;
+            this.canvas.requestRenderAll();
+        }
+    }
+
     resizeCanvasToContent() {
         if (!this.canvas) {
             return;
@@ -104,10 +136,12 @@ class ContourApp {
             }
         }
 
-        const width = Math.max(viewport.width, Math.ceil(contentRight + margin));
-        const height = Math.max(viewport.height, Math.ceil(contentBottom + margin));
+        const zoomFactor = this.canvas?.getZoom?.() || this.workspaceScale || 1;
+        const width = Math.max(viewport.width, Math.ceil((contentRight + margin) * zoomFactor));
+        const height = Math.max(viewport.height, Math.ceil((contentBottom + margin) * zoomFactor));
 
         this.canvas.setDimensions({ width, height });
+        this.canvas.calcOffset();
     }
 
     initializeServices() {
@@ -224,6 +258,22 @@ class ContourApp {
         this.applyMaterialColorToCutouts();
     }
 
+    getValidLaymentThickness(value) {
+        const thickness = Number(value);
+        if (thickness === 35 || thickness === 65) {
+            return thickness;
+        }
+        return 35;
+    }
+
+    initializeLaymentThickness() {
+        this.laymentThicknessMm = this.getValidLaymentThickness(this.laymentThicknessMm);
+        const thicknessInput = UIDom.inputs.laymentThicknessMm;
+        if (thicknessInput) {
+            thicknessInput.value = String(this.laymentThicknessMm);
+        }
+    }
+
     getMaterialColorHex(colorKey = this.baseMaterialColor) {
         return Config.MATERIAL_COLORS[colorKey] || Config.MATERIAL_COLORS[Config.DEFAULT_MATERIAL_COLOR];
     }
@@ -258,13 +308,14 @@ class ContourApp {
             this.categoryLabels = data.categories || {};
 
             this.availableContours = data.items.filter(i => i.enabled);
-            this.availableCategories = this.buildCategories(this.availableContours);
+            this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
+            this.availableCategories = this.buildCategories(this.availableArticleEntries);
             this.ensureValidCategory();
             this.renderCatalogNav();
             this.renderCatalogList();
         } catch (err) {
                 console.error('Ошибка загрузки manifest', err);
-                alert(Config.MESSAGES.LOADING_ERROR);
+                this.showOrderResultError(Config.MESSAGES.LOADING_ERROR);
         }
     }
 
@@ -272,15 +323,17 @@ class ContourApp {
         const centerX = this.layment.left + this.layment.width / 2;
         const centerY = this.layment.top + this.layment.height / 2;
 
-        await this.contourManager.addContour(
-            `/contours/${item.assets.svg}`,
-            { x: centerX, y: centerY },
-            this.workspaceScale,
-            item
-        );
+        await this.batchRender(async () => {
+            await this.contourManager.addContour(
+                `/contours/${item.assets.svg}`,
+                { x: centerX, y: centerY },
+                item
+            );
 
-        const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
-        this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
+            const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
+            this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
+        });
+
         this.scheduleWorkspaceSave();
     }
 
@@ -288,41 +341,260 @@ class ContourApp {
         this.layment.set({ width, height });
         this.layment.setCoords();
         this.syncSafeAreaRect();
-        this.canvas.renderAll();
+        if (!this.isRestoringWorkspace) {
+            this.fitToLayment();
+        }
+        this.canvas.requestRenderAll();
         this.scheduleWorkspaceSave();
     }
 
     updateWorkspaceScale(newScale) {
         if (newScale < Config.WORKSPACE_SCALE.MIN || newScale > Config.WORKSPACE_SCALE.MAX) return;
+        this.applyViewportZoom(newScale);
+    }
 
+    applyViewportZoom(newScale) {
         const saved = this.temporarilyUngroupActiveSelection();
-        const ratio = newScale / this.workspaceScale;
         this.workspaceScale = newScale;
-
-        this.canvas.getObjects().forEach(obj => {
-            if (obj === this.safeArea) {
-                return;
-            }
-
-            obj.set({
-                left: obj.left * ratio,
-                top: obj.top * ratio,
-                scaleX: obj.scaleX * ratio,
-                scaleY: obj.scaleY * ratio
-            });
-            obj.setCoords();
-        });
-
-        this.syncSafeAreaRect();
+        this.canvas.setZoom(newScale);
         this.resizeCanvasToContent();
-
-        this.canvas.renderAll();
+        this.canvas.requestRenderAll();
         this.syncWorkspaceScaleInput();
         this.updateStatusBar();
         this.restoreActiveSelection(saved.objects);
     }
 
+    fitToLayment() {
+        if (!this.canvas || !this.layment) {
+            return;
+        }
+
+        const viewport = this.getViewportSize();
+        if (!viewport.width || !viewport.height) {
+            return;
+        }
+
+        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+
+        const rect = this.layment.getBoundingRect(true, true);
+        const padding = 20;
+        const zoomX = viewport.width / (rect.width + padding * 2);
+        const zoomY = viewport.height / (rect.height + padding * 2);
+        const unclampedZoom = Math.min(zoomX, zoomY);
+        const zoom = Math.max(Config.WORKSPACE_SCALE.MIN, Math.min(Config.WORKSPACE_SCALE.MAX, unclampedZoom));
+
+        this.canvas.setZoom(zoom);
+
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const vpt = this.canvas.viewportTransform;
+
+        vpt[4] = viewport.width / 2 - cx * zoom;
+        vpt[5] = viewport.height / 2 - cy * zoom;
+
+        this.canvas.setViewportTransform(vpt);
+
+        this.workspaceScale = zoom;
+        this.syncWorkspaceScaleInput();
+        this.resizeCanvasToContent();
+        this.canvas.requestRenderAll();
+    }
+
+    isSpacePanModifier(mouseEvent) {
+        return Boolean(mouseEvent?.spaceKey || this.isSpacePressed);
+    }
+
+    canStartPanning(mouseEvent) {
+        if (!mouseEvent) {
+            return false;
+        }
+
+       return mouseEvent.button === 1 || (mouseEvent.button === 0 && this.isSpacePanModifier(mouseEvent));
+    }
+
+    zoomViewportByPointer(mouseEvent) {
+        if (!this.canvas || !mouseEvent) {
+            return;
+        }
+
+        const wheelDelta = mouseEvent.deltaY;
+        if (!wheelDelta) {
+            return;
+        }
+
+        mouseEvent.preventDefault();
+        mouseEvent.stopPropagation();
+
+        const oldZoom = this.canvas.getZoom() || this.workspaceScale || 1;
+        const zoomMultiplier = wheelDelta < 0 ? 1.1 : (1 / 1.1);
+        const unclampedZoom = oldZoom * zoomMultiplier;
+        const newZoom = Math.max(Config.WORKSPACE_SCALE.MIN, Math.min(Config.WORKSPACE_SCALE.MAX, unclampedZoom));
+
+        if (newZoom === oldZoom) {
+            return;
+        }
+
+        const vpt = this.canvas.viewportTransform;
+        const cursorX = mouseEvent.offsetX;
+        const cursorY = mouseEvent.offsetY;
+        const worldX = (cursorX - vpt[4]) / oldZoom;
+        const worldY = (cursorY - vpt[5]) / oldZoom;
+
+        vpt[0] = newZoom;
+        vpt[3] = newZoom;
+        vpt[4] = cursorX - worldX * newZoom;
+        vpt[5] = cursorY - worldY * newZoom;
+
+        this.canvas.setViewportTransform(vpt);
+        this.workspaceScale = newZoom;
+        this.syncWorkspaceScaleInput();
+        this.canvas.requestRenderAll();
+        this.updateStatusBar();
+    }
+
+    setPanCursor(isGrabbing) {
+        if (!this.canvasScrollContainer) {
+            return;
+        }
+        this.canvasScrollContainer.classList.toggle('is-panning', isGrabbing);
+    }
+
+    stopPanning() {
+        if (!this.isPanning || !this.canvas) {
+            return;
+        }
+
+        this.isPanning = false;
+        this.panStart = null;
+        this.canvas.selection = true;
+        this.canvas.skipTargetFind = false;
+        this.setPanCursor(false);
+    }
+
+    isInsideCanvas(target) {
+        if (!this.canvas?.wrapperEl || !(target instanceof Node)) {
+            return false;
+        }
+
+        return this.canvas.wrapperEl.contains(target);
+    }
+
+    isProtectedUiTarget(target) {
+        if (!(target instanceof Node)) {
+            return false;
+        }
+
+        const element = target instanceof Element ? target : target.parentElement;
+        if (!element) {
+            return false;
+        }
+
+        return !!element.closest(
+            '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])'
+        );
+    }
+
+    clearBrowserSelection() {
+        const selection = window.getSelection?.();
+        if (selection && selection.rangeCount > 0) {
+            selection.removeAllRanges();
+        }
+    }
+
+    isEditableElement(element) {
+        if (!(element instanceof Element)) {
+            return false;
+        }
+
+        return !!element.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+    }
+
+    isEditableTarget(target) {
+        if (!(target instanceof Node)) {
+            return false;
+        }
+
+        const element = target instanceof Element ? target : target.parentElement;
+        return this.isEditableElement(element);
+    }
+
+    logPointerFocus(eventName, target) {
+        if (!this.pointerFocusDebug) {
+            return;
+        }
+
+        const active = document.activeElement;
+        console.debug('[pointer-focus-debug]', eventName, {
+            targetTag: target instanceof Element ? target.tagName : target?.nodeName,
+            activeTag: active?.tagName,
+            activeId: active?.id || null,
+            activeClass: active?.className || null
+        });
+    }
+
+    schedulePointerResetRender() {
+        if (!this.canvas) {
+            return;
+        }
+
+        if (this.pendingPointerResetRenderRaf !== null) {
+            cancelAnimationFrame(this.pendingPointerResetRenderRaf);
+            this.pendingPointerResetRenderRaf = null;
+        }
+
+        this.pendingPointerResetRenderRaf = requestAnimationFrame(() => {
+            this.pendingPointerResetRenderRaf = null;
+            if (this.isEditableElement(document.activeElement)) {
+                return;
+            }
+            this.canvas.requestRenderAll();
+        });
+    }
+
+    finishActiveTextEditing() {
+        if (!this.canvas) {
+            return;
+        }
+
+        const activeObject = this.canvas.getActiveObject();
+        if (!activeObject || activeObject.type !== 'i-text' || !activeObject.isEditing) {
+            return;
+        }
+
+        activeObject.exitEditing();
+        activeObject.hiddenTextarea?.blur?.();
+    }
+
+    resetPointerInteraction({ soft = false } = {}) {
+        if (!this.canvas) {
+            return;
+        }
+
+        this.stopPanning();
+        this.isPanning = false;
+        this.panStart = null;
+        this.primaryPointerDown = false;
+        this.primaryDownStartedOutsideCanvas = false;
+        this.pointerDownStartedInProtectedUi = false;
+        this.suppressCanvasUntilMouseUp = false;
+        this.canvas.selection = true;
+        this.canvas.skipTargetFind = false;
+        this.setPanCursor(false);
+        this.clearBrowserSelection();
+
+        if (soft) {
+            if (this.pendingPointerResetRenderRaf !== null) {
+                cancelAnimationFrame(this.pendingPointerResetRenderRaf);
+                this.pendingPointerResetRenderRaf = null;
+            }
+            return;
+        }
+
+        this.schedulePointerResetRender();
+    }
+
     setupEventListeners() {
+        this.bindGlobalPointerSafety();
         this.bindCanvasEvents();
         this.bindUIButtonEvents();
         this.bindInputEvents();
@@ -333,7 +605,92 @@ class ContourApp {
         this.syncWorkspaceScaleInput();
     }
 
+    bindGlobalPointerSafety() {
+        document.addEventListener('mousedown', event => {
+            if (event.button !== 0) {
+                return;
+            }
+
+            this.logPointerFocus('mousedown', event.target);
+
+            const startedInsideCanvas = this.isInsideCanvas(event.target);
+            const startedInProtectedUi = !startedInsideCanvas && this.isProtectedUiTarget(event.target);
+
+            this.primaryPointerDown = true;
+            this.primaryDownStartedOutsideCanvas = !startedInsideCanvas;
+            this.pointerDownStartedInProtectedUi = startedInProtectedUi;
+            // External drag safety should apply only to truly external sources.
+            // Legitimate UI controls (forms/modals/catalog inputs) must keep focus
+            // and should not arm canvas suppression.
+            this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas && !this.pointerDownStartedInProtectedUi;
+
+            if (this.suppressCanvasUntilMouseUp && !this.pointerDownStartedInProtectedUi) {
+                this.stopPanning();
+                this.canvas.discardActiveObject();
+                this.canvas.requestRenderAll();
+            }
+        }, true);
+
+        window.addEventListener('mouseup', event => {
+            if (event.button !== 0) {
+                return;
+            }
+
+            this.logPointerFocus('mouseup', event.target);
+
+            const endedOnEditableUi = this.isEditableTarget(event.target);
+            if (!this.isInsideCanvas(event.target)) {
+                this.finishActiveTextEditing();
+            }
+
+            if (endedOnEditableUi) {
+                this.resetPointerInteraction({ soft: true });
+                return;
+            }
+
+            this.resetPointerInteraction();
+        }, true);
+
+        window.addEventListener('blur', () => {
+            this.resetPointerInteraction();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.resetPointerInteraction();
+            }
+        });
+
+        this.canvas.wrapperEl.addEventListener('mouseenter', event => {
+            if (!this.primaryPointerDown || !this.suppressCanvasUntilMouseUp) {
+                return;
+            }
+
+            this.stopPanning();
+            this.canvas.discardActiveObject();
+            this.clearBrowserSelection();
+
+            event.preventDefault();
+            event.stopPropagation();
+            this.canvas.requestRenderAll();
+        });
+    }
+
     bindKeyboardShortcuts() {
+        document.addEventListener('keydown', event => {
+            if (event.code !== 'Space') {
+                return;
+            }
+            this.isSpacePressed = true;
+        });
+
+        document.addEventListener('keyup', event => {
+            if (event.code !== 'Space') {
+                return;
+            }
+            this.isSpacePressed = false;
+        });
+
         document.addEventListener('keydown', event => {
             const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
             if (event.defaultPrevented || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
@@ -448,6 +805,66 @@ class ContourApp {
     }
 
     bindCanvasEvents() {
+        this.setPanCursor(false);
+
+        this.canvas.on('mouse:down', event => {
+            const nativeEvent = event.e;
+
+            if (this.suppressCanvasUntilMouseUp && nativeEvent?.button === 0) {
+                nativeEvent.preventDefault();
+                nativeEvent.stopPropagation();
+                this.stopPanning();
+                this.canvas.discardActiveObject();
+                this.canvas.requestRenderAll();
+                return;
+            }
+
+            if (!this.canStartPanning(nativeEvent)) {
+                return;
+            }
+
+            nativeEvent.preventDefault();
+            nativeEvent.stopPropagation();
+
+            this.isPanning = true;
+            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
+            this.canvas.selection = false;
+            this.canvas.skipTargetFind = true;
+            this.setPanCursor(true);
+        });
+
+        this.canvas.on('mouse:move', event => {
+            const nativeEvent = event.e;
+
+            if (this.suppressCanvasUntilMouseUp && this.primaryPointerDown) {
+                nativeEvent?.preventDefault?.();
+                this.stopPanning();
+                return;
+            }
+
+            if (!this.isPanning) {
+                return;
+            }
+
+            const dx = nativeEvent.clientX - this.panStart.x;
+            const dy = nativeEvent.clientY - this.panStart.y;
+            const vpt = this.canvas.viewportTransform;
+
+            vpt[4] += dx;
+            vpt[5] += dy;
+
+            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
+            this.canvas.requestRenderAll();
+        });
+
+        this.canvas.on('mouse:up', () => {
+            this.stopPanning();
+        });
+
+        this.canvas.on('mouse:wheel', event => {
+            this.zoomViewportByPointer(event.e);
+        });
+
         this.canvas.on('selection:created', () => {
             this.updateButtons();
             this.updateStatusBar();
@@ -474,6 +891,17 @@ class ContourApp {
             if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
                 this.labelManager.onContourMoving(target);
             }
+            this.canvas.requestRenderAll();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('object:scaling', () => {
+            this.canvas.requestRenderAll();
+            this.updateStatusBar();
+        });
+
+        this.canvas.on('object:rotating', () => {
+            this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
 
@@ -482,6 +910,7 @@ class ContourApp {
             if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
                 this.labelManager.onContourModified(target);
             }
+            this.canvas.requestRenderAll();
             if (this.shouldAutosaveForObject(target)) {
                 this.scheduleWorkspaceSave();
             }
@@ -493,6 +922,7 @@ class ContourApp {
     bindUIButtonEvents() {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
+        UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
         UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
         UIDom.buttons.loadWorkspace.onclick = async () => {
             this.cancelAutosave();
@@ -502,6 +932,7 @@ class ContourApp {
             }
         };
 
+        UIDom.buttons.preview3d.onclick = () => this.open3dPreview();
         UIDom.buttons.export.onclick = () => this.openCustomerModal();
 
         UIDom.buttons.check.onclick =
@@ -566,8 +997,14 @@ class ContourApp {
             return isValid;
         };
 
-        modal.nameInput?.addEventListener('input', syncConfirmState);
-        modal.contactInput?.addEventListener('input', syncConfirmState);
+        modal.nameInput?.addEventListener('input', () => {
+            this.clearCustomerModalFeedback();
+            syncConfirmState();
+        });
+        modal.contactInput?.addEventListener('input', () => {
+            this.clearCustomerModalFeedback();
+            syncConfirmState();
+        });
 
         modal.cancelButton?.addEventListener('click', () => this.closeCustomerModal());
 
@@ -627,6 +1064,13 @@ class ContourApp {
             this.scheduleWorkspaceSave();
         });
 
+        UIDom.inputs.laymentThicknessMm?.addEventListener('change', e => {
+            const thickness = this.getValidLaymentThickness(e.target.value);
+            e.target.value = String(thickness);
+            this.laymentThicknessMm = thickness;
+            this.scheduleWorkspaceSave();
+        });
+
         UIDom.inputs.workspaceScale.addEventListener('change', e => {
             const percent = parseFloat(e.target.value);
             const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
@@ -638,22 +1082,6 @@ class ContourApp {
                 this.syncWorkspaceScaleInput();
             }
         });
-
-        // зум колёсиком
-        const scaleInput = UIDom.inputs.workspaceScale;
-        this.canvas.wrapperEl.addEventListener('wheel', e => {
-            e.preventDefault();
-            const step = e.ctrlKey ? 2 : 10;
-            const delta = e.deltaY > 0 ? -step : step;
-            const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
-            const maxPercent = Math.round(Config.WORKSPACE_SCALE.MAX * 100);
-            let val = parseFloat(scaleInput.value) || Math.round(this.workspaceScale * 100);
-
-            val = Math.max(minPercent, Math.min(maxPercent, val + delta));
-            scaleInput.value = Math.round(val);
-            scaleInput.dispatchEvent(new Event('change'));
-        }, { passive: false });
-
         UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
@@ -709,25 +1137,23 @@ class ContourApp {
     }
 
    
+    withViewportReset(callback) {
+        const saved = this.canvas.viewportTransform?.slice?.() || [1, 0, 0, 1, 0, 0];
+        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        this.canvas.requestRenderAll();
+
+        try {
+            return callback();
+        } finally {
+            this.canvas.setViewportTransform(saved);
+            this.canvas.requestRenderAll();
+        }
+    }
+
     // Выполнить с временным  scale=1
 
     async performWithScaleOne(action) {
-        const oldScale = this.workspaceScale;
-        const sc = this.canvasScrollContainer;
-        const savedScroll = sc ? { left: sc.scrollLeft, top: sc.scrollTop } : null;
-
-        this.updateWorkspaceScale(1);
-        try {
-            return await action();
-        } finally {
-            this.updateWorkspaceScale(oldScale);
-            if (sc && savedScroll) {
-                requestAnimationFrame(() => {
-                    sc.scrollLeft = savedScroll.left;
-                    sc.scrollTop = savedScroll.top;
-                });
-            }
-        }
+        return await this.withViewportReset(action);
     }
 
     getArrangeSelectionObjects() {
@@ -896,7 +1322,7 @@ class ContourApp {
 
         const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
         const clearanceMm = 3;
-        const clearancePx = clearanceMm * (this.workspaceScale || 1);
+        const clearancePx = clearanceMm;
 
         for (const obj of selected) {
             const bbox = obj.getBoundingRect(true);
@@ -936,6 +1362,9 @@ class ContourApp {
         UIDom.buttons.delete.disabled = !has;
         UIDom.buttons.rotate.disabled = !has || !!active?.primitiveType;
 
+        const duplicateTargets = this.getDuplicateSelectionObjects();
+        UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
+
         const alignDisabled = selectedCount < 2;
         UIDom.buttons.alignLeft.disabled = alignDisabled;
         UIDom.buttons.alignCenterX.disabled = alignDisabled;
@@ -953,6 +1382,27 @@ class ContourApp {
         UIDom.buttons.snapRight.disabled = snapDisabled;
         UIDom.buttons.snapTop.disabled = snapDisabled;
         UIDom.buttons.snapBottom.disabled = snapDisabled;
+    }
+
+
+    getDuplicateSelectionObjects() {
+        const active = this.canvas.getActiveObject();
+        if (!active) {
+            return [];
+        }
+
+        if (active.type === 'activeSelection') {
+            return active.getObjects().filter(obj => this.isDuplicateTarget(obj));
+        }
+
+        return this.isDuplicateTarget(active) ? [active] : [];
+    }
+
+    isDuplicateTarget(obj) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
+            return false;
+        }
+        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
     }
 
     getSingleSelectedPrimitive() {
@@ -1211,6 +1661,43 @@ class ContourApp {
         return Array.from(categories.keys()).sort((a, b) => a.localeCompare(b, 'ru'));
     }
 
+    buildArticleEntries(items) {
+        const entries = new Map();
+        items.forEach(item => {
+            const article = (item?.article || item?.id || "").trim();
+            if (!article) {
+                return;
+            }
+            if (!entries.has(article)) {
+                entries.set(article, {
+                    article,
+                    name: item.name || "",
+                    category: item.category || "",
+                    variants: []
+                });
+            }
+            const entry = entries.get(article);
+            entry.variants.push(item);
+            if (!entry.name && item.name) {
+                entry.name = item.name;
+            }
+        });
+
+        return Array.from(entries.values())
+            .map(entry => ({
+                ...entry,
+                variants: entry.variants.slice().sort((a, b) => ((a.poseLabel || a.poseKey || "").localeCompare(b.poseLabel || b.poseKey || "", "ru")))
+            }))
+            .sort((a, b) => `${a.article} ${a.name}`.localeCompare(`${b.article} ${b.name}`, "ru"));
+    }
+
+    getVariantDisplayLabel(item) {
+        if (!item) {
+            return "Базовый";
+        }
+        return item.poseLabel || item.poseKey || "Базовый";
+    }
+
     getCategoryLabel(item) {
         const raw = (item.category || '').trim();
         if (!raw) {
@@ -1258,7 +1745,7 @@ class ContourApp {
         const list = UIDom.panels.catalogList;
         list.innerHTML = '';
 
-        if (!this.availableContours.length) {
+        if (!this.availableArticleEntries.length) {
             return;
         }
 
@@ -1270,12 +1757,12 @@ class ContourApp {
                 return;
             }
 
-            const items = this.availableContours.filter(item => this.matchesItemQuery(item));
+            const items = this.availableArticleEntries.filter(item => this.matchesItemQuery(item));
             this.renderItemRows(list, items, { showCategoryLabel: true });
             return;
         }
 
-        const items = this.availableContours
+        const items = this.availableArticleEntries
             .filter(item => this.getCategoryLabel(item) === this.currentCategory)
             .filter(item => this.matchesItemQuery(item));
         this.renderItemRows(list, items);
@@ -1286,12 +1773,17 @@ class ContourApp {
         if (!query) {
             return true;
         }
+
+        const variants = Array.isArray(item.variants) ? item.variants : [item];
         const fields = [
             item.article,
-            item.name
+            item.name,
+            ...variants.map(variant => variant?.poseLabel),
+            ...variants.map(variant => variant?.poseKey),
+            ...variants.map(variant => variant?.name)
         ]
             .filter(Boolean)
-            .map(value => value.toLowerCase());
+            .map(value => String(value).toLowerCase());
         return fields.some(value => value.includes(query));
     }
 
@@ -1334,29 +1826,47 @@ class ContourApp {
             return;
         }
 
-        items.forEach(item => {
+        items.forEach(entry => {
+            const selectedVariant = entry.variants[0];
             const row = document.createElement('div');
             row.className = 'catalog-row';
-            row.addEventListener('click', () => this.addContour(item));
 
-            const previewWrapper = this.createPreviewElement(item);
+            const previewWrapper = this.createPreviewElement(selectedVariant);
 
             const meta = document.createElement('div');
             meta.className = 'catalog-item-meta';
 
             const article = document.createElement('div');
             article.className = 'catalog-item-article';
-            article.textContent = item.article || '';
+            article.textContent = entry.article || '';
 
             const name = document.createElement('div');
             name.className = 'catalog-item-name';
-            name.textContent = item.name || '';
+            name.textContent = entry.name || selectedVariant?.name || '';
 
             meta.appendChild(article);
             meta.appendChild(name);
 
+            if (entry.variants.length > 1) {
+                const variantSelect = document.createElement('select');
+                variantSelect.className = 'catalog-variant-select';
+                entry.variants.forEach((variant, index) => {
+                    const option = document.createElement('option');
+                    option.value = String(index);
+                    option.textContent = this.getVariantDisplayLabel(variant);
+                    variantSelect.appendChild(option);
+                });
+                variantSelect.addEventListener('click', event => event.stopPropagation());
+                variantSelect.addEventListener('change', event => {
+                    const variant = entry.variants[Number(event.target.value)] || entry.variants[0];
+                    row.dataset.selectedVariantIndex = event.target.value;
+                    name.textContent = variant?.name || entry.name || '';
+                });
+                meta.appendChild(variantSelect);
+            }
+
             if (showCategoryLabel) {
-                const category = this.getCategoryLabel(item);
+                const category = this.getCategoryLabel(entry);
                 if (category) {
                     const categoryLabel = document.createElement('div');
                     categoryLabel.className = 'catalog-item-article';
@@ -1371,7 +1881,15 @@ class ContourApp {
             addButton.textContent = '+';
             addButton.addEventListener('click', event => {
                 event.stopPropagation();
-                this.addContour(item);
+                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
+                const variant = entry.variants[variantIndex] || entry.variants[0];
+                this.addContour(variant);
+            });
+
+            row.addEventListener('click', () => {
+                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
+                const variant = entry.variants[variantIndex] || entry.variants[0];
+                this.addContour(variant);
             });
 
             row.appendChild(previewWrapper);
@@ -1411,7 +1929,7 @@ class ContourApp {
         const active = this.canvas.getActiveObject();
 
         if (!active || active.type === 'activeSelection') {
-            statusEl.textContent = 'Ничего не выделено';
+            statusEl.textContent = 'Выберите контур или выемку';
             return;
         }
 
@@ -1421,15 +1939,15 @@ class ContourApp {
 
             if (active.primitiveType === 'rect') {
                 const bbox = active.getBoundingRect(true);
-                const realX = ((bbox.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
-                const realY = ((bbox.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
-                statusEl.innerHTML = `<strong>Выемка: Прямоугольная</strong> X: ${realX} мм Y: ${realY} мм W: ${dimensions.width} мм H: ${dimensions.height} мм`;
+                const realX = (bbox.left - laymentBbox.left).toFixed(1);
+                const realY = (bbox.top - laymentBbox.top).toFixed(1);
+                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм`;
                 return;
             }
 
-            const realX = ((active.left - laymentBbox.left) / this.workspaceScale).toFixed(1);
-            const realY = ((active.top - laymentBbox.top) / this.workspaceScale).toFixed(1);
-            statusEl.innerHTML = `<strong>Выемка: Круглая</strong> X: ${realX} мм Y: ${realY} мм R: ${dimensions.radius} мм`;
+            const realX = (active.left - laymentBbox.left).toFixed(1);
+            const realY = (active.top - laymentBbox.top).toFixed(1);
+            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм`;
             return;
         }
 
@@ -1445,11 +1963,11 @@ class ContourApp {
 
         const meta = this.contourManager.metadataMap.get(contour);
         const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
-        const realX = ((tl.x - this.layment.left) / this.workspaceScale).toFixed(1);
-        const realY = ((tl.y - this.layment.top) / this.workspaceScale).toFixed(1);
+        const realX = (tl.x - this.layment.left).toFixed(1);
+        const realY = (tl.y - this.layment.top).toFixed(1);
 
         const article = meta.article || '—';
-        statusEl.innerHTML = `<strong>${meta.name}</strong> article: ${article} X: ${realX} мм Y: ${realY} мм Угол: ${contour.angle}°`;
+        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°`; 
     }
 
     deleteSelected() {
@@ -1460,35 +1978,140 @@ class ContourApp {
         ? active.getObjects().slice()
         : [active];
         // КРИТИЧНО: сначала убираем activeSelection, потом удаляем объекты
-        this.canvas.discardActiveObject();
-        for (const o of objects) {
-          if (!o) continue;
-          if (o.isLabel) {
-            this.labelManager.removeLabel(o);
-            continue;
-          }
+        this.batchRender(() => {
+            this.canvas.discardActiveObject();
+            for (const o of objects) {
+              if (!o) continue;
+              if (o.isLabel) {
+                this.labelManager.removeLabel(o);
+                continue;
+              }
 
-          if (o.primitiveType) {
-            this.primitiveManager.removePrimitive(o, false);
-            continue;
-          }
-          // contour
-          if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
-            this.labelManager.removeLabelsForPlacementId(o.placementId);
-          } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
-            // на случай старой схемы
-            this.labelManager.removeLabelsForContourId(o.contourId);
-          }
+              if (o.primitiveType) {
+                this.primitiveManager.removePrimitive(o, false);
+                continue;
+              }
+              // contour
+              if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
+                this.labelManager.removeLabelsForPlacementId(o.placementId);
+              } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
+                // на случай старой схемы
+                this.labelManager.removeLabelsForContourId(o.contourId);
+              }
 
-          this.contourManager.removeContour(o, false);
-        }
+              this.contourManager.removeContour(o, false);
+            }
+        });
 
-      this.canvas.requestRenderAll();
       this.updateButtons();
       this.updateStatusBar?.();
       this.syncPrimitiveControlsFromSelection();
       this.syncLabelControlsFromSelection();
       this.scheduleWorkspaceSave();
+    }
+
+
+    async duplicateSelected() {
+        const DUPLICATE_OFFSET = 16;
+        const selected = this.getDuplicateSelectionObjects();
+        if (!selected.length) {
+            return;
+        }
+
+        const newObjects = [];
+
+        await this.batchRender(async () => {
+            this.canvas.discardActiveObject();
+
+            for (const obj of selected) {
+                if (!obj || obj.isLabel || obj === this.layment || obj === this.safeArea) {
+                    continue;
+                }
+
+                if (obj.primitiveType === 'rect') {
+                    const copy = this.primitiveManager.addPrimitive(
+                        'rect',
+                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
+                        { width: obj.width, height: obj.height },
+                        { pocketDepthMm: obj.pocketDepthMm }
+                    );
+                    copy.set({
+                        scaleX: obj.scaleX,
+                        scaleY: obj.scaleY,
+                        stroke: obj.stroke,
+                        strokeWidth: obj.strokeWidth,
+                        fill: obj.fill,
+                        opacity: obj.opacity,
+                        angle: obj.angle || 0
+                    });
+                    copy.setCoords();
+                    newObjects.push(copy);
+                    continue;
+                }
+
+                if (obj.primitiveType === 'circle') {
+                    const copy = this.primitiveManager.addPrimitive(
+                        'circle',
+                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
+                        { radius: obj.radius },
+                        { pocketDepthMm: obj.pocketDepthMm }
+                    );
+                    copy.set({
+                        scaleX: obj.scaleX,
+                        scaleY: obj.scaleY,
+                        stroke: obj.stroke,
+                        strokeWidth: obj.strokeWidth,
+                        fill: obj.fill,
+                        opacity: obj.opacity
+                    });
+                    copy.setCoords();
+                    newObjects.push(copy);
+                    continue;
+                }
+
+                const meta = this.contourManager.metadataMap.get(obj);
+                if (!meta?.assets?.svg) {
+                    continue;
+                }
+
+                const contourCenter = obj.getCenterPoint();
+                await this.contourManager.addContour(
+                    `/contours/${meta.assets.svg}`,
+                    { x: contourCenter.x + DUPLICATE_OFFSET, y: contourCenter.y + DUPLICATE_OFFSET },
+                    meta
+                );
+                const duplicatedContour = this.contourManager.contours[this.contourManager.contours.length - 1];
+                duplicatedContour.set({ angle: obj.angle || 0 });
+                duplicatedContour.setCoords();
+                newObjects.push(duplicatedContour);
+
+                const sourceLabel = this.labelManager.getLabelByPlacementId(obj.placementId);
+                if (sourceLabel) {
+                    const dx = sourceLabel.left - contourCenter.x;
+                    const dy = sourceLabel.top - contourCenter.y;
+                    const duplicatedCenter = duplicatedContour.getCenterPoint();
+                    const duplicatedLabel = this.labelManager.createLabel({
+                        placementId: duplicatedContour.placementId,
+                        text: sourceLabel.text || '',
+                        left: duplicatedCenter.x + dx,
+                        top: duplicatedCenter.y + dy,
+                        fontSize: sourceLabel.fontSize
+                    });
+                    if (duplicatedLabel) {
+                        duplicatedLabel.set({ angle: sourceLabel.angle || 0 });
+                        duplicatedLabel.setCoords();
+                    }
+                }
+            }
+        });
+
+        this.restoreActiveSelection(newObjects);
+        this.canvas.requestRenderAll();
+        this.updateButtons();
+        this.updateStatusBar();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncLabelControlsFromSelection();
+        this.scheduleWorkspaceSave();
     }
 
     rotateSelected() {
@@ -1536,6 +2159,7 @@ class ContourApp {
             },
             workspaceScale: 1,
             baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
             contours: this.contourManager.getWorkspaceContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
             labels: this.labelManager.getWorkspaceLabelsData()
@@ -1575,8 +2199,12 @@ class ContourApp {
             return false;
         }
 
-        await this.loadWorkspace(data);
-        return true;
+        try {
+            await this.loadWorkspace(data);
+            return true;
+        } finally {
+            this.fitToLayment();
+        }
     }
 
     async loadWorkspace(data) {
@@ -1584,10 +2212,12 @@ class ContourApp {
         this.isRestoringWorkspace = true;
         try {
             await this.performWithScaleOne(async () => {
-                this.canvas.discardActiveObject();
-                this.contourManager.clearContours();
-                this.primitiveManager.clearPrimitives();
-                this.labelManager.clearLabels();
+                await this.batchRender(() => {
+                    this.canvas.discardActiveObject();
+                    this.contourManager.clearContours();
+                    this.primitiveManager.clearPrimitives();
+                    this.labelManager.clearLabels();
+                });
 
             const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
             const width = data.layment?.width || Config.LAYMENT_DEFAULT_WIDTH;
@@ -1602,6 +2232,11 @@ class ContourApp {
             }
             this.applyMaterialColorToCutouts();
 
+            this.laymentThicknessMm = this.getValidLaymentThickness(data.laymentThicknessMm);
+            if (UIDom.inputs.laymentThicknessMm) {
+                UIDom.inputs.laymentThicknessMm.value = String(this.laymentThicknessMm);
+            }
+
             UIDom.inputs.laymentWidth.value = width;
             UIDom.inputs.laymentHeight.value = height;
             this.syncLaymentPresetBySize(width, height);
@@ -1610,32 +2245,43 @@ class ContourApp {
             this.layment.setCoords();
             this.syncSafeAreaRect();
 
-            for (const contour of data.contours || []) {
-                const meta = this.manifest?.[contour.id];
-                if (!meta) {
-                    console.warn('Контур не найден в manifest', contour.id);
-                    continue;
+            await this.batchRender(async () => {
+                for (const contour of data.contours || []) {
+                    const meta = this.manifest?.[contour.id];
+                    if (!meta) {
+                        console.warn('Контур не найден в manifest', contour.id);
+                        continue;
+                    }
+                    const metadata = {
+                        ...meta,
+                        article: contour.article || meta.article,
+                        name: contour.name || meta.name,
+                        poseKey: contour.poseKey || meta.poseKey,
+                        poseLabel: contour.poseLabel || meta.poseLabel,
+                        scaleOverride: contour.scaleOverride ?? meta.scaleOverride,
+                        depthOverrideMm: Number.isFinite(contour.depthOverrideMm)
+                            ? contour.depthOverrideMm
+                            : (Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined)
+                    };
+                    await this.contourManager.addContour(
+                        `/contours/${metadata.assets.svg}`,
+                        { x: this.layment.left, y: this.layment.top },
+                        metadata
+                    );
+                    const added = this.contourManager.contours[this.contourManager.contours.length - 1];
+                    added.placementId = contour.placementId;
+                    added.angle = contour.angle || 0;
+                    added.setCoords();
+                    const targetX = this.layment.left + contour.x;
+                    const targetY = this.layment.top + contour.y;
+                    const tl = added.aCoords.tl;
+                    added.set({
+                        left: added.left + (targetX - tl.x),
+                        top: added.top + (targetY - tl.y)
+                    });
+                    added.setCoords();
                 }
-                const metadata = { ...meta, scaleOverride: contour.scaleOverride ?? meta.scaleOverride };
-                await this.contourManager.addContour(
-                    `/contours/${metadata.assets.svg}`,
-                    { x: this.layment.left, y: this.layment.top },
-                    this.workspaceScale,
-                    metadata
-                );
-                const added = this.contourManager.contours[this.contourManager.contours.length - 1];
-                added.placementId = contour.placementId;
-                added.angle = contour.angle || 0;
-                added.setCoords();
-                const targetX = this.layment.left + contour.x;
-                const targetY = this.layment.top + contour.y;
-                const tl = added.aCoords.tl;
-                added.set({
-                    left: added.left + (targetX - tl.x),
-                    top: added.top + (targetY - tl.y)
-                });
-                added.setCoords();
-            }
+            });
 
             const placementIds = this.contourManager.contours
                 .map(c => c.placementId)
@@ -1664,18 +2310,20 @@ class ContourApp {
                 }
             }
 
-            for (const primitive of data.primitives || []) {
-                const x = this.layment.left + primitive.x;
-                const y = this.layment.top + primitive.y;
-                if (primitive.type === 'rect') {
-                    this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height });
-                } else if (primitive.type === 'circle') {
-                    this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius });
+            await this.batchRender(() => {
+                for (const primitive of data.primitives || []) {
+                    const x = this.layment.left + primitive.x;
+                    const y = this.layment.top + primitive.y;
+                    if (primitive.type === 'rect') {
+                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height }, { pocketDepthMm: primitive.pocketDepthMm });
+                    } else if (primitive.type === 'circle') {
+                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius }, { pocketDepthMm: primitive.pocketDepthMm });
+                    }
                 }
-            }
+            });
 
                 this.applyMaterialColorToCutouts();
-                this.canvas.renderAll();
+                this.canvas.requestRenderAll();
                 this.updateButtons();
                 this.updateStatusBar();
                 this.syncPrimitiveControlsFromSelection();
@@ -1720,34 +2368,50 @@ class ContourApp {
         if (!orderResult.container) return;
 
         orderResult.container.hidden = true;
-        orderResult.container.classList.remove('order-result-success', 'order-result-error');
+        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info', 'order-result-loading');
+        orderResult.title.textContent = '';
         orderResult.message.textContent = '';
         orderResult.details.hidden = true;
+        orderResult.orderNumber.textContent = '—';
         orderResult.orderId.textContent = '—';
-        orderResult.paymentLink.textContent = '';
+        orderResult.statusLinkRow.hidden = true;
+        orderResult.paymentLink.textContent = 'Перейти к странице статуса';
         orderResult.paymentLink.href = '#';
         orderResult.meta.hidden = true;
         orderResult.meta.textContent = '';
         this.lastOrderResult = null;
     }
 
-    showOrderResultSuccess({ orderId, paymentUrl, width, height, total }) {
+    showOrderResultLoading(message = 'Создаём заказ. Это может занять несколько секунд.') {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
         orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-error');
+        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info');
+        orderResult.container.classList.add('order-result-loading');
+        orderResult.title.textContent = 'Оформление заказа';
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+    }
+
+    showOrderResultSuccess({ orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total }) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-error', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-success');
-        orderResult.message.textContent = 'Заказ успешно создан.';
-        alert('заказ создан');
+        orderResult.title.textContent = 'Заказ создан';
+        orderResult.message.textContent = 'Мы приняли заказ в обработку. Вы можете отслеживать статус по ссылке ниже.';
 
         orderResult.details.hidden = false;
+        orderResult.orderNumber.textContent = orderNumber || '—';
         orderResult.orderId.textContent = orderId;
         orderResult.paymentLink.href = paymentUrl;
-        orderResult.paymentLink.textContent = paymentUrl;
+        orderResult.statusLinkRow.hidden = false;
         orderResult.meta.hidden = false;
-        orderResult.meta.textContent = `Размер: ${width}×${height} мм • Стоимость: ${total} ₽`;
-        this.lastOrderResult = { orderId, paymentUrl, width, height, total };
+        orderResult.meta.textContent = `Размер: ${width}×${height}×${laymentThicknessMm ?? 35} мм • Стоимость: ${total} ₽`;
+        this.lastOrderResult = { orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total };
     }
 
     showOrderResultError(message) {
@@ -1755,13 +2419,285 @@ class ContourApp {
         if (!orderResult.container) return;
 
         orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success');
+        orderResult.container.classList.remove('order-result-success', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-error');
-        orderResult.message.innerHTML = message.replace(/\n/g, '<br>');
-        alert(message);
+        orderResult.title.textContent = 'Не удалось создать заказ';
+        orderResult.message.textContent = message;
         orderResult.details.hidden = true;
     }
 
+    show3dPreviewError(message) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-success', 'order-result-loading');
+        orderResult.container.classList.add('order-result-error');
+        orderResult.title.textContent = '3D предпросмотр недоступен';
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+    }
+
+    checkOutOfBoundsOnlyAndHighlight() {
+        const issues = {
+            outOfBoundsContours: 0,
+            collisionContours: 0,
+            outOfBoundsPrimitives: 0
+        };
+
+        const layment = this.canvas?.layment;
+        if (!layment) {
+            return { ok: true, issues };
+        }
+
+        const problematic = new Set();
+
+        this.contourManager.contours.forEach(obj => {
+            this.contourManager.resetPropertiesRecursive(obj, {
+                stroke: Config.COLORS.CONTOUR.NORMAL,
+                strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER,
+                fill: Config.COLORS.CONTOUR.FILL
+            });
+        });
+
+        this.primitiveManager.primitives.forEach(obj => {
+            this.contourManager.resetPropertiesRecursive(obj, {
+                stroke: Config.COLORS.PRIMITIVE.STROKE,
+                strokeWidth: 1,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER,
+                fill: Config.COLORS.PRIMITIVE.FILL
+            });
+        });
+
+        const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
+        const lWidth = layment.width * layment.scaleX;
+        const lHeight = layment.height * layment.scaleY;
+
+        this.contourManager.contours.forEach(obj => {
+            const box = obj.getBoundingRect(true);
+            if (box.left < layment.left + padding
+                || box.top < layment.top + padding
+                || box.left + box.width > layment.left + lWidth - padding
+                || box.top + box.height > layment.top + lHeight - padding) {
+                problematic.add(obj);
+                issues.outOfBoundsContours += 1;
+            }
+        });
+
+        this.primitiveManager.primitives.forEach(obj => {
+            const box = obj.getBoundingRect(true);
+            if (box.left < layment.left + padding
+                || box.top < layment.top + padding
+                || box.left + box.width > layment.left + lWidth - padding
+                || box.top + box.height > layment.top + lHeight - padding) {
+                problematic.add(obj);
+                issues.outOfBoundsPrimitives += 1;
+            }
+        });
+
+        problematic.forEach(obj => {
+            if (obj.primitiveType) {
+                obj.set({
+                    stroke: Config.COLORS.PRIMITIVE.ERROR,
+                    strokeWidth: 3,
+                    opacity: 0.85
+                });
+            } else {
+                this.contourManager.resetPropertiesRecursive(obj, {
+                    stroke: Config.COLORS.CONTOUR.ERROR,
+                    strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,
+                    opacity: 0.85,
+                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
+                });
+            }
+            obj.setCoords();
+        });
+
+        this.canvas.renderAll();
+        return {
+            ok: problematic.size === 0,
+            issues
+        };
+    }
+
+    formatOutOfBoundsOnlyMessage(issues) {
+        const hasOutOfBounds = (issues.outOfBoundsContours + issues.outOfBoundsPrimitives) > 0;
+        if (!hasOutOfBounds) {
+            return Config.MESSAGES.EXPORT_ERROR;
+        }
+        return Config.MESSAGES.OUT_OF_BOUNDS_ERROR;
+    }
+
+    open3dPreview() {
+        this.performWithScaleOne(() => {
+            const boundsValidation = this.checkOutOfBoundsOnlyAndHighlight();
+            if (!boundsValidation.ok) {
+                this.show3dPreviewError(this.formatOutOfBoundsOnlyMessage(boundsValidation.issues));
+                return;
+            }
+
+            let svg;
+            try {
+                svg = this.buildPreviewSvg();
+            } catch (error) {
+                console.error(error);
+                this.show3dPreviewError('Не удалось собрать SVG для 3D предпросмотра. Попробуйте ещё раз.');
+                return;
+            }
+
+            try {
+                const payloadKey = this.storePreviewSvgPayload(svg);
+                const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
+                viewerUrl.searchParams.set('payloadKey', payloadKey);
+                window.open(viewerUrl.toString(), '_blank', 'noopener');
+            } catch (error) {
+                console.error(error);
+                this.show3dPreviewError('Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).');
+            }
+        });
+    }
+
+    buildPreviewSvg() {
+        const labels = this.canvas.getObjects().filter(obj => obj?.isLabel);
+        const prev = labels.map(label => ({
+            label,
+            visible: label.visible
+        }));
+
+        labels.forEach(label => label.set('visible', false));
+        this.canvas.requestRenderAll();
+
+        try {
+            return this.canvas.toSVG();
+        } finally {
+            prev.forEach(({ label, visible }) => label.set('visible', visible));
+            this.canvas.requestRenderAll();
+        }
+    }
+
+    generatePreviewPayloadKey() {
+        const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        return `${Config.VIEWER_3D.PAYLOAD_PREFIX}${rand}`;
+    }
+
+    cleanupOldPreviewPayloads() {
+        const prefix = Config.VIEWER_3D.PAYLOAD_PREFIX;
+        const now = Date.now();
+        const maxAgeMs = 1000 * 60 * 30;
+
+        for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(prefix)) {
+                continue;
+            }
+
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) {
+                    localStorage.removeItem(key);
+                    continue;
+                }
+                const payload = JSON.parse(raw);
+                const createdAt = Number(payload?.createdAt || 0);
+                if (!Number.isFinite(createdAt) || (now - createdAt) > maxAgeMs) {
+                    localStorage.removeItem(key);
+                }
+            } catch (_error) {
+                localStorage.removeItem(key);
+            }
+        }
+    }
+
+    storePreviewSvgPayload(svg) {
+        if (!svg || typeof svg !== 'string') {
+            throw new Error('Preview SVG payload is empty');
+        }
+
+        this.cleanupOldPreviewPayloads();
+
+        const key = this.generatePreviewPayloadKey();
+        const payload = {
+            version: 2,
+            svg,
+            baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
+            createdAt: Date.now()
+        };
+
+        localStorage.setItem(key, JSON.stringify(payload));
+        return key;
+    }
+
+
+
+    getColorLabel(colorKey) {
+        if (colorKey === 'blue') {
+            return 'синий';
+        }
+        return 'зелёный';
+    }
+
+    buildCustomerModalSummaryData() {
+        const width = Math.round(this.layment?.width || 0);
+        const height = Math.round(this.layment?.height || 0);
+        const thickness = this.getValidLaymentThickness(this.laymentThicknessMm);
+        const colorLabel = this.getColorLabel(this.baseMaterialColor);
+
+        const grouped = new Map();
+        for (const contour of this.contourManager.contours) {
+            const meta = this.contourManager.metadataMap.get(contour) || {};
+            const key = (meta.article || meta.id || contour.contourId || '—').toString();
+            const name = meta.name ? String(meta.name) : '';
+            if (!grouped.has(key)) {
+                grouped.set(key, { article: key, name, count: 0 });
+            }
+            const item = grouped.get(key);
+            item.count += 1;
+            if (!item.name && name) {
+                item.name = name;
+            }
+        }
+
+        const composition = Array.from(grouped.values()).sort((a, b) => a.article.localeCompare(b.article, 'ru'));
+
+        return { width, height, thickness, colorLabel, composition };
+    }
+
+    renderCustomerModalSummary() {
+        const modal = UIDom.customerModal;
+        if (!modal?.summaryMeta || !modal.summaryComposition || !modal.summaryEmpty) {
+            return;
+        }
+
+        const summary = this.buildCustomerModalSummaryData();
+        modal.summaryMeta.innerHTML = `
+            <div><strong>Размер:</strong> ${summary.width} × ${summary.height} мм</div>
+            <div><strong>Толщина:</strong> ${summary.thickness} мм</div>
+            <div><strong>Цвет:</strong> ${summary.colorLabel}</div>
+        `;
+
+        modal.summaryComposition.innerHTML = '';
+        if (!summary.composition.length) {
+            modal.summaryEmpty.hidden = false;
+            return;
+        }
+
+        modal.summaryEmpty.hidden = true;
+        for (const item of summary.composition) {
+            const li = document.createElement('li');
+            const suffix = item.name ? ` — ${item.name}` : '';
+            li.textContent = `${item.article}${suffix} × ${item.count}`;
+            modal.summaryComposition.appendChild(li);
+        }
+    }
 
     openCustomerModal() {
         const modal = UIDom.customerModal;
@@ -1769,6 +2705,8 @@ class ContourApp {
             return;
         }
         modal.overlay.hidden = false;
+        this.clearCustomerModalFeedback();
+        this.renderCustomerModalSummary();
         if (modal.confirmButton) {
             modal.confirmButton.disabled = !(modal.nameInput?.value.trim() && modal.contactInput?.value.trim());
         }
@@ -1781,6 +2719,25 @@ class ContourApp {
             return;
         }
         modal.overlay.hidden = true;
+        this.clearCustomerModalFeedback();
+    }
+
+    setCustomerModalFeedback(message) {
+        const modal = UIDom.customerModal;
+        if (!modal?.feedback) {
+            return;
+        }
+        modal.feedback.hidden = false;
+        modal.feedback.textContent = message;
+    }
+
+    clearCustomerModalFeedback() {
+        const modal = UIDom.customerModal;
+        if (!modal?.feedback) {
+            return;
+        }
+        modal.feedback.hidden = true;
+        modal.feedback.textContent = '';
     }
 
     getSanitizedCustomerFromModal() {
@@ -1795,6 +2752,7 @@ class ContourApp {
     async handleCustomerModalConfirm() {
         const customer = this.getSanitizedCustomerFromModal();
         if (!customer.name || !customer.contact) {
+            this.setCustomerModalFeedback('Заполните имя и контакт, чтобы создать заказ.');
             return;
         }
 
@@ -1813,7 +2771,8 @@ class ContourApp {
         this.exportInProgress = true;
         const startedAt = Date.now();
         exportButton.disabled = true;
-        exportButton.textContent = 'Отправка…';
+        exportButton.textContent = 'Создаём заказ…';
+        this.showOrderResultLoading();
 
         try {
             await action();
@@ -1830,7 +2789,6 @@ class ContourApp {
     }
 
     async exportData() {
-        this.clearOrderResult();
 
         const validation = this.contourManager.checkCollisionsAndHighlight();
         if (!validation.ok) {
@@ -1855,6 +2813,7 @@ class ContourApp {
             units: "mm",
             coordinateSystem: "origin-top-left",
             baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
             laymentType,
             canvasPng: layoutPng,
             workspaceSnapshot: this.buildWorkspaceSnapshot()
@@ -1884,40 +2843,49 @@ class ContourApp {
 
             const result = await response.json();
             const orderId = result?.orderId || '—';
+            const orderNumber = result?.orderNumber || '—';
             const statusUrl = `status.html?orderId=${encodeURIComponent(orderId)}`;
 
             this.showOrderResultSuccess({
                 orderId,
+                orderNumber,
                 paymentUrl: statusUrl,
                 width: realWidth,
                 height: realHeight,
+                laymentThicknessMm: result?.pricePreview?.laymentThicknessMm ?? 35,
                 total: result?.pricePreview?.total ?? '—'
             });
         } catch (err) {
             console.error(err);
-            this.showOrderResultError('Ошибка при создании заказа: ' + err.message);
+            this.showOrderResultError('Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || ''));
         } finally {
             this.pendingCustomer = null;
         }
     }
 
-    createLaymentPreviewPng(padPx = 16) {
+    createLaymentPreviewPng(padPx = 20) {
         if (!this.layment) {
-            return this.canvas.toDataURL({ format: 'png' });
+            return this.withViewportReset(() => this.canvas.toDataURL({
+                format: 'png',
+                multiplier: 1
+            }));
         }
 
-        const rect = this.layment.getBoundingRect(true, true);
-        const left = Math.max(0, rect.left - padPx);
-        const top = Math.max(0, rect.top - padPx);
-        const width = Math.ceil(rect.width + padPx * 2);
-        const height = Math.ceil(rect.height + padPx * 2);
+        return this.withViewportReset(() => {
+            const rect = this.layment.getBoundingRect(true, true);
+            const left = Math.max(0, rect.left - padPx);
+            const top = Math.max(0, rect.top - padPx);
+            const width = Math.ceil(rect.width + padPx * 2);
+            const height = Math.ceil(rect.height + padPx * 2);
 
-        return this.canvas.toDataURL({
-            format: 'png',
-            left,
-            top,
-            width,
-            height
+            return this.canvas.toDataURL({
+                format: 'png',
+                multiplier: 1,
+                left,
+                top,
+                width,
+                height
+            });
         });
     }
 }

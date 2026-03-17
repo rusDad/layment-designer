@@ -10,7 +10,13 @@ def load_manifest():
         raise RuntimeError("manifest.json not found")
 
     with MANIFEST_PATH.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        manifest = json.load(f)
+
+    if not isinstance(manifest.get("items"), list):
+        manifest["items"] = []
+    if "sets" in manifest and not isinstance(manifest.get("sets"), list):
+        manifest.pop("sets", None)
+    return manifest
 
 
 def save_manifest_atomic(data: dict):

@@ -12,7 +12,7 @@
 class ContourManager {
     constructor(canvas, app) {
         this.canvas = canvas;
-        this.app = app;  // Reference to ContourApp for workspaceScale
+        this.app = app;
         this.svgLoader = new SVGLoader();
         this.contours = [];
         this.metadataMap = new WeakMap();
@@ -22,11 +22,11 @@ class ContourManager {
         fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);   //Отдельный конфиг для группы 
     }
 
-    async addContour(svgUrl, position, scale, metadata) {
+    async addContour(svgUrl, position, metadata) {
         const group = await this.svgLoader.createFabricObjectFromSVG(svgUrl);
 
         const scaleOverride = metadata.scaleOverride ?? 1;
-        const factor = scale * Config.CONVERSION.SCALE_FACTOR * scaleOverride;
+        const factor = Config.CONVERSION.SCALE_FACTOR * scaleOverride;
 
         group.set({
             left: position.x,
@@ -91,18 +91,6 @@ class ContourManager {
         this.metadataMap = new WeakMap();
         this.canvas.renderAll();
     }
-
-    scaleAllContours(ratio) {
-        this.contours.forEach(obj => {
-            obj.scaleX *= ratio;
-            obj.scaleY *= ratio;
-            obj.left *= ratio;
-            obj.top *= ratio;
-            obj.setCoords();
-        });
-        this.canvas.renderAll();
-    }
-
     checkCollisionsAndHighlight() {
       const emptyResult = {
         ok: true,
@@ -112,14 +100,6 @@ class ContourManager {
             outOfBoundsPrimitives: 0
         }
       };
-
-      if (this.app.workspaceScale !== 1) {
-        console.warn('Collision check must run with workspace scale=1. Use performWithScaleOne().');
-        return {
-            ...emptyResult,
-            ok: false
-        };
-      }
 
       const problematic = new Set();
       const outOfBoundsContours = new Set();
@@ -142,7 +122,7 @@ class ContourManager {
       this.app.primitiveManager.primitives.forEach(obj => {
         this.resetPropertiesRecursive(obj, {
             stroke: Config.COLORS.PRIMITIVE.STROKE,
-            strokeWidth: 2,
+            strokeWidth: 1,
             opacity: 1,
             borderColor: Config.COLORS.SELECTION.BORDER,
             cornerColor: Config.COLORS.SELECTION.CORNER,
@@ -366,10 +346,14 @@ class ContourManager {
             return {
                 id: meta.id,
                 article: meta.article,
+                name: meta.name,
+                poseKey: meta.poseKey,
+                poseLabel: meta.poseLabel,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
-                scaleOverride: meta.scaleOverride ?? 1
+                scaleOverride: meta.scaleOverride ?? 1,
+                depthOverrideMm: Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined
             };
         });
     }
@@ -390,10 +374,14 @@ class ContourManager {
             return {
                 id: meta.id,
                 article: meta.article,
+                name: meta.name,
+                poseKey: meta.poseKey,
+                poseLabel: meta.poseLabel,
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1,
+                depthOverrideMm: Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined,
                 placementId: obj.placementId
             };
         });
@@ -423,7 +411,8 @@ class ContourManager {
                     : undefined,
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
-                    : undefined
+                    : undefined,
+                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined
             };
         });
     }
@@ -443,7 +432,7 @@ class PrimitiveManager {
         this.primitives = [];
     }
 
-    addPrimitive(type, position, size) {
+    addPrimitive(type, position, size, options = {}) {
         let obj;
         if (type === 'rect') {
             obj = new fabric.Rect({
@@ -453,9 +442,9 @@ class PrimitiveManager {
                 height: size.height,
                 fill: Config.COLORS.PRIMITIVE.FILL,
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
-                strokeWidth: 2,
+                strokeWidth: 1,
                 strokeUniform: true,
-                strokeDashArray: [1, 1],
+                //strokeDashArray: [1, 1],
                 originX: 'left',
                 originY: 'top',
                 lockScalingFlip: true,
@@ -473,9 +462,9 @@ class PrimitiveManager {
                 radius: size.radius,
                 fill: Config.COLORS.PRIMITIVE.FILL,
                 stroke: Config.COLORS.PRIMITIVE.STROKE,
-                strokeWidth: 2,
+                strokeWidth: 1,
                 strokeUniform: true,
-                strokeDashArray: [1, 1],
+                //strokeDashArray: [1, 1],
                 originX: 'center',
                 originY: 'center',
                 lockScalingFlip: true,
@@ -493,12 +482,17 @@ class PrimitiveManager {
         }
 
         if (obj) {
+            if (Number.isFinite(options.pocketDepthMm)) {
+                obj.pocketDepthMm = options.pocketDepthMm;
+            }
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);
             this.canvas.setActiveObject(obj);
             this.canvas.renderAll();
+            return obj;
         }
+        return null;
     }
 
     validatePrimitive(obj) {
@@ -506,19 +500,18 @@ class PrimitiveManager {
             return;
         }
 
-        const scale = this.app.workspaceScale || 1;
         let nextScaleX = obj.scaleX;
         let nextScaleY = obj.scaleY;
         let changed = false;
 
         if (obj.primitiveType === 'rect') {
-            const realWidth = (obj.width * obj.scaleX) / scale;
-            const realHeight = (obj.height * obj.scaleY) / scale;
+            const realWidth = (obj.width * obj.scaleX);
+            const realHeight = (obj.height * obj.scaleY);
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
             const clampedWidth = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, realWidth));
             const clampedHeight = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, realHeight));
-            const targetScaledW = clampedWidth * scale;
-            const targetScaledH = clampedHeight * scale;
+            const targetScaledW = clampedWidth;
+            const targetScaledH = clampedHeight;
             const targetScaleX = targetScaledW / obj.width;
             const targetScaleY = targetScaledH / obj.height;
 
@@ -528,10 +521,10 @@ class PrimitiveManager {
                 changed = true;
             }
         } else if (obj.primitiveType === 'circle') {
-            const realRadius = (obj.radius * obj.scaleX) / scale;
+            const realRadius = (obj.radius * obj.scaleX);
             const limits = Config.GEOMETRY.PRIMITIVES.CIRCLE;
             const clampedRadius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, realRadius));
-            const targetScaledR = clampedRadius * scale;
+            const targetScaledR = clampedRadius;
             const targetScale = targetScaledR / obj.radius;
 
             if (Math.abs(targetScale - obj.scaleX) > 0.0001 || Math.abs(targetScale - obj.scaleY) > 0.0001) {
@@ -554,20 +547,19 @@ class PrimitiveManager {
             return null;
         }
 
-        const scale = this.app.workspaceScale || 1;
 
         if (obj.primitiveType === 'rect') {
             return {
                 type: 'rect',
-                width: Math.round((obj.width * obj.scaleX) / scale),
-                height: Math.round((obj.height * obj.scaleY) / scale)
+                width: Math.round((obj.width * obj.scaleX)),
+                height: Math.round((obj.height * obj.scaleY))
             };
         }
 
         if (obj.primitiveType === 'circle') {
             return {
                 type: 'circle',
-                radius: Math.round((obj.radius * obj.scaleX) / scale)
+                radius: Math.round((obj.radius * obj.scaleX))
             };
         }
 
@@ -579,7 +571,6 @@ class PrimitiveManager {
             return false;
         }
 
-        const scale = this.app.workspaceScale || 1;
 
         if (obj.primitiveType === 'rect') {
             const limits = Config.GEOMETRY.PRIMITIVES.RECT;
@@ -588,8 +579,8 @@ class PrimitiveManager {
             }
             const width = Math.min(limits.MAX_WIDTH, Math.max(limits.MIN_WIDTH, dimensions.width));
             const height = Math.min(limits.MAX_HEIGHT, Math.max(limits.MIN_HEIGHT, dimensions.height));
-            const targetScaledW = width * scale;
-            const targetScaledH = height * scale;
+            const targetScaledW = width;
+            const targetScaledH = height;
             obj.set({
                 scaleX: targetScaledW / obj.width,
                 scaleY: targetScaledH / obj.height
@@ -605,7 +596,7 @@ class PrimitiveManager {
                 return false;
             }
             const radius = Math.min(limits.MAX_RADIUS, Math.max(limits.MIN_RADIUS, dimensions.radius));
-            const targetScaledR = radius * scale;
+            const targetScaledR = radius;
             const targetScale = targetScaledR / obj.radius;
             obj.set({ scaleX: targetScale, scaleY: targetScale });
             obj.setCoords();

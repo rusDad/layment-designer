@@ -1,10 +1,10 @@
 # admin/api.py
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 import re
 from admin_api.manifest_service import load_manifest, save_manifest_atomic
-from admin_api.id_utils import generate_id
+from admin_api.id_utils import generate_item_id, normalize_pose_key
 from admin_api.file_service import save_upload_file, DIRS
 from admin_api.file_validation import (
     validate_svg,
@@ -86,17 +86,45 @@ def _normalize_default_label(default_label: Optional[str]) -> Optional[str]:
         )
     return normalized
 
+def _normalize_pose_label(pose_label: Optional[str]) -> Optional[str]:
+    if pose_label is None:
+        return None
+
+    normalized = pose_label.strip()
+    return normalized or None
+
+
 
 class PreviewIdRequest(BaseModel):
     article: str
+    poseKey: Optional[str] = None
 
 
 @router.post("/preview-id")
 def preview_id(data: PreviewIdRequest):
     try:
-        return {"id": generate_id(data.article)}
+        return {"id": generate_item_id(data.article, data.poseKey)}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+
+class ItemMachining(BaseModel):
+    basePocketDepthMm: Optional[float] = None
+
+
+class ManifestSetPlacement(BaseModel):
+    itemId: str
+    x: float
+    y: float
+    angle: float = 0
+
+
+class ManifestSet(BaseModel):
+    id: str
+    name: str
+    enabled: bool = True
+    placements: List[ManifestSetPlacement] = Field(default_factory=list)
 
 class CreateItemRequest(BaseModel):
     article: str = Field(..., min_length=1)
@@ -107,12 +135,19 @@ class CreateItemRequest(BaseModel):
     cuttingLengthMeters: float
     enabled: bool = True
     defaultLabel: Optional[str] = None
+    poseKey: Optional[str] = None
+    poseLabel: Optional[str] = None
+    machining: Optional[ItemMachining] = None
 
 
 class UpsertCategoryRequest(BaseModel):
     slug: str
     label: str
     force: bool = False
+
+
+class UpsertManifestSetsRequest(BaseModel):
+    sets: List[ManifestSet]
 
 
 @router.get("/categories")
@@ -124,6 +159,23 @@ def list_categories():
         "categories": _sorted_categories(categories)
     }
 
+
+
+
+@router.get("/manifest/sets")
+def get_manifest_sets():
+    manifest = load_manifest()
+    sets = manifest.get("sets")
+    return {"sets": sets if isinstance(sets, list) else []}
+
+
+@router.put("/manifest/sets")
+def upsert_manifest_sets(data: UpsertManifestSetsRequest):
+    manifest = load_manifest()
+    manifest["sets"] = [entry.model_dump(exclude_none=True) for entry in data.sets]
+    manifest["version"] = manifest.get("version", 1) + 1
+    save_manifest_atomic(manifest)
+    return {"sets": manifest["sets"], "count": len(manifest["sets"])}
 
 @router.post("/categories")
 def upsert_category(data: UpsertCategoryRequest):
@@ -151,8 +203,14 @@ def upsert_category(data: UpsertCategoryRequest):
 
 @router.post("/items")
 def create_item(data: CreateItemRequest):
-    item_id = generate_id(data.article)
+    try:
+        normalized_pose_key = normalize_pose_key(data.poseKey)
+        item_id = generate_item_id(data.article, normalized_pose_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     default_label = _normalize_default_label(data.defaultLabel)
+    pose_label = _normalize_pose_label(data.poseLabel)
 
     manifest = load_manifest()
     category_slug = (data.category or "").strip()
@@ -172,16 +230,41 @@ def create_item(data: CreateItemRequest):
     )
 
     if existing_item:
+        if existing_item.get("article") != data.article:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Generated id collision: "
+                    f"id '{item_id}' is already used by article "
+                    f"'{existing_item.get('article')}', cannot use with article '{data.article}'."
+                )
+            )
         existing_item["name"] = data.name
         existing_item["brand"] = data.brand
         existing_item["category"] = category_slug
         existing_item["scaleOverride"] = data.scaleOverride
         existing_item["cuttingLengthMeters"] = data.cuttingLengthMeters
         existing_item["enabled"] = data.enabled
+        existing_item["article"] = data.article
+        if normalized_pose_key is None:
+            existing_item.pop("poseKey", None)
+            existing_item.pop("poseLabel", None)
+        else:
+            existing_item["poseKey"] = normalized_pose_key
+            if pose_label is None:
+                existing_item.pop("poseLabel", None)
+            else:
+                existing_item["poseLabel"] = pose_label
         if default_label is None:
             existing_item.pop("defaultLabel", None)
         else:
             existing_item["defaultLabel"] = default_label
+        if data.machining is not None:
+            machining_payload = data.machining.model_dump(exclude_none=True)
+            if machining_payload:
+                existing_item["machining"] = machining_payload
+            else:
+                existing_item.pop("machining", None)
         mode = "updated"
     else:
         new_item = {
@@ -194,8 +277,15 @@ def create_item(data: CreateItemRequest):
             "cuttingLengthMeters": data.cuttingLengthMeters,
             "enabled": data.enabled
         }
+        if normalized_pose_key is not None:
+            new_item["poseKey"] = normalized_pose_key
+            if pose_label is not None:
+                new_item["poseLabel"] = pose_label
         if default_label is not None:
             new_item["defaultLabel"] = default_label
+        machining_payload = data.machining.model_dump(exclude_none=True) if data.machining is not None else None
+        if machining_payload:
+            new_item["machining"] = machining_payload
         manifest["items"].append(new_item)
         mode = "created"
 
@@ -526,6 +616,9 @@ def list_items():
                 "cuttingLengthMeters": i.get("cuttingLengthMeters", 0),
                 "enabled": i.get("enabled", True),
                 "defaultLabel": i.get("defaultLabel"),
+                "poseKey": i.get("poseKey"),
+                "poseLabel": i.get("poseLabel"),
+                "machining": i.get("machining"),
                 "assets": i.get("assets"),
                 "files": _item_files_status(i, preview_dir),
                 "previewUrl": _item_preview_url(i, preview_dir)

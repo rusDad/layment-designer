@@ -4,16 +4,18 @@ from fastapi.staticfiles import StaticFiles
 from admin_api.api import router as admin_router
 from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH
 from pydantic import BaseModel
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Optional, Dict, Literal
 from datetime import datetime, timezone
 from uuid import uuid4
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 import logging
 import base64
 import binascii
 import shutil
 import os
 import json
+import fcntl
 from services.gcode_engine import GCodeEngineError, build_final_gcode
 from services.order_dxf import generate_order_layout_dxf, generate_order_layout_dxf_cad
 from services.pricing import calculate_price_preview
@@ -35,6 +37,7 @@ class OrderMeta(BaseModel):
     coordinateSystem: Optional[str] = None
     baseMaterialColor: Optional[str] = None
     laymentType: Optional[str] = None
+    laymentThicknessMm: Literal[35, 65] = 35
     pricePreview: Optional[Dict[str, Any]] = None
     workspaceSnapshot: Optional[Dict[str, Any]] = None
     canvasPng: Optional[str] = None
@@ -47,10 +50,28 @@ class CustomerInfo(BaseModel):
 
 class ContourPlacement(BaseModel):
     id: str
+    article: Optional[str] = None
+    name: Optional[str] = None
+    poseKey: Optional[str] = None
+    poseLabel: Optional[str] = None
     x: float
     y: float
     angle: float
     scaleOverride: Optional[float] = None
+    # Future seam: effective contour depth will be resolved on backend as
+    # machining.basePocketDepthMm + depthOverrideMm.
+    depthOverrideMm: Optional[float] = None
+
+
+class PrimitivePlacement(BaseModel):
+    type: str
+    x: float
+    y: float
+    width: Optional[float] = None
+    height: Optional[float] = None
+    radius: Optional[float] = None
+    # Future seam: primitives use absolute depth value.
+    pocketDepthMm: Optional[float] = None
 
 
 class LabelPlacement(BaseModel):
@@ -64,7 +85,7 @@ class LabelPlacement(BaseModel):
 class ExportRequest(BaseModel):
     orderMeta: OrderMeta
     contours: List[ContourPlacement]
-    primitives: Optional[List[Dict[str, Any]]] = None
+    primitives: Optional[List[PrimitivePlacement]] = None
     labels: Optional[List[LabelPlacement]] = None
     customer: Optional[CustomerInfo] = None
 
@@ -94,17 +115,31 @@ def _write_json(file_path: Path, data: Dict[str, Any]) -> None:
         json.dump(data, file, ensure_ascii=False, indent=2)
 
 
+def _write_json_atomic(file_path: Path, data: Dict[str, Any]) -> None:
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=file_path.parent,
+        prefix=f".{file_path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as temp_file:
+        json.dump(data, temp_file, ensure_ascii=False, indent=2)
+        temp_file.flush()
+        os.fsync(temp_file.fileno())
+        temp_path = Path(temp_file.name)
+
+    try:
+        os.replace(temp_path, file_path)
+    except Exception:
+        if temp_path.exists():
+            temp_path.unlink()
+        raise
+
+
 def _load_order_status(order_dir: Path) -> Dict[str, Any]:
     return _read_json_if_exists(order_dir / "status.json") or {}
-
-
-def _extract_order_number_value(value: Any) -> Optional[int]:
-    if not isinstance(value, str) or not value.startswith("K-"):
-        return None
-    number_part = value[2:]
-    if not number_part.isdigit():
-        return None
-    return int(number_part)
 
 
 def _read_order_number(order_dir: Path) -> Optional[str]:
@@ -112,26 +147,32 @@ def _read_order_number(order_dir: Path) -> Optional[str]:
     order_number = meta.get("orderNumber")
     if isinstance(order_number, str) and order_number:
         return order_number
-
-    order_payload = _read_json_if_exists(order_dir / "order.json") or {}
-    payload_order_number = order_payload.get("orderNumber")
-    if isinstance(payload_order_number, str) and payload_order_number:
-        return payload_order_number
-
     return None
 
 
-def _next_order_number(orders_dir: Path) -> str:
-    max_number = 0
-    if orders_dir.exists():
-        for order_dir in orders_dir.iterdir():
-            if not order_dir.is_dir() or order_dir.name.startswith("."):
-                continue
-            existing_order_number = _read_order_number(order_dir)
-            numeric_value = _extract_order_number_value(existing_order_number)
-            if numeric_value is not None and numeric_value > max_number:
-                max_number = numeric_value
-    return f"K-{max_number + 1:05d}"
+def _order_sequence_file(orders_dir: Path) -> Path:
+    return orders_dir / ".order_sequence.json"
+
+
+def _allocate_next_order_number(orders_dir: Path) -> str:
+    orders_dir.mkdir(parents=True, exist_ok=True)
+    sequence_file = _order_sequence_file(orders_dir)
+    lock_file = orders_dir / ".order_sequence.lock"
+
+    with lock_file.open("a", encoding="utf-8") as lock_fp:
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
+        try:
+            sequence_data = _read_json_if_exists(sequence_file) or {}
+            last_number = sequence_data.get("lastNumber")
+            if not isinstance(last_number, int) or last_number < 0:
+                last_number = 0
+
+            next_number = last_number + 1
+            _write_json_atomic(sequence_file, {"lastNumber": next_number})
+        finally:
+            fcntl.flock(lock_fp.fileno(), fcntl.LOCK_UN)
+
+    return f"K-{next_number:05d}"
 
 
 def _require_order_number(order_dir: Path) -> str:
@@ -200,62 +241,113 @@ def _max_iso_timestamp(*values: Any) -> Optional[str]:
 
 
 def _order_preview_png_path(order_dir: Path, order_number: Optional[str]) -> Optional[Path]:
-    if order_number:
-        numbered_preview = order_dir / f"{order_number}.png"
-        if numbered_preview.exists() and numbered_preview.is_file():
-            return numbered_preview
+    if not order_number:
+        return None
 
-    legacy_preview = order_dir / "layout.png"
-    if legacy_preview.exists() and legacy_preview.is_file():
-        return legacy_preview
-
+    numbered_preview = order_dir / f"{order_number}.png"
+    if numbered_preview.exists() and numbered_preview.is_file():
+        return numbered_preview
     return None
 
 
-def _build_order_contents(order_payload: Dict[str, Any]) -> List[Dict[str, str]]:
+def _manifest_items_by_id() -> Dict[str, Dict[str, Any]]:
+    if not MANIFEST_PATH.exists():
+        return {}
+
+    try:
+        with MANIFEST_PATH.open("r", encoding="utf-8") as manifest_file:
+            manifest = json.load(manifest_file)
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Failed to read manifest for order contents", exc_info=True)
+        return {}
+
+    items = manifest.get("items")
+    if not isinstance(items, list):
+        return {}
+
+    indexed: Dict[str, Dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("id")
+        if isinstance(item_id, str) and item_id:
+            indexed[item_id] = item
+    return indexed
+
+
+def _build_order_contents_snapshot(order_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     contours = order_payload.get("contours") if isinstance(order_payload, dict) else None
     if not isinstance(contours, list) or not contours:
         return []
 
-    manifest_items_by_id: Dict[str, Dict[str, Any]] = {}
-    if MANIFEST_PATH.exists():
-        try:
-            with MANIFEST_PATH.open("r", encoding="utf-8") as manifest_file:
-                manifest = json.load(manifest_file)
-            items = manifest.get("items")
-            if isinstance(items, list):
-                for item in items:
-                    if not isinstance(item, dict):
-                        continue
-                    item_id = item.get("id")
-                    if isinstance(item_id, str) and item_id:
-                        manifest_items_by_id[item_id] = item
-        except (OSError, json.JSONDecodeError):
-            logger.warning("Failed to read manifest for order contents", exc_info=True)
+    manifest_items = _manifest_items_by_id()
+    snapshot: List[Dict[str, Any]] = []
 
-    composition: List[Dict[str, str]] = []
     for contour in contours:
         if not isinstance(contour, dict):
             continue
-
         contour_id = contour.get("id")
         if not isinstance(contour_id, str) or not contour_id:
             continue
 
-        manifest_item = manifest_items_by_id.get(contour_id)
-        if manifest_item:
-            article = manifest_item.get("article")
-            name = manifest_item.get("name")
-        else:
-            article = contour.get("article")
-            name = "(не найдено в каталоге)"
+        manifest_item = manifest_items.get(contour_id) or {}
+        article = contour.get("article") or manifest_item.get("article") or contour_id
+        name = contour.get("name") or manifest_item.get("name") or "(не найдено в каталоге)"
 
-        composition.append({
-            "article": article if isinstance(article, str) and article else contour_id,
-            "name": name if isinstance(name, str) and name else "(не найдено в каталоге)",
-        })
+        row: Dict[str, Any] = {
+            "catalogItemId": contour_id,
+            "article": article,
+            "name": name,
+        }
 
-    return composition
+        pose_key = contour.get("poseKey")
+        if not isinstance(pose_key, str) or not pose_key.strip():
+            pose_key = manifest_item.get("poseKey")
+        if isinstance(pose_key, str) and pose_key.strip():
+            row["poseKey"] = pose_key.strip()
+
+        snapshot.append(row)
+
+    return snapshot
+
+
+def _read_order_contents_snapshot(order_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_snapshot = order_payload.get("contentsSnapshot") if isinstance(order_payload, dict) else None
+    if isinstance(raw_snapshot, list):
+        normalized: List[Dict[str, Any]] = []
+        for item in raw_snapshot:
+            if not isinstance(item, dict):
+                continue
+            article = item.get("article")
+            name = item.get("name")
+            catalog_item_id = item.get("catalogItemId") or item.get("id")
+            if not isinstance(catalog_item_id, str) or not catalog_item_id:
+                continue
+            normalized_item: Dict[str, Any] = {
+                "catalogItemId": catalog_item_id,
+                "article": article if isinstance(article, str) and article else catalog_item_id,
+                "name": name if isinstance(name, str) and name else "(не найдено в каталоге)",
+            }
+            pose_key = item.get("poseKey")
+            if isinstance(pose_key, str) and pose_key.strip():
+                normalized_item["poseKey"] = pose_key.strip()
+            normalized.append(normalized_item)
+        if normalized:
+            return normalized
+
+    # Fallback for payloads without explicit snapshot.
+    return _build_order_contents_snapshot(order_payload)
+
+
+def _build_order_contents(order_payload: Dict[str, Any]) -> List[Dict[str, str]]:
+    snapshot = _read_order_contents_snapshot(order_payload)
+    return [
+        {
+            "article": item.get("article") if isinstance(item.get("article"), str) and item.get("article") else item.get("catalogItemId", "—"),
+            "name": item.get("name") if isinstance(item.get("name"), str) and item.get("name") else "(не найдено в каталоге)",
+        }
+        for item in snapshot
+    ]
 
 
 @public_router.get("/contours/manifest")
@@ -282,7 +374,7 @@ async def export_layment(payload: Dict[str, Any]):
         order_id = uuid4().hex[:12]
         orders_dir = _orders_dir()
         orders_dir.mkdir(parents=True, exist_ok=True)
-        order_number = _next_order_number(orders_dir)
+        order_number = _allocate_next_order_number(orders_dir)
 
         while (orders_dir / order_id).exists():
             order_id = uuid4().hex[:12]
@@ -300,6 +392,7 @@ async def export_layment(payload: Dict[str, Any]):
 
             stored_payload = dict(payload)
             stored_payload["orderNumber"] = order_number
+            stored_payload["contentsSnapshot"] = _build_order_contents_snapshot(stored_payload)
             stored_payload_order_meta = stored_payload.get("orderMeta")
             if isinstance(stored_payload_order_meta, dict):
                 stored_payload_order_meta["pricePreview"] = price_preview
@@ -423,6 +516,7 @@ def get_order_status(order_id: str):
         "contents": _build_order_contents(order_payload),
         "customer": customer,
         "baseMaterialColor": order_meta.get("baseMaterialColor"),
+        "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
     }
 
     preview_path = _order_preview_png_path(order_dir, order_number)
@@ -476,6 +570,7 @@ def list_orders():
             "produced": bool(status_data.get("produced", False)),
             "width": order_meta.get("width"),
             "height": order_meta.get("height"),
+            "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
             "hasLayoutPng": (order_dir / f"{order_number}.png").exists() if order_number else False,
         })
 
@@ -506,8 +601,10 @@ def get_order_details(order_id: str):
         "orderNumber": order_number,
         "status": status_data,
         "orderMeta": order_meta,
+        "laymentThicknessMm": order_meta.get("laymentThicknessMm"),
         "customer": order_payload.get("customer") if isinstance(order_payload.get("customer"), dict) else None,
         "contours": order_payload.get("contours") or [],
+        "contentsSnapshot": _read_order_contents_snapshot(order_payload),
         "primitives": order_payload.get("primitives") or [],
         "files": {
             "gcodeNc": f"/admin/api/orders/{order_id}/artifacts/cnc.nc",

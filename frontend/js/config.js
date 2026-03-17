@@ -1,4 +1,5 @@
 // config.js - Конфигурационные константы приложения
+const APP_BASE_PREFIX = window.location.pathname.startsWith('/dev/') ? '/dev' : '';
 
 // ==================== ОБЩИЕ НАСТРОЙКИ ====================
 window.Config = {
@@ -31,7 +32,8 @@ window.Config = {
         PANEL_WIDTH: 320,
         CANVAS_PADDING: 40,
         HEADER_HEIGHT: 120,
-        CANVAS_BACKGROUND: '#fafafa'
+        CANVAS_BACKGROUND: '#fafafa',
+        ZOOM_ENGINE: 'viewport'
     },
 
     LAYMENT_STYLE : {
@@ -58,10 +60,15 @@ window.Config = {
 
     // ==================== API И ПУТИ ====================
     API : {
-        BASE_URL: '/api',
+        BASE_URL: `${APP_BASE_PREFIX}/api`,
         EXPORT_Layment: '/export-layment',
-        MANIFEST_URL: '/api/contours/manifest'
+        MANIFEST_URL: `${APP_BASE_PREFIX}/api/contours/manifest`
 
+    },
+
+    VIEWER_3D: {
+        URL: '/svg3d/',
+        PAYLOAD_PREFIX: 'laymentDesigner.preview3d.'
     },
 
     // ==================== ГЕОМЕТРИЯ ====================
@@ -92,7 +99,7 @@ window.Config = {
             ERROR_CORNER: '#c0392b'
         },
         PRIMITIVE: {
-            STROKE: '#20aa10',  // Зеленый для примитивов
+            STROKE: '#104a10',  // Зеленый для примитивов
             FILL: '#208820',
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }

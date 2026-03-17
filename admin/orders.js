@@ -1,3 +1,28 @@
+const APP_BASE_PREFIX = window.location.pathname.startsWith('/dev/admin/') ? '/dev' : '';
+const ADMIN_API_BASE = `${APP_BASE_PREFIX}/admin/api`;
+function withAppPrefix(url) {
+    if (!url) {
+        return url;
+    }
+
+    if (/^https?:\/\//i.test(url)) {
+        return url;
+    }
+
+    if (!APP_BASE_PREFIX) {
+        return url;
+    }
+
+    if (url.startsWith(`${APP_BASE_PREFIX}/`)) {
+        return url;
+    }
+
+    if (url.startsWith('/')) {
+        return `${APP_BASE_PREFIX}${url}`;
+    }
+
+    return url;
+}
 const ordersListEl = document.getElementById('ordersList');
 const listStatusEl = document.getElementById('listStatus');
 const reloadBtn = document.getElementById('reloadBtn');
@@ -19,8 +44,6 @@ const downloadDxfLink = document.getElementById('downloadDxfLink');
 let ordersCache = [];
 let selectedOrderId = null;
 let selectedOrderDetails = null;
-let itemsById = null;
-let itemsLoadPromise = null;
 
 const fmt = (value) => {
   if (!value) {
@@ -50,69 +73,33 @@ const humanizeColor = (color) => {
   return '—';
 };
 
+const humanizeThickness = (thickness) => {
+  if (thickness === 35 || thickness === 65) {
+    return `${thickness} мм`;
+  }
+  return '—';
+};
+
 const createBadge = (label, active) => {
   const span = document.createElement('span');
-  span.className = `badge${active ? ' ok' : ''}`;
+  span.className = `badge${active ? ' ok' : ' badge-warning'}`;
   span.textContent = `${label}: ${active ? 'yes' : 'no'}`;
   return span;
 };
 
-const ensureItemsLoaded = async () => {
-  if (itemsById) {
-    return itemsById;
-  }
-  if (itemsLoadPromise) {
-    return itemsLoadPromise;
+const formatContentsSummaryLine = (item) => {
+  if (!item || typeof item !== 'object') {
+    return '—';
   }
 
-  itemsLoadPromise = (async () => {
-    try {
-      const res = await fetch('/admin/api/items');
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-
-      const payload = JSON.parse(text) || {};
-      const list = Array.isArray(payload.items) ? payload.items : [];
-      itemsById = list.reduce((acc, item) => {
-        if (item && item.id) {
-          acc[item.id] = {
-            article: item.article || '',
-            name: item.name || ''
-          };
-        }
-        return acc;
-      }, {});
-    } catch (err) {
-      console.warn('Failed to load items catalog for order composition summary', err);
-      itemsById = {};
-    } finally {
-      itemsLoadPromise = null;
-    }
-
-    return itemsById;
-  })();
-
-  return itemsLoadPromise;
-};
-
-const formatContourSummaryLine = (contour) => {
-  const contourId = contour && contour.id ? contour.id : '—';
-  const item = itemsById && contourId ? itemsById[contourId] : null;
-
-  if (!item) {
-    return contourId;
-  }
-
-  const article = item.article || '';
-  const name = item.name || '';
+  const article = item.article ? String(item.article) : '';
+  const name = item.name ? String(item.name) : '';
 
   if (article && name) {
     return `${article} - ${name}`;
   }
 
-  return article || name || contourId;
+  return article || name || String(item.catalogItemId || item.id || '—');
 };
 
 const renderOrdersList = () => {
@@ -142,7 +129,7 @@ const renderOrdersList = () => {
 
     const dim = document.createElement('div');
     dim.className = 'muted';
-    dim.textContent = `Размер: ${order.width ?? '—'} x ${order.height ?? '—'} мм`;
+    dim.textContent = `Размер: ${order.width ?? '—'} x ${order.height ?? '—'} x ${order.laymentThicknessMm ?? '—'} мм`;
 
     const created = document.createElement('div');
     created.className = 'muted';
@@ -168,30 +155,35 @@ const updateMeta = (details) => {
   const orderMeta = details.orderMeta || {};
   const customer = details.customer || {};
   const baseMaterialColor = orderMeta?.baseMaterialColor;
+  const laymentThicknessMm = details.laymentThicknessMm ?? orderMeta?.laymentThicknessMm;
 
   const safeOrderId = escapeHtml(details.orderId || '—');
   const safeCustomerName = escapeHtml(customer.name || '—');
   const safeCustomerContact = escapeHtml(customer.contact || '—');
 
   orderMetaEl.innerHTML = `
-    <div><strong>Номер заказа:</strong> ${details.orderNumber || '—'}</div>
-    <div><strong>Шифр (orderId):</strong> ${safeOrderId}</div>
-    <div><strong>Заказчик:</strong> ${safeCustomerName}</div>
-    <div><strong>Контакт:</strong> ${safeCustomerContact}</div>
-    <div><strong>Цвет основы:</strong> ${humanizeColor(baseMaterialColor)}</div>
-    <div><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
-    <div><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
-    <div><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
-    <div><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
+    <div class="order-meta-item"><strong>Номер заказа:</strong> ${details.orderNumber || '—'}</div>
+    <div class="order-meta-item"><strong>Шифр (orderId):</strong> ${safeOrderId}</div>
+    <div class="order-meta-item"><strong>Заказчик:</strong> ${safeCustomerName}</div>
+    <div class="order-meta-item"><strong>Контакт:</strong> ${safeCustomerContact}</div>
+    <div class="order-meta-item"><strong>Цвет основы:</strong> ${humanizeColor(baseMaterialColor)}</div>
+    <div class="order-meta-item"><strong>Создан:</strong> ${fmt(status.createdAt)}</div>
+    <div class="order-meta-item"><strong>Confirmed:</strong> ${status.confirmed ? 'yes' : 'no'}${status.confirmedAt ? ` (${fmt(status.confirmedAt)})` : ''}</div>
+    <div class="order-meta-item"><strong>Produced:</strong> ${status.produced ? 'yes' : 'no'}${status.producedAt ? ` (${fmt(status.producedAt)})` : ''}</div>
+    <div class="order-meta-item"><strong>Размер:</strong> ${orderMeta.width ?? '—'} x ${orderMeta.height ?? '—'} мм</div>
   `;
 
+  const contentsSnapshot = Array.isArray(details.contentsSnapshot) ? details.contentsSnapshot : [];
   const contours = Array.isArray(details.contours) ? details.contours : [];
-  contoursSummaryPreEl.textContent = contours.map(formatContourSummaryLine).join('\n') || '[]';
-  contoursDetailsPreEl.textContent = JSON.stringify(contours, null, 2);
+  contoursSummaryPreEl.textContent = contentsSnapshot.map(formatContentsSummaryLine).join('\n') || '[]';
+  contoursDetailsPreEl.textContent = JSON.stringify({
+    contentsSnapshot,
+    contours
+  }, null, 2);
 
   const files = details.files || {};
   if (files.gcodeNc) {
-    downloadNcLink.href = files.gcodeNc;
+   downloadNcLink.href = withAppPrefix(files.gcodeNc);
     downloadNcLink.classList.remove('is-disabled');
     downloadNcLink.removeAttribute('aria-disabled');
     downloadNcLink.tabIndex = 0;
@@ -203,7 +195,7 @@ const updateMeta = (details) => {
   }
 
   if (files.previewSvg) {
-    downloadSvgLink.href = files.previewSvg;
+    downloadSvgLink.href = withAppPrefix(files.previewSvg);
     downloadSvgLink.classList.remove('is-disabled');
     downloadSvgLink.removeAttribute('aria-disabled');
     downloadSvgLink.tabIndex = 0;
@@ -215,7 +207,7 @@ const updateMeta = (details) => {
   }
 
   if (files.laserDxf) {
-    downloadDxfLink.href = files.laserDxf;
+    downloadDxfLink.href = withAppPrefix(files.laserDxf);
     downloadDxfLink.classList.remove('is-disabled');
     downloadDxfLink.removeAttribute('aria-disabled');
     downloadDxfLink.tabIndex = 0;
@@ -229,7 +221,8 @@ const updateMeta = (details) => {
   layoutWrapEl.innerHTML = '';
   if (files.previewPng) {
     const img = document.createElement('img');
-    img.src = `${files.previewPng}?t=${Date.now()}`;
+    const previewUrl = withAppPrefix(files.previewPng);
+    img.src = `${previewUrl}?t=${Date.now()}`;
     img.alt = `layout ${details.orderId}`;
     layoutWrapEl.appendChild(img);
   } else {
@@ -247,7 +240,7 @@ const loadOrders = async () => {
   listStatusEl.textContent = 'Загрузка…';
   statusEl.textContent = '';
   try {
-    const res = await fetch('/admin/api/orders');
+    const res = await fetch(`${ADMIN_API_BASE}/orders`);
     const text = await res.text();
     if (!res.ok) {
       throw new Error(text || `HTTP ${res.status}`);
@@ -283,14 +276,13 @@ const selectOrder = async (orderId, options = {}) => {
   layoutWrapEl.textContent = '';
 
   try {
-    const res = await fetch(`/admin/api/orders/${encodeURIComponent(orderId)}`);
+    const res = await fetch(`${ADMIN_API_BASE}/orders/${encodeURIComponent(orderId)}`);
     const text = await res.text();
     if (!res.ok) {
       throw new Error(text || `HTTP ${res.status}`);
     }
 
     selectedOrderDetails = JSON.parse(text);
-    await ensureItemsLoaded();
     updateMeta(selectedOrderDetails);
   } catch (err) {
     statusEl.textContent = err.toString();
@@ -322,11 +314,11 @@ const postStatusChange = async (path, loadingText) => {
 };
 
 confirmBtn.addEventListener('click', () => {
-  postStatusChange(`/admin/api/orders/${encodeURIComponent(selectedOrderId)}/confirm`, 'Обновление confirmed…');
+  postStatusChange(`${ADMIN_API_BASE}/orders/${encodeURIComponent(selectedOrderId)}/confirm`, 'Обновление confirmed…');
 });
 
 producedBtn.addEventListener('click', () => {
-  postStatusChange(`/admin/api/orders/${encodeURIComponent(selectedOrderId)}/produced`, 'Обновление produced…');
+  postStatusChange(`${ADMIN_API_BASE}/orders/${encodeURIComponent(selectedOrderId)}/produced`, 'Обновление produced…');
 });
 
 reloadBtn.addEventListener('click', loadOrders);

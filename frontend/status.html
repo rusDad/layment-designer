@@ -15,15 +15,18 @@
         </header>
 
         <main class="status-page-content">
-            <section class="size-controls status-search-panel">
+            <section class="size-controls status-search-panel panel-card">
+                <h2 class="status-section-title">Проверка заказа</h2>
                 <label for="orderIdInput">Order ID</label>
+                <p class="status-search-help">Введите идентификатор заказа, чтобы увидеть актуальный статус и детали.</p>
                 <div class="status-search-row">
                     <input id="orderIdInput" type="text" placeholder="Введите order_id" autocomplete="off">
-                    <button id="checkOrderButton" class="tool-button" type="button">Проверить</button>
+                    <button id="checkOrderButton" class="tool-button button-primary" type="button">Проверить</button>
                 </div>
             </section>
 
-            <section id="statusResult" class="order-result" hidden>
+            <section id="statusResult" class="order-result" aria-live="polite">
+                <div id="statusResultTitle" class="order-result-title"></div>
                 <div id="statusMessage" class="order-result-message"></div>
                 <div id="statusDetails" class="order-result-details" hidden>
                     <div><strong>Номер заказа:</strong> <span id="statusOrderNumber">—</span></div>
@@ -31,6 +34,7 @@
                     <div><strong>Статус:</strong> <span id="statusState">—</span></div>
                     <div><strong>Заказчик:</strong> <span id="statusCustomerName">—</span></div>
                     <div><strong>Цвет основы:</strong> <span id="statusBaseMaterialColor">—</span></div>
+                    <div><strong>Толщина:</strong> <span id="statusLaymentThickness">—</span></div>
                     <div><strong>Стоимость:</strong> <span id="statusPrice">—</span></div>
                     <div><strong>Создан:</strong> <span id="statusCreatedAt">—</span></div>
                     <div><strong>Подтверждён:</strong> <span id="statusConfirmedAt">—</span></div>

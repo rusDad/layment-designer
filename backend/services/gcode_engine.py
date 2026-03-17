@@ -43,20 +43,26 @@ def _format_contour_comment(contour_id: str, angle: float) -> str:
     return f"' CONTOUR id={contour_id} angle={angle}"
 
 
-def _format_primitive_comment(primitive_index: int, primitive: dict[str, Any]) -> str:
-    primitive_type = primitive.get("type")
+def _primitive_value(primitive: Any, key: str) -> Any:
+    if isinstance(primitive, dict):
+        return primitive.get(key)
+    return getattr(primitive, key, None)
+
+
+def _format_primitive_comment(primitive_index: int, primitive: Any) -> str:
+    primitive_type = _primitive_value(primitive, "type")
 
     if primitive_type == "rect":
         return (
             f"' PRIMITIVE #{primitive_index} type=rect "
-            f"x={primitive.get('x')} y={primitive.get('y')} "
-            f"width={primitive.get('width')} height={primitive.get('height')}"
+            f"x={_primitive_value(primitive, 'x')} y={_primitive_value(primitive, 'y')} "
+            f"width={_primitive_value(primitive, 'width')} height={_primitive_value(primitive, 'height')}"
         )
 
     if primitive_type == "circle":
         return (
             f"' PRIMITIVE #{primitive_index} type=circle "
-            f"x={primitive.get('x')} y={primitive.get('y')} radius={primitive.get('radius')}"
+            f"x={_primitive_value(primitive, 'x')} y={_primitive_value(primitive, 'y')} radius={_primitive_value(primitive, 'radius')}"
         )
 
     return f"' PRIMITIVE #{primitive_index} type={primitive_type}"
@@ -124,10 +130,10 @@ def generate_rect_pocket_gcode(
         lines.append("G0 Z20")
         lines.append(f"G0 X{current_min_x:.3f} Y{current_min_y:.3f}")
         lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
-        # Черновые проходы CCW
-        lines.append(f"G1 X{current_min_x:.3f} Y{current_max_y:.3f} F{feed}")
-        lines.append(f"G1 X{current_max_x:.3f} Y{current_max_y:.3f} F{feed}")
+        # Черновые проходы CW
         lines.append(f"G1 X{current_max_x:.3f} Y{current_min_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_max_x:.3f} Y{current_max_y:.3f} F{feed}")
+        lines.append(f"G1 X{current_min_x:.3f} Y{current_max_y:.3f} F{feed}")
         lines.append(f"G1 X{current_min_x:.3f} Y{current_min_y:.3f} F{feed}")
         lines.append("G0 Z20")
 
@@ -147,10 +153,10 @@ def generate_rect_pocket_gcode(
     lines.append("G0 Z20")
     lines.append(f"G0 X{finish_min_x:.3f} Y{finish_min_y:.3f}")
     lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
-    # Чистовой проход CW
-    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_min_y:.3f} F{feed}")
-    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    # Чистовой проход CCW
     lines.append(f"G1 X{finish_min_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_max_y:.3f} F{feed}")
+    lines.append(f"G1 X{finish_max_x:.3f} Y{finish_min_y:.3f} F{feed}")
     lines.append(f"G1 X{finish_min_x:.3f} Y{finish_min_y:.3f} F{feed}")
     lines.append("G0 Z20")
 
@@ -187,9 +193,9 @@ def generate_circle_pocket_gcode(
         start_x = cx + rough_radius
         start_y = cy
         lines.append(f"G1 X{start_x:.3f} Y{start_y:.3f} F{feed}")
-        # Черновые проходы CCW (две полуокружности через R)
-        lines.append(f"G3 X{(cx - rough_radius):.3f} Y{cy:.3f} R{rough_radius:.3f} F{feed}")
-        lines.append(f"G3 X{start_x:.3f} Y{start_y:.3f} R{rough_radius:.3f} F{feed}")
+        # Черновые проходы CW (две полуокружности через R)
+        lines.append(f"G2 X{(cx - rough_radius):.3f} Y{cy:.3f} R{rough_radius:.3f} F{feed}")
+        lines.append(f"G2 X{start_x:.3f} Y{start_y:.3f} R{rough_radius:.3f} F{feed}")
         rough_radius += half_tool
 
     finish_x = cx + finish_radius
@@ -197,9 +203,9 @@ def generate_circle_pocket_gcode(
     lines.append(f"G0 Z20")
     lines.append(f"G0 X{finish_x:.3f} Y{finish_y:.3f}")
     lines.append(f"G1 Z{z_depth:.3f} F{plunge}")
-    # Чистовой проход CW
-    lines.append(f"G2 X{(cx - finish_radius):.3f} Y{cy:.3f} R{finish_radius:.3f} F{feed}")
-    lines.append(f"G2 X{finish_x:.3f} Y{finish_y:.3f} R{finish_radius:.3f} F{feed}")
+    # Чистовой проход CCW
+    lines.append(f"G3 X{(cx - finish_radius):.3f} Y{cy:.3f} R{finish_radius:.3f} F{feed}")
+    lines.append(f"G3 X{finish_x:.3f} Y{finish_y:.3f} R{finish_radius:.3f} F{feed}")
     lines.append("G0 Z20")
 
     return lines
@@ -220,6 +226,8 @@ def build_final_gcode(order_data) -> List[str]:
     final_gcode.append("G0 Z20")
 
     for contour in order_data.contours:
+        # TODO: apply future contour depth seam on backend:
+        # effectiveDepthMm = basePocketDepthMm + depthOverrideMm.
         final_gcode.append(_format_contour_comment(contour.id, contour.angle))
         contour_lines = load_rotated_fragment(contour.id, contour.angle)
         cnc_x, cnc_y = contour.y, contour.x  # приведение системы координат фронтенда к координатам станка
@@ -235,14 +243,15 @@ def build_final_gcode(order_data) -> List[str]:
         final_gcode.append("' PRIMITIVES START")
 
     for primitive_index, primitive in enumerate(primitives, start=1):
+        # TODO: support primitive absolute pocket depth (pocketDepthMm).
         final_gcode.append(_format_primitive_comment(primitive_index, primitive))
-        primitive_type = primitive.get("type")
+        primitive_type = _primitive_value(primitive, "type")
 
         if primitive_type == "rect":
-            x = _to_float(primitive.get("x"), "x", primitive_index)
-            y = _to_float(primitive.get("y"), "y", primitive_index)
-            width = _to_float(primitive.get("width"), "width", primitive_index)
-            height = _to_float(primitive.get("height"), "height", primitive_index)
+            x = _to_float(_primitive_value(primitive, "x"), "x", primitive_index)
+            y = _to_float(_primitive_value(primitive, "y"), "y", primitive_index)
+            width = _to_float(_primitive_value(primitive, "width"), "width", primitive_index)
+            height = _to_float(_primitive_value(primitive, "height"), "height", primitive_index)
 
             cnc_x = y
             cnc_y = x
@@ -263,9 +272,9 @@ def build_final_gcode(order_data) -> List[str]:
             continue
 
         if primitive_type == "circle":
-            x = _to_float(primitive.get("x"), "x", primitive_index)
-            y = _to_float(primitive.get("y"), "y", primitive_index)
-            radius = _to_float(primitive.get("radius"), "radius", primitive_index)
+            x = _to_float(_primitive_value(primitive, "x"), "x", primitive_index)
+            y = _to_float(_primitive_value(primitive, "y"), "y", primitive_index)
+            radius = _to_float(_primitive_value(primitive, "radius"), "radius", primitive_index)
 
             cnc_cx = y
             cnc_cy = x

@@ -15,6 +15,12 @@ DEFAULT_PRICING_CONFIG_PATH = BASE_DIR / "pricing.local.json"
 TOOL_DIAMETER_MM = 6.0
 
 
+def _primitive_value(primitive: Any, key: str) -> Any:
+    if isinstance(primitive, dict):
+        return primitive.get(key)
+    return getattr(primitive, key, None)
+
+
 def load_pricing_config() -> Dict[str, Any]:
     config_path = os.getenv("PRICING_CONFIG_PATH")
     resolved_path = DEFAULT_PRICING_CONFIG_PATH if not config_path else BASE_DIR / config_path
@@ -51,10 +57,10 @@ def _manifest_cutting_lengths() -> Dict[str, float]:
     return result
 
 
-def _rect_primitive_meters(primitive: Dict[str, Any]) -> float:
+def _rect_primitive_meters(primitive: Any) -> float:
     try:
-        width = float(primitive.get("width"))
-        height = float(primitive.get("height"))
+        width = float(_primitive_value(primitive, "width"))
+        height = float(_primitive_value(primitive, "height"))
     except (TypeError, ValueError):
         return 0.0
 
@@ -90,9 +96,9 @@ def _rect_primitive_meters(primitive: Dict[str, Any]) -> float:
     return total_meters
 
 
-def _circle_primitive_meters(primitive: Dict[str, Any]) -> float:
+def _circle_primitive_meters(primitive: Any) -> float:
     try:
-        radius = float(primitive.get("radius"))
+        radius = float(_primitive_value(primitive, "radius"))
     except (TypeError, ValueError):
         return 0.0
 
@@ -116,10 +122,10 @@ def _circle_primitive_meters(primitive: Dict[str, Any]) -> float:
     return total_meters
 
 
-def _primitive_cutting_meters(primitives: List[Dict[str, Any]]) -> float:
+def _primitive_cutting_meters(primitives: List[Any]) -> float:
     total_meters = 0.0
     for primitive in primitives:
-        primitive_type = primitive.get("type")
+        primitive_type = _primitive_value(primitive, "type")
         if primitive_type == "rect":
             total_meters += _rect_primitive_meters(primitive)
         elif primitive_type == "circle":
@@ -134,7 +140,14 @@ def calculate_price_preview(order_data: "ExportRequest") -> Dict[str, Any]:
     height = order_data.orderMeta.height
 
     area_m2 = (width * height) / 1_000_000
-    material_cost = round(area_m2 * float(config.get("wasteK", 0)) * float(config.get("materialPricePerM2", 0)))
+    layment_thickness_mm = order_data.orderMeta.laymentThicknessMm
+    thickness_coefficient = 1 if layment_thickness_mm == 35 else 2
+    material_cost = round(
+        area_m2
+        * float(config.get("wasteK", 0))
+        * float(config.get("materialPricePerM2", 0))
+        * thickness_coefficient
+    )
 
     perimeter_m = (2 * (width + height)) / 1000
 
@@ -164,6 +177,8 @@ def calculate_price_preview(order_data: "ExportRequest") -> Dict[str, Any]:
         "material": material_cost,
         "cutting": cutting_cost,
         "total": total,
+        "laymentThicknessMm": layment_thickness_mm,
+        "thicknessCoefficient": thickness_coefficient,
         "cuttingMeters": cutting_m,
         "areaM2": area_m2,
         "missingContourIds": missing_contour_ids,

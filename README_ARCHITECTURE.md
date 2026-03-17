@@ -36,6 +36,16 @@ Layment Designer — производственно-ориентированны
 
 ---
 
+## Catalog item identity (article / id / pose)
+
+- `article` — бизнес-артикул (внешняя сущность для UI/статусов/CRM).
+- `id` — stable FS-safe идентификатор конкретного manufacturing-варианта (`manifest.items[]`).
+- Базовый вариант: `id == generate_id(article)`.
+- Альтернативный pose-вариант: `id == <article-id>__<poseKey>`; `poseKey` хранится в item как optional поле.
+- `angle` в раскладке — только поворот уже выбранного variant-id, а не выбор pose-варианта.
+
+---
+
 ## Координаты и семантика
 
 - Origin фронта: левый верхний угол ложемента; `x → вправо`, `y → вниз`.

@@ -1,6 +1,10 @@
+const APP_BASE_PREFIX = window.location.pathname.startsWith('/dev/admin/') ? '/dev' : '';
+const ADMIN_API_BASE = `${APP_BASE_PREFIX}/admin/api`;
 const article = document.getElementById('article');
 const name = document.getElementById('name');
 const brand = document.getElementById('brand');
+const poseKey = document.getElementById('poseKey');
+const poseLabel = document.getElementById('poseLabel');
 const defaultLabel = document.getElementById('defaultLabel');
 const categorySelect = document.getElementById('categorySelect');
 const newCategorySlug = document.getElementById('newCategorySlug');
@@ -110,7 +114,7 @@ const populateCategorySelect = () => {
 
 const loadCategories = async () => {
   try {
-    const res = await fetch('/admin/api/categories');
+    const res = await fetch(`${ADMIN_API_BASE}/categories`);
     const text = await res.text();
 
     if (!res.ok) {
@@ -141,6 +145,8 @@ const resetItemForm = () => {
   article.value = '';
   name.value = '';
   brand.value = '';
+  poseKey.value = '';
+  poseLabel.value = '';
   defaultLabel.value = '';
   setCategoryValue('');
   scaleOverride.value = 1.0;
@@ -159,6 +165,8 @@ const fillItemForm = (item) => {
   article.value = item.article || '';
   name.value = item.name || '';
   brand.value = item.brand || '';
+  poseKey.value = item.poseKey || '';
+  poseLabel.value = item.poseLabel || '';
   defaultLabel.value = item.defaultLabel || '';
   setCategoryValue(item.category || '');
   scaleOverride.value = item.scaleOverride ?? 1.0;
@@ -206,7 +214,8 @@ const renderItems = (items) => {
 
     const subtitle = document.createElement('div');
     subtitle.className = 'item-subtitle';
-    subtitle.textContent = `id: ${item.id} · enabled: ${item.enabled ? 'yes' : 'no'}`;
+    const poseMeta = item.poseKey ? ` · pose: ${item.poseLabel || item.poseKey}` : '';
+    subtitle.textContent = `id: ${item.id}${poseMeta} · enabled: ${item.enabled ? 'yes' : 'no'}`;
     meta.appendChild(subtitle);
 
     const files = document.createElement('div');
@@ -233,7 +242,7 @@ const renderItems = (items) => {
 const loadItems = async () => {
   itemsStatus.textContent = 'Загрузка списка…';
   try {
-    const res = await fetch('/admin/api/items');
+    const res = await fetch(`${ADMIN_API_BASE}/items`);
     const text = await res.text();
 
     if (!res.ok) {
@@ -267,6 +276,8 @@ createBtn.addEventListener('click', async () => {
     name: name.value.trim(),
     brand: brand.value.trim(),
     defaultLabel: defaultLabel.value.trim(),
+    poseKey: poseKey.value.trim(),
+    poseLabel: poseLabel.value.trim(),
     category: categorySelect.value.trim(),
     scaleOverride: parseFloat(scaleOverride.value || 1.0),
     cuttingLengthMeters: parseFloat(cuttingLengthMeters.value || 0),
@@ -274,7 +285,7 @@ createBtn.addEventListener('click', async () => {
   };
 
   try {
-    const res = await fetch('/admin/api/items', {
+    const res = await fetch(`${ADMIN_API_BASE}/items`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -317,7 +328,7 @@ createCategoryBtn.addEventListener('click', async () => {
   resultEl.textContent = '';
 
   try {
-    const res = await fetch('/admin/api/categories', {
+    const res = await fetch(`${ADMIN_API_BASE}/categories`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -383,7 +394,7 @@ uploadBtn.addEventListener('click', async () => {
 
   try {
     const res = await fetch(
-      `/admin/api/items/${currentItemId}/files`,
+      `${ADMIN_API_BASE}/items/${currentItemId}/files`,
       {
         method: 'POST',
         body: fd
@@ -431,7 +442,7 @@ uploadDxfBtn.addEventListener('click', async () => {
 
   try {
     const res = await fetch(
-      `/admin/api/items/${currentItemId}/dxf-to-svg`,
+      `${ADMIN_API_BASE}/items/${currentItemId}/dxf-to-svg`,
       {
         method: 'POST',
         body: fd

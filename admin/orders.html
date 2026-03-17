@@ -4,179 +4,59 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Панель управления заказами</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      max-width: 1200px;
-      margin: 40px auto;
-      padding: 0 16px;
-    }
-    .toolbar {
-      margin-bottom: 16px;
-    }
-    .layout {
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      gap: 20px;
-      align-items: start;
-    }
-    .panel {
-      border: 1px solid #ccc;
-      padding: 12px;
-      background: #fff;
-    }
-    .orders-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 10px;
-    }
-    .order-card {
-      border: 1px solid #ddd;
-      background: #fafafa;
-      padding: 10px;
-      text-align: left;
-      cursor: pointer;
-    }
-    .order-card:hover {
-      border-color: #999;
-    }
-    .order-card.is-active {
-      border-color: #1e40af;
-      background: #eef3ff;
-    }
-    .order-title {
-      font-weight: 600;
-      margin-bottom: 4px;
-      word-break: break-all;
-    }
-    .muted {
-      color: #666;
-      font-size: 13px;
-    }
-    .status-row {
-      margin-top: 8px;
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .badge {
-      border-radius: 999px;
-      padding: 2px 8px;
-      font-size: 12px;
-      border: 1px solid #bbb;
-      background: #f3f3f3;
-    }
-    .badge.ok {
-      background: #e6f6ea;
-      border-color: #6ab57a;
-    }
-    .details-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .details-full-width {
-      margin-top: 16px;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin: 10px 0 12px;
-    }
-    .actions a {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 10px;
-      border: 1px solid #bbb;
-      border-radius: 4px;
-      color: inherit;
-      text-decoration: none;
-      background: #f7f7f7;
-    }
-    .actions a.is-disabled {
-      color: #888;
-      background: #efefef;
-      border-color: #ddd;
-      pointer-events: none;
-      cursor: not-allowed;
-    }
-    button {
-      padding: 6px 10px;
-      cursor: pointer;
-    }
-    img {
-      max-width: 100%;
-      border: 1px solid #ddd;
-      background: #fff;
-    }
-    pre {
-      background: #f4f4f4;
-      border: 1px solid #ddd;
-      padding: 10px;
-      overflow: auto;
-      max-height: 260px;
-    }
-    #status {
-      margin-top: 12px;
-      min-height: 20px;
-    }
-    @media (max-width: 900px) {
-      .layout,
-      .details-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="admin.css" />
 </head>
-<body>
-  <h1>Admin — Заказы</h1>
-  <div class="toolbar">
-    <a href="/admin/">← Каталог инструментов</a>
-  </div>
-
-  <div class="layout">
-    <section class="panel">
-      <h2>Список заказов</h2>
-      <button id="reloadBtn" type="button">Обновить</button>
-      <p id="listStatus">Загрузка…</p>
-      <div id="ordersList" class="orders-list"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Детали заказа</h2>
-      <div id="detailsEmpty">Выберите заказ в списке слева.</div>
-      <div id="details" hidden>
-        <div id="orderMeta"></div>
-
-        <div class="actions">
-          <button id="confirmBtn" type="button">Подтвердить</button>
-          <button id="producedBtn" type="button">Произведен</button>
-          <a id="downloadNcLink" href="#" download>Скачать G-code файл</a>
-          <a id="downloadSvgLink" href="#" download>Скачать SVG превью</a>
-          <a id="downloadDxfLink" href="#" download>Скачать DXF (лазер)</a>
-        </div>
-
-        <div class="details-grid">
-          <div>
-            <h3>Снимок заказа</h3>
-            <div id="layoutWrap"></div>
-          </div>
-          <div>
-            <h3>Состав</h3>
-            <pre id="contoursSummaryPre">[]</pre>
-          </div>
-        </div>
-        <div class="details-full-width">
-          <h3>Подробности состава</h3>
-          <pre id="contoursDetailsPre">[]</pre>
-        </div>
+<body class="admin-page">
+  <div class="admin-shell">
+    <header class="admin-header">
+      <h1 class="admin-title">Admin — Заказы</h1>
+      <div class="toolbar">
+        <a class="admin-subtle-link" href="./">← Каталог инструментов</a>
       </div>
-    </section>
-  </div>
+    </header>
 
-  <p id="status"></p>
+    <div class="layout">
+      <section class="panel">
+        <h2>Список заказов</h2>
+        <button id="reloadBtn" class="button-secondary" type="button">Обновить</button>
+        <p id="listStatus" class="muted">Загрузка…</p>
+        <div id="ordersList" class="orders-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Детали заказа</h2>
+        <div id="detailsEmpty" class="muted">Выберите заказ в списке слева.</div>
+        <div id="details" hidden>
+          <div id="orderMeta" class="order-meta-grid"></div>
+
+          <div class="actions">
+            <button id="confirmBtn" class="button-primary" type="button">Подтвердить</button>
+            <button id="producedBtn" class="button-danger" type="button">Произведен</button>
+            <a id="downloadNcLink" class="action-link button-secondary" href="#" download>Скачать G-code файл</a>
+            <a id="downloadSvgLink" class="action-link button-secondary" href="#" download>Скачать SVG превью</a>
+            <a id="downloadDxfLink" class="action-link button-secondary" href="#" download>Скачать DXF (лазер)</a>
+          </div>
+
+          <div class="details-grid">
+            <div class="subpanel">
+              <h3>Снимок заказа</h3>
+              <div id="layoutWrap" class="layout-preview"></div>
+            </div>
+            <div class="subpanel">
+              <h3>Состав</h3>
+              <pre id="contoursSummaryPre">[]</pre>
+            </div>
+          </div>
+          <div class="details-full-width subpanel">
+            <h3>Подробности состава</h3>
+            <pre id="contoursDetailsPre">[]</pre>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <p id="status" class="status-line"></p>
+  </div>
 
   <script src="orders.js"></script>
 </body>
