@@ -2047,151 +2047,16 @@ class ContourApp {
     }
 
     deleteSelected() {
-        const active = this.canvas.getActiveObject();
-        if (!active) return;
-
-        const objects = this.resolveActionTargets(active, 'delete');
-        // КРИТИЧНО: сначала убираем activeSelection, потом удаляем объекты
-        this.batchRender(() => {
-            this.canvas.discardActiveObject();
-            for (const o of objects) {
-              if (!o) continue;
-              if (o.isTextObject) {
-                this.textManager.removeText(o);
-                continue;
-              }
-
-              if (o.primitiveType) {
-                this.primitiveManager.removePrimitive(o, false);
-                continue;
-              }
-              // contour
-              if (this.textManager.removeTextsForPlacementId && o.placementId != null) {
-                this.textManager.removeTextsForPlacementId(o.placementId);
-              }
-
-              this.contourManager.removeContour(o, false);
-            }
-        });
-
-      if (this.actionExecutor?.finalizeCanvasAction) {
-          const ctx = this.actionExecutor.buildActionContext(this, 'delete');
-          this.actionExecutor.finalizeCanvasAction(ctx);
-      } else {
-          this.updateButtons();
-          this.updateStatusBar?.();
-          this.syncPrimitiveControlsFromSelection();
-          this.syncTextControlsFromSelection();
-          this.scheduleWorkspaceSave();
-      }
+        this.actionExecutor?.executeAction?.('delete', {}, this);
     }
 
 
     async duplicateSelected() {
-        const DUPLICATE_OFFSET = 16;
-        const selected = this.getDuplicateSelectionObjects();
-        if (!selected.length) {
-            return;
-        }
-
-        const newObjects = [];
-
-        await this.batchRender(async () => {
-            this.canvas.discardActiveObject();
-
-            for (const obj of selected) {
-                if (obj.primitiveType === 'rect') {
-                    const copy = this.primitiveManager.addPrimitive(
-                        'rect',
-                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
-                        { width: obj.width, height: obj.height },
-                        { pocketDepthMm: obj.pocketDepthMm }
-                    );
-                    copy.set({
-                        scaleX: obj.scaleX,
-                        scaleY: obj.scaleY,
-                        stroke: obj.stroke,
-                        strokeWidth: obj.strokeWidth,
-                        fill: obj.fill,
-                        opacity: obj.opacity,
-                        angle: obj.angle || 0
-                    });
-                    copy.setCoords();
-                    newObjects.push(copy);
-                    continue;
-                }
-
-                if (obj.primitiveType === 'circle') {
-                    const copy = this.primitiveManager.addPrimitive(
-                        'circle',
-                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
-                        { radius: obj.radius },
-                        { pocketDepthMm: obj.pocketDepthMm }
-                    );
-                    copy.set({
-                        scaleX: obj.scaleX,
-                        scaleY: obj.scaleY,
-                        stroke: obj.stroke,
-                        strokeWidth: obj.strokeWidth,
-                        fill: obj.fill,
-                        opacity: obj.opacity
-                    });
-                    copy.setCoords();
-                    newObjects.push(copy);
-                    continue;
-                }
-
-                const meta = this.contourManager.metadataMap.get(obj);
-                if (!meta?.assets?.svg) {
-                    continue;
-                }
-
-                const contourCenter = obj.getCenterPoint();
-                await this.contourManager.addContour(
-                    `/contours/${meta.assets.svg}`,
-                    { x: contourCenter.x + DUPLICATE_OFFSET, y: contourCenter.y + DUPLICATE_OFFSET },
-                    meta
-                );
-                const duplicatedContour = this.contourManager.contours[this.contourManager.contours.length - 1];
-                duplicatedContour.set({ angle: obj.angle || 0 });
-                duplicatedContour.setCoords();
-                newObjects.push(duplicatedContour);
-
-                const sourceLabel = this.textManager.getAttachedTextByPlacementId(obj.placementId);
-                if (sourceLabel) {
-                    const duplicatedLabel = this.textManager.createAttachedText(duplicatedContour, {
-                        text: sourceLabel.text || '',
-                        role: sourceLabel.role || 'user-text',
-                        fontSizeMm: sourceLabel.fontSizeMm || sourceLabel.fontSize,
-                        localOffsetX: sourceLabel.localOffsetX,
-                        localOffsetY: sourceLabel.localOffsetY,
-                        localAngle: sourceLabel.localAngle
-                    });
-                    if (duplicatedLabel) {
-                        duplicatedLabel.setCoords();
-                    }
-                }
-            }
-        });
-
-        this.restoreActiveSelection(newObjects);
-        this.canvas.requestRenderAll();
-        this.updateButtons();
-        this.updateStatusBar();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        await this.actionExecutor?.executeAction?.('duplicate', {}, this);
     }
 
     rotateSelected() {
-        const active = this.canvas.getActiveObject();
-        const [obj] = this.resolveActionTargets(active, 'rotate');
-        if (!obj) {
-            return;
-        }
-        const next = (obj.angle + 90) % 360;
-        this.contourManager.rotateContour(obj, next);
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('rotate', {}, this);
     }
 
     shouldAutosaveForObject(obj) {
