@@ -147,7 +147,7 @@ class ContourApp {
     initializeServices() {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
-        this.labelManager = new LabelManager(this.canvas, this, this.contourManager);
+        this.textManager = new TextManager(this.canvas, this, this.contourManager);
     }
 
     createSafeAreaRect() {
@@ -331,7 +331,7 @@ class ContourApp {
             );
 
             const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
-            this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
+            this.textManager.ensureDefaultTextForContour(contourObj, item.defaultLabel);
         });
 
         this.scheduleWorkspaceSave();
@@ -769,7 +769,7 @@ class ContourApp {
 
         if (active.type === 'activeSelection') {
             active.getObjects().forEach(obj => {
-                if (!obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea) {
+                if (!obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea) {
                     obj._lastLeft = obj.left;
                     obj._lastTop = obj.top;
                 }
@@ -778,13 +778,13 @@ class ContourApp {
                     top: obj.top + dy
                 });
                 obj.setCoords();
-                if (!obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea) {
-                    this.labelManager.onContourMoving(obj);
+                if (!obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea) {
+                    this.textManager.syncAttachedTextsForContour(obj);
                 }
             });
             active.setCoords();
         } else {
-            if (!active.primitiveType && !active.isLabel && active !== this.layment && active !== this.safeArea) {
+            if (!active.primitiveType && !active.isTextObject && active !== this.layment && active !== this.safeArea) {
                 active._lastLeft = active.left;
                 active._lastTop = active.top;
             }
@@ -793,8 +793,8 @@ class ContourApp {
                 top: active.top + dy
             });
             active.setCoords();
-            if (!active.primitiveType && !active.isLabel && active !== this.layment && active !== this.safeArea) {
-                this.labelManager.onContourMoving(active);
+            if (!active.primitiveType && !active.isTextObject && active !== this.layment && active !== this.safeArea) {
+                this.textManager.syncAttachedTextsForContour(active);
             }
         }
 
@@ -888,8 +888,8 @@ class ContourApp {
 
         this.canvas.on('object:moving', event => {
             const target = event.target;
-            if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
-                this.labelManager.onContourMoving(target);
+            if (target && !target.primitiveType && !target.isTextObject && target !== this.layment && target !== this.safeArea) {
+                this.textManager.syncAttachedTextsForContour(target);
             }
             this.canvas.requestRenderAll();
             this.updateStatusBar();
@@ -907,8 +907,8 @@ class ContourApp {
 
         this.canvas.on('object:modified', event => {
             const target = event.target;
-            if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
-                this.labelManager.onContourModified(target);
+            if (target && !target.primitiveType && !target.isTextObject && target !== this.layment && target !== this.safeArea) {
+                this.textManager.syncAttachedTextsForContour(target);
             }
             this.canvas.requestRenderAll();
             if (this.shouldAutosaveForObject(target)) {
@@ -1168,10 +1168,10 @@ class ContourApp {
     }
 
     isArrangeTarget(obj) {
-        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.isTextObject) {
             return false;
         }
-        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
+        return !!obj.primitiveType || (!obj.primitiveType && !obj.isTextObject);
     }
 
     temporarilyUngroupActiveSelection() {
@@ -1205,7 +1205,7 @@ class ContourApp {
     }
 
     applyDeltaToObject(obj, deltaX, deltaY) {
-        const isContour = !obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea;
+        const isContour = !obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea;
         if (isContour) {
             obj._lastLeft = obj.left;
             obj._lastTop = obj.top;
@@ -1218,7 +1218,7 @@ class ContourApp {
         obj.setCoords();
 
         if (isContour) {
-            this.labelManager.onContourMoving(obj);
+            this.textManager.syncAttachedTextsForContour(obj);
         }
     }
 
@@ -1399,10 +1399,10 @@ class ContourApp {
     }
 
     isDuplicateTarget(obj) {
-        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.isTextObject) {
             return false;
         }
-        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
+        return !!obj.primitiveType || (!obj.primitiveType && !obj.isTextObject);
     }
 
     getSingleSelectedPrimitive() {
@@ -1479,7 +1479,7 @@ class ContourApp {
 
     getSelectedContourForLabel() {
         const active = this.canvas.getActiveObject();
-        if (!active || active.type === 'activeSelection' || active.primitiveType || active.isLabel || active === this.layment || active === this.safeArea) {
+        if (!active || active.type === 'activeSelection' || active.primitiveType || active.isTextObject || active === this.layment || active === this.safeArea) {
             return null;
         }
         return active;
@@ -1490,7 +1490,7 @@ class ContourApp {
         if (!active || active.type === 'activeSelection') {
             return null;
         }
-        return active.isLabel ? active : null;
+        return active.isTextObject ? active : null;
     }
 
     setLabelPanelEnabled(enabled) {
@@ -1526,7 +1526,7 @@ class ContourApp {
             return;
         }
 
-        const label = this.labelManager.getLabelByPlacementId(contour.placementId);
+        const label = this.textManager.getAttachedTextByPlacementId(contour.placementId);
         const meta = this.contourManager.metadataMap.get(contour);
         if (UIDom.labels.textInput) {
             UIDom.labels.textInput.value = label ? (label.text || '') : (meta?.defaultLabel || '');
@@ -1538,7 +1538,7 @@ class ContourApp {
     applyLabelTextFromInput(value) {
         const selectedLabel = this.getSelectedLabelObject();
         const contour = this.getSelectedContourForLabel();
-        const targetLabel = selectedLabel || (contour ? this.labelManager.getLabelByPlacementId(contour.placementId) : null);
+        const targetLabel = selectedLabel || (contour ? this.textManager.getAttachedTextByPlacementId(contour.placementId) : null);
 
         if (!targetLabel) {
             return;
@@ -1559,7 +1559,7 @@ class ContourApp {
         }
 
         const text = UIDom.labels.textInput?.value ?? '';
-        const label = this.labelManager.createOrUpdateLabelForContour(contour, text);
+        const label = this.textManager.createAttachedText(contour, { text, role: 'custom' });
         if (!label) {
             return;
         }
@@ -1573,7 +1573,7 @@ class ContourApp {
     deleteLabelForSelection() {
         const selectedLabel = this.getSelectedLabelObject();
         if (selectedLabel) {
-            this.labelManager.removeLabel(selectedLabel);
+            this.textManager.removeText(selectedLabel);
             this.canvas.discardActiveObject();
             this.canvas.requestRenderAll();
             this.syncLabelControlsFromSelection();
@@ -1586,12 +1586,12 @@ class ContourApp {
             return;
         }
 
-        const label = this.labelManager.getLabelByPlacementId(contour.placementId);
+        const label = this.textManager.getAttachedTextByPlacementId(contour.placementId);
         if (!label) {
             return;
         }
 
-        this.labelManager.removeLabel(label);
+        this.textManager.removeText(label);
         this.canvas.requestRenderAll();
         this.syncLabelControlsFromSelection();
         this.scheduleWorkspaceSave();
@@ -1982,8 +1982,8 @@ class ContourApp {
             this.canvas.discardActiveObject();
             for (const o of objects) {
               if (!o) continue;
-              if (o.isLabel) {
-                this.labelManager.removeLabel(o);
+              if (o.isTextObject) {
+                this.textManager.removeText(o);
                 continue;
               }
 
@@ -1992,11 +1992,8 @@ class ContourApp {
                 continue;
               }
               // contour
-              if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
-                this.labelManager.removeLabelsForPlacementId(o.placementId);
-              } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
-                // на случай старой схемы
-                this.labelManager.removeLabelsForContourId(o.contourId);
+              if (this.textManager.removeTextsForPlacementId && o.placementId != null) {
+                this.textManager.removeTextsForPlacementId(o.placementId);
               }
 
               this.contourManager.removeContour(o, false);
@@ -2024,7 +2021,7 @@ class ContourApp {
             this.canvas.discardActiveObject();
 
             for (const obj of selected) {
-                if (!obj || obj.isLabel || obj === this.layment || obj === this.safeArea) {
+                if (!obj || obj.isTextObject || obj === this.layment || obj === this.safeArea) {
                     continue;
                 }
 
@@ -2085,20 +2082,17 @@ class ContourApp {
                 duplicatedContour.setCoords();
                 newObjects.push(duplicatedContour);
 
-                const sourceLabel = this.labelManager.getLabelByPlacementId(obj.placementId);
+                const sourceLabel = this.textManager.getAttachedTextByPlacementId(obj.placementId);
                 if (sourceLabel) {
-                    const dx = sourceLabel.left - contourCenter.x;
-                    const dy = sourceLabel.top - contourCenter.y;
-                    const duplicatedCenter = duplicatedContour.getCenterPoint();
-                    const duplicatedLabel = this.labelManager.createLabel({
-                        placementId: duplicatedContour.placementId,
+                    const duplicatedLabel = this.textManager.createAttachedText(duplicatedContour, {
                         text: sourceLabel.text || '',
-                        left: duplicatedCenter.x + dx,
-                        top: duplicatedCenter.y + dy,
-                        fontSize: sourceLabel.fontSize
+                        role: sourceLabel.role || 'custom',
+                        fontSizeMm: sourceLabel.fontSizeMm || sourceLabel.fontSize,
+                        localOffsetX: sourceLabel.localOffsetX,
+                        localOffsetY: sourceLabel.localOffsetY,
+                        localAngle: sourceLabel.localAngle
                     });
                     if (duplicatedLabel) {
-                        duplicatedLabel.set({ angle: sourceLabel.angle || 0 });
                         duplicatedLabel.setCoords();
                     }
                 }
@@ -2116,7 +2110,7 @@ class ContourApp {
 
     rotateSelected() {
         const obj = this.canvas.getActiveObject();
-        if (!obj || obj.primitiveType || obj.isLabel) return;  // Нет поворота для примитивов и labels
+        if (!obj || obj.primitiveType || obj.isTextObject) return;  // Нет поворота для примитивов и labels
         const next = (obj.angle + 90) % 360;
         this.contourManager.rotateContour(obj, next);
         this.scheduleWorkspaceSave();
@@ -2162,7 +2156,7 @@ class ContourApp {
             laymentThicknessMm: this.laymentThicknessMm,
             contours: this.contourManager.getWorkspaceContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
-            labels: this.labelManager.getWorkspaceLabelsData()
+            labels: this.textManager.getWorkspaceTextsData()
         };
     }
 
@@ -2216,7 +2210,7 @@ class ContourApp {
                     this.canvas.discardActiveObject();
                     this.contourManager.clearContours();
                     this.primitiveManager.clearPrimitives();
-                    this.labelManager.clearLabels();
+                    this.textManager.clearTexts();
                 });
 
             const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
@@ -2289,24 +2283,31 @@ class ContourApp {
             const maxPlacementId = placementIds.length ? Math.max(...placementIds) : 0;
             this.contourManager.nextPlacementSeq = maxPlacementId + 1;
 
-            if (Array.isArray(data.labels)) {
-                for (const labelData of data.labels) {
-                    const contour = this.contourManager.contours.find(c => c.placementId === labelData.placementId);
+            const savedTexts = Array.isArray(data.texts) ? data.texts : (Array.isArray(data.labels) ? data.labels : []);
+            if (savedTexts.length > 0) {
+                for (const labelData of savedTexts) {
+                    const ownerPlacementId = Number.isFinite(labelData.ownerPlacementId)
+                        ? labelData.ownerPlacementId
+                        : labelData.placementId;
+                    const contour = this.contourManager.contours.find(c => c.placementId === ownerPlacementId);
                     if (!contour) {
                         continue;
                     }
-                    this.labelManager.createLabel({
-                        placementId: labelData.placementId,
+                    this.textManager.createAttachedText(contour, {
                         text: labelData.text,
+                        role: labelData.role || 'custom',
                         left: this.layment.left + labelData.x,
                         top: this.layment.top + labelData.y,
-                        fontSize: labelData.fontSizeMm
+                        fontSizeMm: labelData.fontSizeMm,
+                        localOffsetX: labelData.localOffsetX,
+                        localOffsetY: labelData.localOffsetY,
+                        localAngle: labelData.localAngle
                     });
                 }
             } else {
                 for (const contour of this.contourManager.contours) {
                     const meta = this.contourManager.metadataMap.get(contour);
-                    this.labelManager.ensureDefaultLabelForContour(contour, meta?.defaultLabel);
+                    this.textManager.ensureDefaultTextForContour(contour, meta?.defaultLabel);
                 }
             }
 
@@ -2564,7 +2565,7 @@ class ContourApp {
     }
 
     buildPreviewSvg() {
-        const labels = this.canvas.getObjects().filter(obj => obj?.isLabel);
+        const labels = this.canvas.getObjects().filter(obj => obj?.isTextObject);
         const prev = labels.map(label => ({
             label,
             visible: label.visible
@@ -2823,7 +2824,7 @@ class ContourApp {
 
             contours: this.contourManager.getContoursData(),
             primitives: this.contourManager.getPrimitivesData(),
-            labels: this.labelManager.getExportLabelsData(),
+            labels: this.textManager.getExportTextsData(),
             customer: this.pendingCustomer
         };
 
