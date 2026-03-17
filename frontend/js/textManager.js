@@ -303,26 +303,63 @@ class TextManager {
         }
 
         return this.texts
-            .map(textObj => {
-                if (!textObj?.aCoords?.tl) {
-                    return null;
-                }
-                const tl = textObj.aCoords.tl;
-                return {
-                    kind: textObj.kind,
-                    role: textObj.role,
-                    ownerPlacementId: textObj.ownerPlacementId,
-                    placementId: textObj.ownerPlacementId,
-                    text: textObj.text,
-                    fontSizeMm: Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM,
-                    localOffsetX: textObj.localOffsetX,
-                    localOffsetY: textObj.localOffsetY,
-                    localAngle: textObj.localAngle,
-                    x: Math.round((tl.x - layment.left) / layment.scaleX),
-                    y: Math.round((tl.y - layment.top) / layment.scaleY)
-                };
-            })
+            .map(textObj => this.buildWorkspaceTextSnapshot(textObj, layment))
             .filter(Boolean);
+    }
+
+    buildWorkspaceTextSnapshot(textObj, layment = this.canvas.layment) {
+        if (!layment || !textObj?.aCoords?.tl) {
+            return null;
+        }
+
+        const tl = textObj.aCoords.tl;
+        return {
+            kind: textObj.kind === 'attached' ? 'attached' : 'free',
+            role: typeof textObj.role === 'string' && textObj.role.trim() ? textObj.role : 'custom',
+            ownerPlacementId: Number.isFinite(textObj.ownerPlacementId) ? textObj.ownerPlacementId : null,
+            text: typeof textObj.text === 'string' ? textObj.text : '',
+            fontSizeMm: Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM,
+            localOffsetX: Number.isFinite(textObj.localOffsetX) ? textObj.localOffsetX : 0,
+            localOffsetY: Number.isFinite(textObj.localOffsetY) ? textObj.localOffsetY : 0,
+            localAngle: Number.isFinite(textObj.localAngle) ? textObj.localAngle : 0,
+            x: Math.round((tl.x - layment.left) / layment.scaleX),
+            y: Math.round((tl.y - layment.top) / layment.scaleY)
+        };
+    }
+
+    normalizeWorkspaceTexts(rawTexts) {
+        if (!Array.isArray(rawTexts)) {
+            return [];
+        }
+
+        return rawTexts
+            .map(item => this.normalizeWorkspaceText(item))
+            .filter(Boolean);
+    }
+
+    normalizeWorkspaceText(rawText) {
+        if (!rawText || typeof rawText !== 'object') {
+            return null;
+        }
+        if (!Number.isFinite(rawText.x) || !Number.isFinite(rawText.y)) {
+            return null;
+        }
+
+        const kind = rawText.kind === 'attached' ? 'attached' : 'free';
+        const ownerPlacementId = Number.isFinite(rawText.ownerPlacementId) ? rawText.ownerPlacementId : null;
+
+        return {
+            kind,
+            role: typeof rawText.role === 'string' && rawText.role.trim() ? rawText.role : 'custom',
+            ownerPlacementId,
+            text: typeof rawText.text === 'string' ? rawText.text : '',
+            fontSizeMm: Number(rawText.fontSizeMm) || Config.LABELS.FONT_SIZE_MM,
+            localOffsetX: Number.isFinite(rawText.localOffsetX) ? rawText.localOffsetX : 0,
+            localOffsetY: Number.isFinite(rawText.localOffsetY) ? rawText.localOffsetY : 0,
+            localAngle: Number.isFinite(rawText.localAngle) ? rawText.localAngle : 0,
+            x: rawText.x,
+            y: rawText.y
+        };
     }
 
     getExportTextsData() {
