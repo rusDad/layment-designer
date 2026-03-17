@@ -38,6 +38,10 @@ class ContourApp {
         this.pendingPointerResetRenderRaf = null;
         this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
 
+        this.objectMetaApi = window.ObjectMeta || null;
+        this.interactionPolicy = window.InteractionPolicy || null;
+        this.actionExecutor = window.ActionExecutor || null;
+
         this.init();
     }
 
@@ -149,6 +153,17 @@ class ContourApp {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
         this.textManager = new TextManager(this.canvas, this, this.contourManager);
+    }
+
+    resolveActionTargets(activeObject) {
+        if (this.interactionPolicy?.resolveActionTargets) {
+            return this.interactionPolicy.resolveActionTargets(this, activeObject);
+        }
+
+        if (!activeObject) {
+            return [];
+        }
+        return activeObject.type === 'activeSelection' ? activeObject.getObjects().filter(Boolean) : [activeObject];
     }
 
     createSafeAreaRect() {
@@ -1152,18 +1167,16 @@ class ContourApp {
 
     getArrangeSelectionObjects() {
         const active = this.canvas.getActiveObject();
-        if (!active) {
-            return [];
-        }
-        if (active.type === 'activeSelection') {
-            return active.getObjects().filter(obj => this.isArrangeTarget(obj));
-        }
-        return this.isArrangeTarget(active) ? [active] : [];
+        const targets = this.resolveActionTargets(active);
+        return targets.filter(obj => this.isArrangeTarget(obj));
     }
 
     isArrangeTarget(obj) {
         if (!obj || obj === this.layment || obj === this.safeArea || obj.isTextObject) {
             return false;
+        }
+        if (this.interactionPolicy?.canParticipateInAlign) {
+            return this.interactionPolicy.canParticipateInAlign(this, obj);
         }
         return !!obj.primitiveType || (!obj.primitiveType && !obj.isTextObject);
     }
@@ -1380,13 +1393,16 @@ class ContourApp {
         const active = this.canvas.getActiveObject();
         const has = !!active;
 
-        UIDom.buttons.delete.disabled = !has;
-        UIDom.buttons.rotate.disabled = !has || !!active?.primitiveType;
+        const deleteAllowed = has && (!this.interactionPolicy?.canDelete || this.interactionPolicy.canDelete(this, active));
+        const rotateAllowed = has && (!this.interactionPolicy?.canRotate || this.interactionPolicy.canRotate(this, active));
+
+        UIDom.buttons.delete.disabled = !deleteAllowed;
+        UIDom.buttons.rotate.disabled = !rotateAllowed;
 
         const duplicateTargets = this.getDuplicateSelectionObjects();
         UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
 
-        const alignDisabled = selectedCount < 2;
+        const alignDisabled = selectedCount < 2 || selected.some(obj => this.interactionPolicy?.canParticipateInAlign && !this.interactionPolicy.canParticipateInAlign(this, obj));
         UIDom.buttons.alignLeft.disabled = alignDisabled;
         UIDom.buttons.alignCenterX.disabled = alignDisabled;
         UIDom.buttons.alignRight.disabled = alignDisabled;
@@ -1394,11 +1410,11 @@ class ContourApp {
         UIDom.buttons.alignCenterY.disabled = alignDisabled;
         UIDom.buttons.alignBottom.disabled = alignDisabled;
 
-        const distributeDisabled = selectedCount < 3;
+        const distributeDisabled = selectedCount < 3 || selected.some(obj => this.interactionPolicy?.canParticipateInDistribute && !this.interactionPolicy.canParticipateInDistribute(this, obj));
         UIDom.buttons.distributeHorizontalGaps.disabled = distributeDisabled;
         UIDom.buttons.distributeVerticalGaps.disabled = distributeDisabled;
 
-        const snapDisabled = selectedCount < 1;
+        const snapDisabled = selectedCount < 1 || selected.some(obj => this.interactionPolicy?.canParticipateInSnap && !this.interactionPolicy.canParticipateInSnap(this, obj));
         UIDom.buttons.snapLeft.disabled = snapDisabled;
         UIDom.buttons.snapRight.disabled = snapDisabled;
         UIDom.buttons.snapTop.disabled = snapDisabled;
@@ -1408,20 +1424,16 @@ class ContourApp {
 
     getDuplicateSelectionObjects() {
         const active = this.canvas.getActiveObject();
-        if (!active) {
-            return [];
-        }
-
-        if (active.type === 'activeSelection') {
-            return active.getObjects().filter(obj => this.isDuplicateTarget(obj));
-        }
-
-        return this.isDuplicateTarget(active) ? [active] : [];
+        const targets = this.resolveActionTargets(active);
+        return targets.filter(obj => this.isDuplicateTarget(obj));
     }
 
     isDuplicateTarget(obj) {
         if (!obj || obj === this.layment || obj === this.safeArea || obj.isTextObject) {
             return false;
+        }
+        if (this.interactionPolicy?.canDuplicate) {
+            return this.interactionPolicy.canDuplicate(this, obj);
         }
         return !!obj.primitiveType || (!obj.primitiveType && !obj.isTextObject);
     }
@@ -2086,11 +2098,16 @@ class ContourApp {
             }
         });
 
-      this.updateButtons();
-      this.updateStatusBar?.();
-      this.syncPrimitiveControlsFromSelection();
-      this.syncTextControlsFromSelection();
-      this.scheduleWorkspaceSave();
+      if (this.actionExecutor?.finalizeCanvasAction) {
+          const ctx = this.actionExecutor.buildActionContext(this, 'delete');
+          this.actionExecutor.finalizeCanvasAction(ctx);
+      } else {
+          this.updateButtons();
+          this.updateStatusBar?.();
+          this.syncPrimitiveControlsFromSelection();
+          this.syncTextControlsFromSelection();
+          this.scheduleWorkspaceSave();
+      }
     }
 
 
@@ -2196,7 +2213,12 @@ class ContourApp {
 
     rotateSelected() {
         const obj = this.canvas.getActiveObject();
-        if (!obj || obj.primitiveType || obj.isTextObject) return;  // Нет поворота для примитивов и labels
+        if (!obj || (this.interactionPolicy?.canRotate && !this.interactionPolicy.canRotate(this, obj))) {
+            return;
+        }
+        if (!this.interactionPolicy?.canRotate && (obj.primitiveType || obj.isTextObject)) {
+            return;
+        }
         const next = (obj.angle + 90) % 360;
         this.contourManager.rotateContour(obj, next);
         this.scheduleWorkspaceSave();
