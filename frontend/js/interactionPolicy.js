@@ -148,11 +148,20 @@
     }
 
     function canGroupMoveSelection(ctx, targets) {
-        const list = expandTargetsWithSoftGroups(ctx, targets, obj => canMove(ctx, obj));
-        if (!list.length) {
+        const selection = Array.isArray(targets) ? targets.filter(Boolean) : [];
+        if (!selection.length) {
             return false;
         }
-        return list.every(obj => canMove(ctx, obj));
+        if (selection.some(obj => !canMove(ctx, obj))) {
+            return false;
+        }
+
+        const expanded = expandTargetsWithSoftGroups(ctx, selection);
+        if (!expanded.length) {
+            return false;
+        }
+
+        return expanded.every(obj => canMove(ctx, obj));
     }
 
     function canToggleLock(ctx, obj) {
