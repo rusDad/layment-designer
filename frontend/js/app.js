@@ -1252,144 +1252,16 @@ class ContourApp {
         obj.setCoords();
     }
 
-    applyDeltaToObject(obj, deltaX, deltaY) {
-        obj.set({
-            left: obj.left + deltaX,
-            top: obj.top + deltaY
-        });
-        obj.setCoords();
-        this.syncAttachedTextFollowersForOwner(obj, { rememberContourLastPosition: true });
-    }
-
-    finalizeArrangeOperation() {
-        this.canvas.requestRenderAll();
-        this.updateStatusBar();
-        this.scheduleWorkspaceSave();
-    }
-
     alignSelected(mode) {
-        const selected = this.getArrangeSelectionObjects();
-        if (selected.length < 2) {
-            return;
-        }
-
-        this.temporarilyUngroupActiveSelection();
-
-        const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
-        const minLeft = Math.min(...boxes.map(item => item.bbox.left));
-        const maxRight = Math.max(...boxes.map(item => item.bbox.left + item.bbox.width));
-        const minTop = Math.min(...boxes.map(item => item.bbox.top));
-        const maxBottom = Math.max(...boxes.map(item => item.bbox.top + item.bbox.height));
-        const centerX = minLeft + ((maxRight - minLeft) / 2);
-        const centerY = minTop + ((maxBottom - minTop) / 2);
-
-        for (const item of boxes) {
-            let targetLeft = item.bbox.left;
-            let targetTop = item.bbox.top;
-
-            if (mode === 'left') targetLeft = minLeft;
-            if (mode === 'center-x') targetLeft = centerX - (item.bbox.width / 2);
-            if (mode === 'right') targetLeft = maxRight - item.bbox.width;
-            if (mode === 'top') targetTop = minTop;
-            if (mode === 'center-y') targetTop = centerY - (item.bbox.height / 2);
-            if (mode === 'bottom') targetTop = maxBottom - item.bbox.height;
-
-            const deltaX = targetLeft - item.bbox.left;
-            const deltaY = targetTop - item.bbox.top;
-            this.applyDeltaToObject(item.obj, deltaX, deltaY);
-        }
-
-        this.finalizeArrangeOperation();
-        this.restoreActiveSelection(selected);
-        this.updateButtons();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
+        this.actionExecutor?.executeAction?.('align', { mode }, this);
     }
 
     distributeSelected(mode) {
-        const selected = this.getArrangeSelectionObjects();
-        if (selected.length < 3) {
-            return;
-        }
-
-        this.temporarilyUngroupActiveSelection();
-
-        const axis = mode === 'horizontal-gaps' ? 'x' : 'y';
-        const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
-        const sorted = boxes.sort((a, b) => axis === 'x' ? a.bbox.left - b.bbox.left : a.bbox.top - b.bbox.top);
-
-        if (axis === 'x') {
-            const totalWidth = sorted.reduce((sum, item) => sum + item.bbox.width, 0);
-            const span = (sorted[sorted.length - 1].bbox.left + sorted[sorted.length - 1].bbox.width) - sorted[0].bbox.left;
-            const gap = (span - totalWidth) / (sorted.length - 1);
-            let cursor = sorted[0].bbox.left + sorted[0].bbox.width + gap;
-
-            for (let i = 1; i < sorted.length - 1; i += 1) {
-                const targetLeft = cursor;
-                const deltaX = targetLeft - sorted[i].bbox.left;
-                this.applyDeltaToObject(sorted[i].obj, deltaX, 0);
-                cursor += sorted[i].bbox.width + gap;
-            }
-        } else {
-            const totalHeight = sorted.reduce((sum, item) => sum + item.bbox.height, 0);
-            const span = (sorted[sorted.length - 1].bbox.top + sorted[sorted.length - 1].bbox.height) - sorted[0].bbox.top;
-            const gap = (span - totalHeight) / (sorted.length - 1);
-            let cursor = sorted[0].bbox.top + sorted[0].bbox.height + gap;
-
-            for (let i = 1; i < sorted.length - 1; i += 1) {
-                const targetTop = cursor;
-                const deltaY = targetTop - sorted[i].bbox.top;
-                this.applyDeltaToObject(sorted[i].obj, 0, deltaY);
-                cursor += sorted[i].bbox.height + gap;
-            }
-        }
-
-        this.finalizeArrangeOperation();
-        this.restoreActiveSelection(selected);
-        this.updateButtons();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
+        this.actionExecutor?.executeAction?.('distribute', { mode }, this);
     }
 
     snapSelectedToSide(side) {
-        const selected = this.getArrangeSelectionObjects();
-        if (selected.length < 1) {
-            return;
-        }
-         // важно: разгруппировать ПОСЛЕ того, как мы получили список объектов
-        this.temporarilyUngroupActiveSelection();
-
-        const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
-        const clearanceMm = 3;
-        const clearancePx = clearanceMm;
-
-        for (const obj of selected) {
-            const bbox = obj.getBoundingRect(true);
-            let deltaX = 0;
-            let deltaY = 0;
-
-            if (side === 'left') {
-                const targetLeft = targetArea.left + clearancePx;
-                deltaX = targetLeft - bbox.left;
-            } else if (side === 'right') {
-                const targetLeft = targetArea.left + targetArea.width - clearancePx - bbox.width;
-                deltaX = targetLeft - bbox.left;
-            } else if (side === 'top') {
-                const targetTop = targetArea.top + clearancePx;
-                deltaY = targetTop - bbox.top;
-            } else if (side === 'bottom') {
-                const targetTop = targetArea.top + targetArea.height - clearancePx - bbox.height;
-                deltaY = targetTop - bbox.top;
-            }
-
-            this.applyDeltaToObject(obj, deltaX, deltaY);
-        }
-
-        this.finalizeArrangeOperation();
-        this.restoreActiveSelection(selected);
-        this.updateButtons();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
+        this.actionExecutor?.executeAction?.('snap', { side }, this);
     }
 
     updateButtons() {

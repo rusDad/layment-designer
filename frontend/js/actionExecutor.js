@@ -194,8 +194,157 @@
 
             app.restoreActiveSelection(newObjects);
             return newObjects;
+        },
+        align: async (ctx) => {
+            const { app, canvas, mode } = ctx;
+            const active = canvas?.getActiveObject?.();
+            const selected = app.resolveActionTargets(active, 'align');
+            if (selected.length < 2) {
+                ctx.skipAutosave = true;
+                return null;
+            }
+
+            const savedSelection = app.temporarilyUngroupActiveSelection?.() || { objects: null };
+            const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
+            const minLeft = Math.min(...boxes.map(item => item.bbox.left));
+            const maxRight = Math.max(...boxes.map(item => item.bbox.left + item.bbox.width));
+            const minTop = Math.min(...boxes.map(item => item.bbox.top));
+            const maxBottom = Math.max(...boxes.map(item => item.bbox.top + item.bbox.height));
+            const centerX = minLeft + ((maxRight - minLeft) / 2);
+            const centerY = minTop + ((maxBottom - minTop) / 2);
+
+            const changedObjects = applyAction(ctx, selected, (obj) => {
+                const item = boxes.find(candidate => candidate.obj === obj);
+                if (!item) {
+                    return;
+                }
+
+                let targetLeft = item.bbox.left;
+                let targetTop = item.bbox.top;
+
+                if (mode === 'left') targetLeft = minLeft;
+                if (mode === 'center-x') targetLeft = centerX - (item.bbox.width / 2);
+                if (mode === 'right') targetLeft = maxRight - item.bbox.width;
+                if (mode === 'top') targetTop = minTop;
+                if (mode === 'center-y') targetTop = centerY - (item.bbox.height / 2);
+                if (mode === 'bottom') targetTop = maxBottom - item.bbox.height;
+
+                const deltaX = targetLeft - item.bbox.left;
+                const deltaY = targetTop - item.bbox.top;
+                applyDeltaToObject(obj, deltaX, deltaY);
+            });
+
+            app.restoreActiveSelection(changedObjects.length ? selected : (savedSelection.objects || selected));
+            return { changedObjects, mode };
+        },
+        distribute: async (ctx) => {
+            const { app, canvas, mode } = ctx;
+            const active = canvas?.getActiveObject?.();
+            const selected = app.resolveActionTargets(active, 'distribute');
+            if (selected.length < 3) {
+                ctx.skipAutosave = true;
+                return null;
+            }
+
+            const savedSelection = app.temporarilyUngroupActiveSelection?.() || { objects: null };
+            const axis = mode === 'horizontal-gaps' ? 'x' : 'y';
+            const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
+            const sorted = boxes.sort((a, b) => axis === 'x' ? a.bbox.left - b.bbox.left : a.bbox.top - b.bbox.top);
+            const targets = [];
+
+            if (axis === 'x') {
+                const totalWidth = sorted.reduce((sum, item) => sum + item.bbox.width, 0);
+                const span = (sorted[sorted.length - 1].bbox.left + sorted[sorted.length - 1].bbox.width) - sorted[0].bbox.left;
+                const gap = (span - totalWidth) / (sorted.length - 1);
+                let cursor = sorted[0].bbox.left + sorted[0].bbox.width + gap;
+
+                for (let i = 1; i < sorted.length - 1; i += 1) {
+                    targets.push({ obj: sorted[i].obj, deltaX: cursor - sorted[i].bbox.left, deltaY: 0 });
+                    cursor += sorted[i].bbox.width + gap;
+                }
+            } else {
+                const totalHeight = sorted.reduce((sum, item) => sum + item.bbox.height, 0);
+                const span = (sorted[sorted.length - 1].bbox.top + sorted[sorted.length - 1].bbox.height) - sorted[0].bbox.top;
+                const gap = (span - totalHeight) / (sorted.length - 1);
+                let cursor = sorted[0].bbox.top + sorted[0].bbox.height + gap;
+
+                for (let i = 1; i < sorted.length - 1; i += 1) {
+                    targets.push({ obj: sorted[i].obj, deltaX: 0, deltaY: cursor - sorted[i].bbox.top });
+                    cursor += sorted[i].bbox.height + gap;
+                }
+            }
+
+            const changedObjects = applyAction(ctx, targets.map(item => item.obj), (obj) => {
+                const target = targets.find(candidate => candidate.obj === obj);
+                if (!target) {
+                    return;
+                }
+                applyDeltaToObject(obj, target.deltaX, target.deltaY);
+            });
+
+            app.restoreActiveSelection(changedObjects.length ? selected : (savedSelection.objects || selected));
+            return { changedObjects, mode };
+        },
+        snap: async (ctx) => {
+            const { app, canvas, side } = ctx;
+            const active = canvas?.getActiveObject?.();
+            const selected = app.resolveActionTargets(active, 'snap');
+            if (!selected.length) {
+                ctx.skipAutosave = true;
+                return null;
+            }
+
+            const savedSelection = app.temporarilyUngroupActiveSelection?.() || { objects: null };
+            const targetArea = (app.safeArea || app.layment)?.getBoundingRect?.(true);
+            if (!targetArea) {
+                app.restoreActiveSelection(savedSelection.objects || selected);
+                ctx.skipAutosave = true;
+                return null;
+            }
+
+            const clearancePx = 3;
+            const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
+            const changedObjects = applyAction(ctx, selected, (obj) => {
+                const item = boxes.find(candidate => candidate.obj === obj);
+                if (!item) {
+                    return;
+                }
+
+                let deltaX = 0;
+                let deltaY = 0;
+
+                if (side === 'left') {
+                    const targetLeft = targetArea.left + clearancePx;
+                    deltaX = targetLeft - item.bbox.left;
+                } else if (side === 'right') {
+                    const targetLeft = targetArea.left + targetArea.width - clearancePx - item.bbox.width;
+                    deltaX = targetLeft - item.bbox.left;
+                } else if (side === 'top') {
+                    const targetTop = targetArea.top + clearancePx;
+                    deltaY = targetTop - item.bbox.top;
+                } else if (side === 'bottom') {
+                    const targetTop = targetArea.top + targetArea.height - clearancePx - item.bbox.height;
+                    deltaY = targetTop - item.bbox.top;
+                }
+
+                applyDeltaToObject(obj, deltaX, deltaY);
+            });
+
+            app.restoreActiveSelection(changedObjects.length ? selected : (savedSelection.objects || selected));
+            return { changedObjects, side };
         }
     };
+
+    function applyDeltaToObject(obj, deltaX, deltaY) {
+        if (!obj) {
+            return;
+        }
+
+        obj.set({
+            left: obj.left + deltaX,
+            top: obj.top + deltaY
+        });
+    }
 
     function applyAction(ctx, targets, updater) {
         if (typeof updater !== 'function') {
