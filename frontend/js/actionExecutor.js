@@ -145,6 +145,7 @@
                             angle: obj.angle || 0
                         });
                         objectMetaApi?.copyObjectMeta?.(obj, copy);
+                        objectMetaApi?.patchObjectMeta?.(copy, { groupId: null });
                         objectMetaApi?.applyInteractionState?.(copy);
                         copy.setCoords();
                         newObjects.push(copy);
@@ -167,6 +168,7 @@
                             opacity: obj.opacity
                         });
                         objectMetaApi?.copyObjectMeta?.(obj, copy);
+                        objectMetaApi?.patchObjectMeta?.(copy, { groupId: null });
                         objectMetaApi?.applyInteractionState?.(copy);
                         copy.setCoords();
                         newObjects.push(copy);
@@ -188,7 +190,8 @@
                     const duplicatedContour = app.contourManager.contours[app.contourManager.contours.length - 1];
                     objectMetaApi?.copyObjectMeta?.(obj, duplicatedContour);
                     objectMetaApi?.patchObjectMeta?.(duplicatedContour, {
-                        placementId: duplicatedContour.placementId
+                        placementId: duplicatedContour.placementId,
+                        groupId: null
                     });
                     objectMetaApi?.applyInteractionState?.(duplicatedContour);
                     duplicatedContour.set({ angle: obj.angle || 0 });
@@ -213,7 +216,8 @@
                         objectMetaApi?.copyObjectMeta?.(sourceText, duplicatedText);
                         objectMetaApi?.patchObjectMeta?.(duplicatedText, {
                             followMode: 'followBoundObject',
-                            boundToId: duplicatedText.ownerPlacementId
+                            boundToId: duplicatedText.ownerPlacementId,
+                            groupId: null
                         });
                         objectMetaApi?.applyInteractionState?.(duplicatedText);
                         duplicatedText.setCoords();

@@ -40,6 +40,8 @@ class ContourApp {
         this.pendingSelectionSource = null;
         this.activeSelectionSource = null;
         this.selectionSanitizeInProgress = false;
+        this.softGroupDragState = null;
+        this.applyingSoftGroupMove = false;
 
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
@@ -167,6 +169,206 @@ class ContourApp {
             return [];
         }
         return activeObject.type === 'activeSelection' ? activeObject.getObjects().filter(Boolean) : [activeObject];
+    }
+
+    generateSoftGroupId() {
+        if (window.crypto?.randomUUID) {
+            return `grp_${window.crypto.randomUUID()}`;
+        }
+        return `grp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    getSelectableWorkspaceObjects() {
+        return this.canvas.getObjects().filter(obj => {
+            return obj
+                && obj !== this.layment
+                && obj !== this.safeArea
+                && obj.type !== 'activeSelection';
+        });
+    }
+
+    getSoftGroupMembers(groupId) {
+        const normalizedGroupId = this.objectMetaApi?.normalizeGroupId?.(groupId) || null;
+        if (!normalizedGroupId) {
+            return [];
+        }
+        return this.getSelectableWorkspaceObjects().filter(obj => {
+            return this.objectMetaApi?.getGroupId?.(obj) === normalizedGroupId;
+        });
+    }
+
+    getSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        if (!activeObject) {
+            return [];
+        }
+        return activeObject.type === 'activeSelection'
+            ? activeObject.getObjects().filter(Boolean)
+            : [activeObject];
+    }
+
+    getGroupSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        return this.getSelectionObjects(activeObject)
+            .filter(obj => this.interactionPolicy?.canJoinGroup?.(this, obj) === true);
+    }
+
+    getUngroupSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        return this.getSelectionObjects(activeObject)
+            .filter(obj => !!this.objectMetaApi?.getGroupId?.(obj));
+    }
+
+    hasGroupSelection(activeObject = this.canvas.getActiveObject()) {
+        const selectedObjects = this.getSelectionObjects(activeObject);
+        const groupableObjects = this.getGroupSelectionObjects(activeObject);
+        return selectedObjects.length >= 2 && groupableObjects.length === selectedObjects.length;
+    }
+
+    hasUngroupSelection(activeObject = this.canvas.getActiveObject()) {
+        return this.getUngroupSelectionObjects(activeObject).length >= 1;
+    }
+
+    groupSelected() {
+        const selectedObjects = this.getSelectionObjects();
+        const groupableObjects = this.getGroupSelectionObjects();
+        if (selectedObjects.length < 2 || groupableObjects.length !== selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
+            return false;
+        }
+
+        const nextGroupId = this.generateSoftGroupId();
+        groupableObjects.forEach(obj => {
+            this.objectMetaApi.patchObjectMeta(obj, { groupId: nextGroupId });
+            obj.setCoords?.();
+        });
+
+        this.restoreActiveSelection(groupableObjects, { source: 'programmatic' });
+        this.scheduleWorkspaceSave();
+        return true;
+    }
+
+    ungroupSelected() {
+        const selectedObjects = this.getUngroupSelectionObjects();
+        if (!selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
+            return false;
+        }
+
+        const targetGroupIds = Array.from(new Set(selectedObjects
+            .map(obj => this.objectMetaApi?.getGroupId?.(obj))
+            .filter(Boolean)));
+        const changedObjects = [];
+
+        targetGroupIds.forEach(groupId => {
+            this.getSoftGroupMembers(groupId).forEach(member => {
+                this.objectMetaApi.patchObjectMeta(member, { groupId: null });
+                member.setCoords?.();
+                changedObjects.push(member);
+            });
+        });
+
+        const activeSelection = changedObjects.length > 1 ? changedObjects : selectedObjects.filter(Boolean);
+        if (activeSelection.length > 0) {
+            this.restoreActiveSelection(activeSelection, { source: 'programmatic' });
+        } else {
+            this.canvas.discardActiveObject();
+            this.canvas.requestRenderAll();
+        }
+        this.scheduleWorkspaceSave();
+        return true;
+    }
+
+    handleSoftGroupObjectMoving(target) {
+        if (!target || this.applyingSoftGroupMove) {
+            return;
+        }
+
+        const selectedObjects = this.resolveActionTargets(target, 'move');
+        if (!selectedObjects.length) {
+            this.softGroupDragState = null;
+            return;
+        }
+
+        let dragState = this.softGroupDragState;
+        if (!dragState || dragState.target !== target) {
+            this.beginSoftGroupMove(target, selectedObjects);
+            dragState = this.softGroupDragState;
+        }
+        if (!dragState || dragState.target !== target) {
+            return;
+        }
+
+        const currentAnchor = {
+            left: Number(target.left) || 0,
+            top: Number(target.top) || 0
+        };
+        const deltaX = currentAnchor.left - dragState.anchorLeft;
+        const deltaY = currentAnchor.top - dragState.anchorTop;
+        if (!deltaX && !deltaY) {
+            return;
+        }
+
+        this.applyingSoftGroupMove = true;
+        try {
+            dragState.trackedObjects.forEach(item => {
+                item.obj.set({
+                    left: item.left + deltaX,
+                    top: item.top + deltaY
+                });
+                this.syncObjectTextState(item.obj);
+            });
+        } finally {
+            this.applyingSoftGroupMove = false;
+        }
+    }
+
+    finalizeSoftGroupMove(target) {
+        const dragState = this.softGroupDragState;
+        if (!dragState || dragState.target !== target) {
+            this.softGroupDragState = null;
+            return;
+        }
+
+        dragState.trackedObjects.forEach(item => {
+            item.obj.setCoords?.();
+        });
+        this.softGroupDragState = null;
+    }
+
+    beginSoftGroupMove(target, selectedObjects = this.resolveActionTargets(target, 'move')) {
+        if (!target) {
+            this.softGroupDragState = null;
+            return null;
+        }
+
+        const moveTargets = Array.isArray(selectedObjects) ? selectedObjects.filter(Boolean) : [];
+        if (!moveTargets.length) {
+            this.softGroupDragState = null;
+            return null;
+        }
+
+        const activeSelectionMembers = target.type === 'activeSelection'
+            ? new Set(target.getObjects().filter(Boolean))
+            : null;
+        const trackedObjects = moveTargets
+            .filter(obj => {
+                if (obj === target) {
+                    return false;
+                }
+                if (activeSelectionMembers?.has(obj)) {
+                    return false;
+                }
+                return true;
+            })
+            .map(obj => ({
+                obj,
+                left: Number(obj.left) || 0,
+                top: Number(obj.top) || 0
+            }));
+
+        this.softGroupDragState = {
+            target,
+            anchorLeft: Number(target.left) || 0,
+            anchorTop: Number(target.top) || 0,
+            trackedObjects
+        };
+        return this.softGroupDragState;
     }
 
     markNextSelectionSource(source) {
@@ -910,6 +1112,7 @@ class ContourApp {
             }
 
             if (!this.canStartPanning(nativeEvent)) {
+                this.beginSoftGroupMove(event.target);
                 this.markNextSelectionSource(this.detectSelectionSourceFromPointerEvent(event));
                 return;
             }
@@ -950,6 +1153,7 @@ class ContourApp {
 
         this.canvas.on('mouse:up', () => {
             this.stopPanning();
+            this.finalizeSoftGroupMove(this.canvas.getActiveObject());
         });
 
         this.canvas.on('mouse:wheel', event => {
@@ -974,6 +1178,7 @@ class ContourApp {
         });
 
         this.canvas.on('object:moving', event => {
+            this.handleSoftGroupObjectMoving(event.target);
             this.syncObjectTextState(event.target);
             this.canvas.requestRenderAll();
             this.updateStatusBar();
@@ -992,6 +1197,7 @@ class ContourApp {
 
         this.canvas.on('object:modified', event => {
             const target = event.target;
+            this.finalizeSoftGroupMove(target);
             this.syncObjectTextState(target);
             this.canvas.requestRenderAll();
             if (this.shouldAutosaveForObject(target)) {
@@ -1007,6 +1213,12 @@ class ContourApp {
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
         UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
         UIDom.buttons.toggleLock.onclick = () => this.toggleLockSelected();
+        if (UIDom.buttons.group) {
+            UIDom.buttons.group.onclick = () => this.groupSelected();
+        }
+        if (UIDom.buttons.ungroup) {
+            UIDom.buttons.ungroup.onclick = () => this.ungroupSelected();
+        }
         UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
         UIDom.buttons.loadWorkspace.onclick = async () => {
             this.cancelAutosave();
@@ -1420,6 +1632,16 @@ class ContourApp {
                 : 'Заблокировать выделенное semantic lock-правилом';
             UIDom.buttons.toggleLock.title = nextLabel;
             UIDom.buttons.toggleLock.setAttribute('aria-pressed', lockState.allLocked ? 'true' : 'false');
+        }
+        if (UIDom.buttons.group) {
+            UIDom.buttons.group.disabled = !this.hasGroupSelection(active);
+            UIDom.buttons.group.dataset.hint = 'Создать soft-group из незаблокированного contour/primitive selection';
+            UIDom.buttons.group.title = 'Group';
+        }
+        if (UIDom.buttons.ungroup) {
+            UIDom.buttons.ungroup.disabled = !this.hasUngroupSelection(active);
+            UIDom.buttons.ungroup.dataset.hint = 'Удалить soft-group membership у выделенных групп';
+            UIDom.buttons.ungroup.title = 'Ungroup';
         }
 
         const alignDisabled = selectedCount < 2;
@@ -2119,10 +2341,11 @@ class ContourApp {
         }, AUTOSAVE_DEBOUNCE_MS);
     }
 
-    buildWorkspaceSnapshot() {
+    buildWorkspaceSnapshot(options = {}) {
+        const includeEditorState = options.includeEditorState !== false;
         const layment = this.canvas.layment;
         return {
-            schemaVersion: 3,
+            schemaVersion: 4,
             savedAt: new Date().toISOString(),
             layment: {
                 width: Math.round(layment.width),
@@ -2132,9 +2355,9 @@ class ContourApp {
             workspaceScale: 1,
             baseMaterialColor: this.baseMaterialColor,
             laymentThicknessMm: this.laymentThicknessMm,
-            contours: this.contourManager.getWorkspaceContoursData(),
-            primitives: this.contourManager.getPrimitivesData(),
-            texts: this.textManager.getWorkspaceTextsData()
+            contours: this.contourManager.getWorkspaceContoursData({ includeEditorState }),
+            primitives: this.contourManager.getPrimitivesData({ includeEditorState }),
+            texts: this.textManager.getWorkspaceTextsData({ includeEditorState })
         };
     }
 
@@ -2166,7 +2389,7 @@ class ContourApp {
             return false;
         }
 
-        if (data.schemaVersion !== 3) {
+        if (data.schemaVersion !== 3 && data.schemaVersion !== 4) {
             console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
             return false;
         }
@@ -2244,7 +2467,8 @@ class ContourApp {
                     added.placementId = contour.placementId;
                     this.objectMetaApi?.patchObjectMeta?.(added, {
                         placementId: contour.placementId,
-                        isLocked: contour.isLocked === true
+                        isLocked: contour.isLocked === true,
+                        groupId: contour.editorState?.groupId ?? contour.groupId ?? null
                     });
                     this.objectMetaApi?.applyInteractionState?.(added);
                     added.angle = contour.angle || 0;
@@ -2276,7 +2500,10 @@ class ContourApp {
                         top: this.layment.top + savedText.y,
                         fontSizeMm: savedText.fontSizeMm
                     });
-                    this.objectMetaApi?.patchObjectMeta?.(textObj, { isLocked: savedText.isLocked === true });
+                    this.objectMetaApi?.patchObjectMeta?.(textObj, {
+                        isLocked: savedText.isLocked === true,
+                        groupId: savedText.editorState?.groupId ?? null
+                    });
                     this.objectMetaApi?.applyInteractionState?.(textObj);
                     continue;
                 }
@@ -2295,7 +2522,10 @@ class ContourApp {
                     localOffsetY: savedText.localOffsetY,
                     localAngle: savedText.localAngle
                 });
-                this.objectMetaApi?.patchObjectMeta?.(textObj, { isLocked: savedText.isLocked === true });
+                this.objectMetaApi?.patchObjectMeta?.(textObj, {
+                    isLocked: savedText.isLocked === true,
+                    groupId: savedText.editorState?.groupId ?? null
+                });
                 this.objectMetaApi?.applyInteractionState?.(textObj);
             }
 
@@ -2311,7 +2541,10 @@ class ContourApp {
                     }
 
                     if (addedPrimitive) {
-                        this.objectMetaApi?.patchObjectMeta?.(addedPrimitive, { isLocked: primitive.isLocked === true });
+                        this.objectMetaApi?.patchObjectMeta?.(addedPrimitive, {
+                            isLocked: primitive.isLocked === true,
+                            groupId: primitive.editorState?.groupId ?? primitive.groupId ?? null
+                        });
                         this.objectMetaApi?.applyInteractionState?.(addedPrimitive);
                     }
                 }
@@ -2815,7 +3048,7 @@ class ContourApp {
             laymentThicknessMm: this.laymentThicknessMm,
             laymentType,
             canvasPng: layoutPng,
-            workspaceSnapshot: this.buildWorkspaceSnapshot()
+            workspaceSnapshot: this.buildWorkspaceSnapshot({ includeEditorState: false })
             },
             layoutPng,
             layoutSvg,
@@ -2867,7 +3100,7 @@ class ContourApp {
     }
 
     buildExportPrimitives() {
-        return this.contourManager.getPrimitivesData();
+        return this.contourManager.getPrimitivesData({ includeEditorState: false });
     }
 
     buildExportTexts() {

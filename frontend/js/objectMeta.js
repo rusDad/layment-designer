@@ -20,6 +20,12 @@
         return typeof selectionMode === 'string' ? selectionMode : 'normal';
     }
 
+    function normalizeGroupId(groupId) {
+        return typeof groupId === 'string' && groupId.trim()
+            ? groupId.trim()
+            : null;
+    }
+
     function normalizePatch(patch) {
         if (!patch || typeof patch !== 'object') {
             return {};
@@ -42,6 +48,14 @@
         return obj[META_KEY];
     }
 
+    function getObjectMeta(obj) {
+        return ensureMeta(obj);
+    }
+
+    function getGroupId(obj) {
+        return normalizeGroupId(ensureMeta(obj)?.groupId);
+    }
+
     function normalizePlacementIdFromObject(obj, meta) {
         const placementId = Number.isFinite(obj?.placementId) ? obj.placementId : meta.placementId;
         return Number.isFinite(placementId) ? placementId : null;
@@ -54,6 +68,9 @@
         }
 
         const nextPatch = normalizePatch(patch);
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'groupId')) {
+            nextPatch.groupId = normalizeGroupId(nextPatch.groupId);
+        }
         Object.assign(meta, nextPatch);
         applyInteractionState(obj);
         return meta;
@@ -66,6 +83,9 @@
         }
 
         const nextPatch = normalizePatch(patch);
+        if (Object.prototype.hasOwnProperty.call(nextPatch, 'groupId')) {
+            nextPatch.groupId = normalizeGroupId(nextPatch.groupId);
+        }
         Object.assign(meta, nextPatch);
         applyInteractionState(obj);
         return meta;
@@ -166,14 +186,19 @@
     }
 
     const api = {
+        getObjectMeta,
+        getGroupId,
         initObjectMeta,
         patchObjectMeta,
         copyObjectMeta,
         applyInteractionState,
-        normalizeSelectionMode
+        normalizeSelectionMode,
+        normalizeGroupId
     };
 
     global.ObjectMeta = api;
+    global.getObjectMeta = getObjectMeta;
+    global.getGroupId = getGroupId;
     global.initObjectMeta = initObjectMeta;
     global.patchObjectMeta = patchObjectMeta;
     global.copyObjectMeta = copyObjectMeta;

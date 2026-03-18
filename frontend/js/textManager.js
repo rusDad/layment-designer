@@ -336,24 +336,24 @@ class TextManager {
         return this.getAttachedTextsByPlacementId(placementId, role)[0] || null;
     }
 
-    getWorkspaceTextsData() {
+    getWorkspaceTextsData(options = {}) {
         const layment = this.canvas.layment;
         if (!layment) {
             return [];
         }
 
         return this.texts
-            .map(textObj => this.buildWorkspaceTextSnapshot(textObj, layment))
+            .map(textObj => this.buildWorkspaceTextSnapshot(textObj, layment, options))
             .filter(Boolean);
     }
 
-    buildWorkspaceTextSnapshot(textObj, layment = this.canvas.layment) {
+    buildWorkspaceTextSnapshot(textObj, layment = this.canvas.layment, options = {}) {
         if (!layment || !textObj?.aCoords?.tl) {
             return null;
         }
 
         const tl = textObj.aCoords.tl;
-        return {
+        const snapshot = {
             kind: textObj.kind === 'attached' ? 'attached' : 'free',
             role: typeof textObj.role === 'string' && textObj.role.trim() ? textObj.role : 'user-text',
             ownerPlacementId: Number.isFinite(textObj.ownerPlacementId) ? textObj.ownerPlacementId : null,
@@ -366,6 +366,12 @@ class TextManager {
             x: Math.round((tl.x - layment.left) / layment.scaleX),
             y: Math.round((tl.y - layment.top) / layment.scaleY)
         };
+        if (options.includeEditorState !== false) {
+            snapshot.editorState = {
+                groupId: this.app?.objectMetaApi?.getGroupId?.(textObj) || null
+            };
+        }
+        return snapshot;
     }
 
     normalizeWorkspaceTexts(rawTexts) {
@@ -398,6 +404,13 @@ class TextManager {
             localOffsetY: Number.isFinite(rawText.localOffsetY) ? rawText.localOffsetY : 0,
             localAngle: Number.isFinite(rawText.localAngle) ? rawText.localAngle : 0,
             isLocked: rawText.isLocked === true,
+            editorState: rawText.editorState && typeof rawText.editorState === 'object'
+                ? {
+                    groupId: this.app?.objectMetaApi?.normalizeGroupId?.(rawText.editorState.groupId) || null
+                }
+                : {
+                    groupId: this.app?.objectMetaApi?.normalizeGroupId?.(rawText.groupId) || null
+                },
             x: rawText.x,
             y: rawText.y
         };

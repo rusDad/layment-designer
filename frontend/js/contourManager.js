@@ -379,14 +379,16 @@ class ContourManager {
         return angle;
     }
 
-    getWorkspaceContoursData() {
+    getWorkspaceContoursData(options = {}) {
        const layment = this.canvas.layment;
+       const includeEditorState = options.includeEditorState !== false;
 
        return this.contours.map(obj => {
             const meta = this.metadataMap.get(obj);
             const tl = obj.aCoords.tl;
+            const groupId = this.app?.objectMetaApi?.getGroupId?.(obj) || null;
 
-            return {
+            const snapshot = {
                 id: meta.id,
                 article: meta.article,
                 name: meta.name,
@@ -400,18 +402,24 @@ class ContourManager {
                 placementId: obj.placementId,
                 isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
             };
+            if (includeEditorState) {
+                snapshot.editorState = { groupId };
+            }
+            return snapshot;
         });
     }
 
-    getPrimitivesData() {
+    getPrimitivesData(options = {}) {
         const layment = this.canvas.layment;
+        const includeEditorState = options.includeEditorState === true;
 
         return this.app.primitiveManager.primitives.map(obj => {
             const bbox = obj.getBoundingRect(true);
             const scaleX = obj.scaleX;  // Поскольку scaleY = scaleX для circle
             const scaleY = obj.scaleY;
+            const groupId = this.app?.objectMetaApi?.getGroupId?.(obj) || null;
 
-            return {
+            const snapshot = {
                 type: obj.primitiveType,
                 x: obj.primitiveType === 'rect' 
                     ? Math.round((bbox.left - layment.left) / layment.scaleX)
@@ -431,6 +439,10 @@ class ContourManager {
                 pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined,
                 isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
             };
+            if (includeEditorState) {
+                snapshot.editorState = { groupId };
+            }
+            return snapshot;
         });
     }
 
