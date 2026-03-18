@@ -98,7 +98,7 @@ class TextManager {
             objectRole: 'text',
             isLocked: currentMeta?.isLocked === true,
             groupId: null,
-            selectionMode: 'default',
+            selectionMode: 'clickOnly',
             followMode: isAttached ? 'followBoundObject' : 'none',
             boundToId: isAttached ? (textObj.ownerPlacementId ?? null) : null,
             placementId: textObj.placementId ?? null

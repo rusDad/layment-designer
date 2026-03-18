@@ -59,7 +59,7 @@ class ContourManager {
             objectRole: 'contour',
             isLocked: false,
             groupId: null,
-            selectionMode: 'default',
+            selectionMode: 'normal',
             followMode: 'none',
             boundToId: null,
             placementId: group.placementId
@@ -70,7 +70,11 @@ class ContourManager {
 
         this.contours.push(group);
         this.canvas.add(group);
-        this.canvas.setActiveObject(group);
+        if (this.app?.setActiveObjectWithSelectionSource) {
+            this.app.setActiveObjectWithSelectionSource(group, 'programmatic');
+        } else {
+            this.canvas.setActiveObject(group);
+        }
         this.canvas.renderAll();
     }
 
@@ -503,7 +507,7 @@ class PrimitiveManager {
                 objectRole: 'primitive',
                 isLocked: false,
                 groupId: null,
-                selectionMode: 'default',
+                selectionMode: 'normal',
                 followMode: 'none',
                 boundToId: null,
                 placementId: null
@@ -511,7 +515,11 @@ class PrimitiveManager {
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);
-            this.canvas.setActiveObject(obj);
+            if (this.app?.setActiveObjectWithSelectionSource) {
+                this.app.setActiveObjectWithSelectionSource(obj, 'programmatic');
+            } else {
+                this.canvas.setActiveObject(obj);
+            }
             this.canvas.renderAll();
             return obj;
         }

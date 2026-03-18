@@ -7,11 +7,18 @@
         objectRole: 'generic',
         isLocked: false,
         groupId: null,
-        selectionMode: 'default',
+        selectionMode: 'normal',
         followMode: 'none',
         boundToId: null,
         placementId: null
     });
+
+    function normalizeSelectionMode(selectionMode) {
+        if (selectionMode === 'default') {
+            return 'normal';
+        }
+        return typeof selectionMode === 'string' ? selectionMode : 'normal';
+    }
 
     function normalizePatch(patch) {
         if (!patch || typeof patch !== 'object') {
@@ -108,7 +115,8 @@
             meta.hasBorders = typeof obj.hasBorders === 'boolean' ? obj.hasBorders : true;
         }
         meta.placementId = normalizePlacementIdFromObject(obj, meta);
-        const selectionMode = typeof meta.selectionMode === 'string' ? meta.selectionMode : 'default';
+        const selectionMode = normalizeSelectionMode(meta.selectionMode);
+        meta.selectionMode = selectionMode;
         const isLockedBySemanticFlag = meta.isLocked === true || selectionMode === 'readonly';
         const canSelect = selectionMode !== 'noSelect' && meta.selectable !== false;
         const allowEvents = meta.evented !== false;
@@ -161,7 +169,8 @@
         initObjectMeta,
         patchObjectMeta,
         copyObjectMeta,
-        applyInteractionState
+        applyInteractionState,
+        normalizeSelectionMode
     };
 
     global.ObjectMeta = api;
@@ -169,4 +178,5 @@
     global.patchObjectMeta = patchObjectMeta;
     global.copyObjectMeta = copyObjectMeta;
     global.applyInteractionState = applyInteractionState;
+    global.normalizeSelectionMode = normalizeSelectionMode;
 })(window);
