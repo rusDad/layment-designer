@@ -853,6 +853,7 @@ class ContourApp {
         });
 
         this.canvas.on('selection:created', () => {
+            this.syncActiveSelectionInteractionState();
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
@@ -860,6 +861,7 @@ class ContourApp {
         });
 
         this.canvas.on('selection:updated', () => {
+            this.syncActiveSelectionInteractionState();
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
@@ -906,6 +908,7 @@ class ContourApp {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
         UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
+        UIDom.buttons.toggleLock.onclick = () => this.toggleLockSelected();
         UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
         UIDom.buttons.loadWorkspace.onclick = async () => {
             this.cancelAutosave();
@@ -1155,6 +1158,52 @@ class ContourApp {
         return this.resolveActionTargets(active, 'arrange');
     }
 
+    getLockSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        if (this.interactionPolicy?.getLockSelectionObjects) {
+            const targets = activeObject?.type === 'activeSelection'
+                ? activeObject.getObjects().filter(Boolean)
+                : (activeObject ? [activeObject] : []);
+            return this.interactionPolicy.getLockSelectionObjects(this, targets);
+        }
+
+        return this.resolveActionTargets(activeObject, 'toggleLock');
+    }
+
+    getSelectionLockState(activeObject = this.canvas.getActiveObject()) {
+        if (this.interactionPolicy?.getSelectionLockState) {
+            const targets = activeObject?.type === 'activeSelection'
+                ? activeObject.getObjects().filter(Boolean)
+                : (activeObject ? [activeObject] : []);
+            return this.interactionPolicy.getSelectionLockState(this, targets);
+        }
+
+        const lockableObjects = this.getLockSelectionObjects(activeObject);
+        const anyLocked = lockableObjects.some(obj => this.interactionPolicy?.isSemanticallyLocked?.(obj) === true);
+        return {
+            anyLocked,
+            allLocked: anyLocked && lockableObjects.every(obj => this.interactionPolicy?.isSemanticallyLocked?.(obj) === true),
+            lockableCount: lockableObjects.length
+        };
+    }
+
+    syncActiveSelectionInteractionState(active = this.canvas.getActiveObject()) {
+        if (!active || active.type !== 'activeSelection') {
+            return;
+        }
+
+        const selectedObjects = active.getObjects().filter(Boolean);
+        const canGroupMove = this.interactionPolicy?.canGroupMoveSelection
+            ? this.interactionPolicy.canGroupMoveSelection(this, selectedObjects)
+            : selectedObjects.every(obj => this.interactionPolicy?.canMove?.(this, obj) !== false);
+
+        active.lockMovementX = !canGroupMove;
+        active.lockMovementY = !canGroupMove;
+        active.lockRotation = true;
+        active.hasControls = canGroupMove;
+        active.hasBorders = true;
+        active.setCoords?.();
+    }
+
     temporarilyUngroupActiveSelection() {
         const active = this.canvas.getActiveObject();
         if (!active || active.type !== 'activeSelection') {
@@ -1181,6 +1230,7 @@ class ContourApp {
 
         const selection = new fabric.ActiveSelection(objects, { canvas: this.canvas });
         this.canvas.setActiveObject(selection);
+        this.syncActiveSelectionInteractionState(selection);
         selection.setCoords();
         this.canvas.requestRenderAll();
     }
@@ -1252,6 +1302,7 @@ class ContourApp {
         const selectedCount = selected.length;
         const active = this.canvas.getActiveObject();
         const has = !!active;
+        const lockState = this.getSelectionLockState(active);
 
         const deleteAllowed = has && this.resolveActionTargets(active, 'delete').length > 0;
         const rotateAllowed = this.resolveActionTargets(active, 'rotate').length > 0;
@@ -1261,6 +1312,16 @@ class ContourApp {
 
         const duplicateTargets = this.getDuplicateSelectionObjects();
         UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
+        if (UIDom.buttons.toggleLock) {
+            const nextLabel = lockState.allLocked ? 'Разблокировать' : 'Заблокировать';
+            UIDom.buttons.toggleLock.disabled = lockState.lockableCount < 1;
+            UIDom.buttons.toggleLock.textContent = nextLabel;
+            UIDom.buttons.toggleLock.dataset.hint = lockState.allLocked
+                ? 'Снять semantic lock с выделенного'
+                : 'Заблокировать выделенное semantic lock-правилом';
+            UIDom.buttons.toggleLock.title = nextLabel;
+            UIDom.buttons.toggleLock.setAttribute('aria-pressed', lockState.allLocked ? 'true' : 'false');
+        }
 
         const alignDisabled = selectedCount < 2;
         UIDom.buttons.alignLeft.disabled = alignDisabled;
@@ -1930,6 +1991,10 @@ class ContourApp {
         this.actionExecutor?.executeAction?.('rotate', {}, this);
     }
 
+    toggleLockSelected() {
+        this.actionExecutor?.executeAction?.('toggleLock', {}, this);
+    }
+
     shouldAutosaveForObject(obj) {
         if (!obj || this.isRestoringWorkspace) {
             return false;
@@ -2078,7 +2143,10 @@ class ContourApp {
                     );
                     const added = this.contourManager.contours[this.contourManager.contours.length - 1];
                     added.placementId = contour.placementId;
-                    this.objectMetaApi?.patchObjectMeta?.(added, { placementId: contour.placementId });
+                    this.objectMetaApi?.patchObjectMeta?.(added, {
+                        placementId: contour.placementId,
+                        isLocked: contour.isLocked === true
+                    });
                     this.objectMetaApi?.applyInteractionState?.(added);
                     added.angle = contour.angle || 0;
                     added.setCoords();
@@ -2102,13 +2170,15 @@ class ContourApp {
             const savedTexts = this.textManager.normalizeWorkspaceTexts(data.texts);
             for (const savedText of savedTexts) {
                 if (savedText.kind === 'free') {
-                    this.textManager.createFreeText({
+                    const textObj = this.textManager.createFreeText({
                         text: savedText.text,
                         role: savedText.role,
                         left: this.layment.left + savedText.x,
                         top: this.layment.top + savedText.y,
                         fontSizeMm: savedText.fontSizeMm
                     });
+                    this.objectMetaApi?.patchObjectMeta?.(textObj, { isLocked: savedText.isLocked === true });
+                    this.objectMetaApi?.applyInteractionState?.(textObj);
                     continue;
                 }
 
@@ -2116,7 +2186,7 @@ class ContourApp {
                 if (!contour) {
                     continue;
                 }
-                this.textManager.createAttachedText(contour, {
+                const textObj = this.textManager.createAttachedText(contour, {
                     text: savedText.text,
                     role: savedText.role,
                     left: this.layment.left + savedText.x,
@@ -2126,16 +2196,24 @@ class ContourApp {
                     localOffsetY: savedText.localOffsetY,
                     localAngle: savedText.localAngle
                 });
+                this.objectMetaApi?.patchObjectMeta?.(textObj, { isLocked: savedText.isLocked === true });
+                this.objectMetaApi?.applyInteractionState?.(textObj);
             }
 
             await this.batchRender(() => {
                 for (const primitive of data.primitives || []) {
                     const x = this.layment.left + primitive.x;
                     const y = this.layment.top + primitive.y;
+                    let addedPrimitive = null;
                     if (primitive.type === 'rect') {
-                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height }, { pocketDepthMm: primitive.pocketDepthMm });
+                        addedPrimitive = this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height }, { pocketDepthMm: primitive.pocketDepthMm });
                     } else if (primitive.type === 'circle') {
-                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius }, { pocketDepthMm: primitive.pocketDepthMm });
+                        addedPrimitive = this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius }, { pocketDepthMm: primitive.pocketDepthMm });
+                    }
+
+                    if (addedPrimitive) {
+                        this.objectMetaApi?.patchObjectMeta?.(addedPrimitive, { isLocked: primitive.isLocked === true });
+                        this.objectMetaApi?.applyInteractionState?.(addedPrimitive);
                     }
                 }
             });

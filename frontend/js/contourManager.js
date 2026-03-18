@@ -393,7 +393,8 @@ class ContourManager {
                 angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1,
                 depthOverrideMm: Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined,
-                placementId: obj.placementId
+                placementId: obj.placementId,
+                isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
             };
         });
     }
@@ -423,7 +424,8 @@ class ContourManager {
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
                     : undefined,
-                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined
+                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined,
+                isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
             };
         });
     }
@@ -640,4 +642,3 @@ class PrimitiveManager {
         this.canvas.renderAll();
     }
 }
-
