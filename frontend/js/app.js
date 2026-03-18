@@ -37,6 +37,9 @@ class ContourApp {
         this.suppressCanvasUntilMouseUp = false;
         this.pendingPointerResetRenderRaf = null;
         this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
+        this.pendingSelectionSource = null;
+        this.activeSelectionSource = null;
+        this.selectionSanitizeInProgress = false;
 
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
@@ -164,6 +167,106 @@ class ContourApp {
             return [];
         }
         return activeObject.type === 'activeSelection' ? activeObject.getObjects().filter(Boolean) : [activeObject];
+    }
+
+    markNextSelectionSource(source) {
+        this.pendingSelectionSource = typeof source === 'string' && source ? source : null;
+    }
+
+    consumeSelectionSource(activeObject, fallback = null) {
+        const pendingSource = this.pendingSelectionSource;
+        this.pendingSelectionSource = null;
+        if (typeof pendingSource === 'string' && pendingSource) {
+            return pendingSource;
+        }
+        if (!activeObject) {
+            return null;
+        }
+        if (typeof fallback === 'string' && fallback) {
+            return fallback;
+        }
+        return activeObject.type === 'activeSelection' ? 'programmatic' : 'click';
+    }
+
+    detectSelectionSourceFromPointerEvent(event) {
+        const nativeEvent = event?.e;
+        if (nativeEvent?.button !== 0) {
+            return null;
+        }
+        if (event?.target) {
+            return 'click';
+        }
+        if (this.canvas?.selection === false || this.canvas?.skipTargetFind === true) {
+            return null;
+        }
+        return 'marquee';
+    }
+
+    setActiveObjectWithSelectionSource(obj, source = 'programmatic') {
+        if (!obj) {
+            return;
+        }
+        this.markNextSelectionSource(source);
+        this.canvas.setActiveObject(obj);
+    }
+
+    sanitizeActiveSelectionIfNeeded(active, source) {
+        if (!active || active.type !== 'activeSelection' || source !== 'marquee') {
+            return false;
+        }
+
+        const selectedObjects = active.getObjects().filter(Boolean);
+        const allowedObjects = selectedObjects.filter(obj => {
+            if (this.interactionPolicy?.canBoxSelect) {
+                return this.interactionPolicy.canBoxSelect(this, obj);
+            }
+            return this.interactionPolicy?.canSelect?.(this, obj) !== false;
+        });
+
+        if (allowedObjects.length === selectedObjects.length) {
+            return false;
+        }
+
+        this.selectionSanitizeInProgress = true;
+        try {
+            this.canvas.discardActiveObject();
+
+            if (allowedObjects.length === 1) {
+                this.setActiveObjectWithSelectionSource(allowedObjects[0], 'marquee');
+            } else if (allowedObjects.length > 1) {
+                this.restoreActiveSelection(allowedObjects, { source: 'marquee' });
+            } else {
+                this.activeSelectionSource = null;
+                this.canvas.requestRenderAll();
+            }
+        } finally {
+            this.selectionSanitizeInProgress = false;
+        }
+
+        return true;
+    }
+
+    finalizeSelectionChange(active = this.canvas.getActiveObject(), source = null) {
+        this.activeSelectionSource = active ? source : null;
+        this.syncActiveSelectionInteractionState(active);
+        this.updateButtons();
+        this.updateStatusBar();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncTextControlsFromSelection();
+    }
+
+    handleSelectionChanged(_eventName) {
+        const active = this.canvas.getActiveObject();
+        const fallbackSource = active?.type === 'activeSelection'
+            ? (this.activeSelectionSource || 'programmatic')
+            : (this.activeSelectionSource || 'click');
+        const source = this.consumeSelectionSource(active, fallbackSource);
+
+        if (!this.selectionSanitizeInProgress && this.sanitizeActiveSelectionIfNeeded(active, source)) {
+            return;
+        }
+
+        this.finalizeSelectionChange(this.canvas.getActiveObject(), source);
     }
 
     createSafeAreaRect() {
@@ -807,6 +910,7 @@ class ContourApp {
             }
 
             if (!this.canStartPanning(nativeEvent)) {
+                this.markNextSelectionSource(this.detectSelectionSourceFromPointerEvent(event));
                 return;
             }
 
@@ -852,23 +956,17 @@ class ContourApp {
             this.zoomViewportByPointer(event.e);
         });
 
-        this.canvas.on('selection:created', () => {
-            this.syncActiveSelectionInteractionState();
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncTextControlsFromSelection();
+        this.canvas.on('selection:created', event => {
+            this.handleSelectionChanged('selection:created', event);
         });
 
-        this.canvas.on('selection:updated', () => {
-            this.syncActiveSelectionInteractionState();
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncTextControlsFromSelection();
+        this.canvas.on('selection:updated', event => {
+            this.handleSelectionChanged('selection:updated', event);
         });
 
         this.canvas.on('selection:cleared', () => {
+            this.pendingSelectionSource = null;
+            this.activeSelectionSource = null;
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
@@ -1216,19 +1314,20 @@ class ContourApp {
         return { objects };
     }
 
-    restoreActiveSelection(objects) {
+    restoreActiveSelection(objects, { source = 'restoreActiveSelection' } = {}) {
         if (!objects || !objects.length) {
             return;
         }
 
         if (objects.length === 1) {
-            this.canvas.setActiveObject(objects[0]);
+            this.setActiveObjectWithSelectionSource(objects[0], source);
             objects[0].setCoords();
             this.canvas.requestRenderAll();
             return;
         }
 
         const selection = new fabric.ActiveSelection(objects, { canvas: this.canvas });
+        this.markNextSelectionSource(source);
         this.canvas.setActiveObject(selection);
         this.syncActiveSelectionInteractionState(selection);
         selection.setCoords();
@@ -1557,7 +1656,7 @@ class ContourApp {
         const left = this.layment.left + 20;
         const top = this.layment.top + 20;
         const textObj = this.textManager.createFreeText({ text, left, top, role: 'user-text' });
-        this.canvas.setActiveObject(textObj);
+        this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
         this.canvas.requestRenderAll();
         this.syncTextControlsFromSelection();
         this.scheduleWorkspaceSave();
@@ -1570,7 +1669,7 @@ class ContourApp {
         const text = UIDom.texts.value?.value || '';
         const textObj = this.textManager.createAttachedText(contour, { text, role: 'user-text' });
         if (!textObj) return;
-        this.canvas.setActiveObject(textObj);
+        this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
         this.canvas.requestRenderAll();
         this.syncTextControlsFromSelection();
         this.scheduleWorkspaceSave();

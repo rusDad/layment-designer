@@ -11,6 +11,17 @@
             : null;
     }
 
+    function getSelectionMode(obj) {
+        const meta = getObjectMeta(obj);
+        const objectMetaApi = global.ObjectMeta || null;
+        if (objectMetaApi?.normalizeSelectionMode) {
+            return objectMetaApi.normalizeSelectionMode(meta?.selectionMode);
+        }
+        return meta?.selectionMode === 'clickOnly'
+            ? 'clickOnly'
+            : (meta?.selectionMode === 'default' ? 'normal' : (meta?.selectionMode || 'normal'));
+    }
+
     function isSemanticallyLocked(obj) {
         const meta = getObjectMeta(obj);
         if (!meta) {
@@ -19,7 +30,7 @@
         return meta.isLocked === true
             || meta.locked === true
             || meta.interactive === false
-            || meta.selectionMode === 'readonly';
+            || getSelectionMode(obj) === 'readonly';
     }
 
     function isProtectedObject(ctx, obj) {
@@ -37,7 +48,10 @@
     }
 
     function canBoxSelect(ctx, obj) {
-        return canSelect(ctx, obj);
+        if (!canSelect(ctx, obj)) {
+            return false;
+        }
+        return getSelectionMode(obj) !== 'clickOnly';
     }
 
     function canDelete(ctx, obj) {
@@ -192,6 +206,7 @@
 
     const api = {
         getObjectMeta,
+        getSelectionMode,
         isSemanticallyLocked,
         canSelect,
         canBoxSelect,
