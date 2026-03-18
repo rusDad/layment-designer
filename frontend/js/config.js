@@ -21,7 +21,7 @@ window.Config = {
         STEP_CTRL: 0.2
     },
 
-    LABELS: {
+    TEXT: {
         FONT_SIZE_MM: 5,
         DEFAULT_OFFSET: { x: 6, y: 0 },
         BOUNDS_PAD_MM: 5

@@ -79,7 +79,7 @@ Layment Designer — производственно-ориентированны
 - `<orderNumber>.nc` — внутренний артефакт производства для ЧПУ (основной G-code);
 - `<orderNumber>.png` / `<orderNumber>.svg` — визуальный слепок раскладки для контроля и документооборота;
 - `<orderNumber>.dxf` — DXF раскладки (контуры/примитивы);
-- `<orderNumber>_labels.dxf` — DXF с включёнными `texts` (для лазерной маркировки).
+- `<orderNumber>_labels.dxf` — DXF-артефакт с текстовой маркировкой; содержимое строится из `texts[]`, имя файла остаётся каноническим историческим соглашением.
 
 
 Канонический flow:
@@ -94,6 +94,16 @@ Layment Designer — производственно-ориентированны
 - передача данных заказа в 1С/документооборот.
 
 На текущем этапе эта интеграция фиксируется архитектурно, без реализации.
+
+---
+
+
+## Text subsystem (clean break)
+
+- Runtime source of truth для текстов — `textManager.texts[]`.
+- В workspace snapshot и export-контракте используется только `texts[]`; runtime fallback по `labels[]` не допускается.
+- `attached`-тексты привязываются по `ownerPlacementId` внутри frontend-модели и сериализуются в export как `ownerContourId` (string placement-id).
+- У одного контура может быть несколько attached-text объектов; duplicate/delete/follower-update обязаны работать со всем набором owner'а.
 
 ---
 

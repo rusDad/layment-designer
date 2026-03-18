@@ -10,8 +10,8 @@ class TextManager {
     }
 
     getBoundsPadMm() {
-        if (Number.isFinite(Config.LABELS?.BOUNDS_PAD_MM)) {
-            return Config.LABELS.BOUNDS_PAD_MM;
+        if (Number.isFinite(Config.TEXT?.BOUNDS_PAD_MM)) {
+            return Config.TEXT.BOUNDS_PAD_MM;
         }
         return Config.GEOMETRY.CLEARANCE_MM;
     }
@@ -108,7 +108,7 @@ class TextManager {
             top,
             originX: 'left',
             originY: 'top',
-            fontSize: fontSizeMm ?? Config.LABELS.FONT_SIZE_MM,
+            fontSize: fontSizeMm ?? Config.TEXT.FONT_SIZE_MM,
             fill: '#000000',
             textBaseline: 'alphabetic',
             angle: 0,
@@ -125,7 +125,7 @@ class TextManager {
         textObj.kind = kind;
         textObj.role = role;
         textObj.ownerPlacementId = Number.isFinite(ownerPlacementId) ? ownerPlacementId : null;
-        textObj.fontSizeMm = Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM;
+        textObj.fontSizeMm = Number(textObj.fontSize) || Config.TEXT.FONT_SIZE_MM;
         textObj.localOffsetX = 0;
         textObj.localOffsetY = 0;
         textObj.localAngle = 0;
@@ -138,7 +138,7 @@ class TextManager {
 
         textObj.on('modified', () => {
             textObj.text = textObj.text ?? '';
-            textObj.fontSizeMm = Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM;
+            textObj.fontSizeMm = Number(textObj.fontSize) || Config.TEXT.FONT_SIZE_MM;
             this.app.scheduleWorkspaceSave();
         });
 
@@ -159,8 +159,8 @@ class TextManager {
         }
 
         const rect = contourObj.getBoundingRect(true, true);
-        const initialLeft = Number.isFinite(left) ? left : rect.left + rect.width + Config.LABELS.DEFAULT_OFFSET.x;
-        const initialTop = Number.isFinite(top) ? top : rect.top + Config.LABELS.DEFAULT_OFFSET.y;
+        const initialLeft = Number.isFinite(left) ? left : rect.left + rect.width + Config.TEXT.DEFAULT_OFFSET.x;
+        const initialTop = Number.isFinite(top) ? top : rect.top + Config.TEXT.DEFAULT_OFFSET.y;
 
         const textObj = this.buildTextObject({
             text,
@@ -195,11 +195,11 @@ class TextManager {
         if (!contourObj || !defaultText) {
             return null;
         }
-        const existing = this.getAttachedTextByPlacementId(contourObj.placementId, 'default-label');
+        const existing = this.getAttachedTextByPlacementId(contourObj.placementId, 'default-text');
         if (existing) {
             return existing;
         }
-        return this.createAttachedText(contourObj, { text: defaultText, role: 'default-label' });
+        return this.createAttachedText(contourObj, { text: defaultText, role: 'default-text' });
     }
 
     syncAttachedTextsForContour(contourObj) {
@@ -280,7 +280,7 @@ class TextManager {
         textObj.localOffsetX = (dx * Math.cos(-angleRad)) - (dy * Math.sin(-angleRad));
         textObj.localOffsetY = (dx * Math.sin(-angleRad)) + (dy * Math.cos(-angleRad));
         textObj.localAngle = (textObj.angle || 0) - (contour.angle || 0);
-        textObj.fontSizeMm = Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM;
+        textObj.fontSizeMm = Number(textObj.fontSize) || Config.TEXT.FONT_SIZE_MM;
     }
 
     computeAbsoluteTextPosition(textObj) {
@@ -313,13 +313,24 @@ class TextManager {
         };
     }
 
-    getAttachedTextByPlacementId(placementId, role = null) {
-        return this.texts.find(textObj => {
+    getAttachedTextsByPlacementId(placementId, role = null) {
+        return this.texts.filter(textObj => {
             if (textObj.kind !== 'attached' || textObj.ownerPlacementId !== placementId) {
                 return false;
             }
             return role ? textObj.role === role : true;
-        }) || null;
+        });
+    }
+
+    getAttachedTextsForContour(contourObj, role = null) {
+        if (!contourObj?.placementId) {
+            return [];
+        }
+        return this.getAttachedTextsByPlacementId(contourObj.placementId, role);
+    }
+
+    getAttachedTextByPlacementId(placementId, role = null) {
+        return this.getAttachedTextsByPlacementId(placementId, role)[0] || null;
     }
 
     getWorkspaceTextsData() {
@@ -344,7 +355,7 @@ class TextManager {
             role: typeof textObj.role === 'string' && textObj.role.trim() ? textObj.role : 'user-text',
             ownerPlacementId: Number.isFinite(textObj.ownerPlacementId) ? textObj.ownerPlacementId : null,
             text: typeof textObj.text === 'string' ? textObj.text : '',
-            fontSizeMm: Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM,
+            fontSizeMm: Number(textObj.fontSize) || Config.TEXT.FONT_SIZE_MM,
             localOffsetX: Number.isFinite(textObj.localOffsetX) ? textObj.localOffsetX : 0,
             localOffsetY: Number.isFinite(textObj.localOffsetY) ? textObj.localOffsetY : 0,
             localAngle: Number.isFinite(textObj.localAngle) ? textObj.localAngle : 0,
@@ -373,13 +384,12 @@ class TextManager {
 
         const kind = rawText.kind === 'attached' ? 'attached' : 'free';
         const ownerPlacementId = Number.isFinite(rawText.ownerPlacementId) ? rawText.ownerPlacementId : null;
-
         return {
             kind,
             role: typeof rawText.role === 'string' && rawText.role.trim() ? rawText.role : 'user-text',
             ownerPlacementId,
             text: typeof rawText.text === 'string' ? rawText.text : '',
-            fontSizeMm: Number(rawText.fontSizeMm) || Config.LABELS.FONT_SIZE_MM,
+            fontSizeMm: Number(rawText.fontSizeMm) || Config.TEXT.FONT_SIZE_MM,
             localOffsetX: Number.isFinite(rawText.localOffsetX) ? rawText.localOffsetX : 0,
             localOffsetY: Number.isFinite(rawText.localOffsetY) ? rawText.localOffsetY : 0,
             localAngle: Number.isFinite(rawText.localAngle) ? rawText.localAngle : 0,
@@ -388,7 +398,7 @@ class TextManager {
         };
     }
 
-    getExportTextsData() {
+    buildExportTexts() {
         const layment = this.canvas.layment;
         if (!layment) {
             return [];
@@ -396,18 +406,32 @@ class TextManager {
 
         return this.texts
             .map(textObj => {
-                if (!textObj?.aCoords?.tl) {
+                if (!textObj?.isTextObject) {
                     return null;
                 }
-                const tl = textObj.aCoords.tl;
+
+                const isAttached = textObj.kind === 'attached';
+                const ownerContourId = isAttached && Number.isFinite(textObj.ownerPlacementId)
+                    ? String(textObj.ownerPlacementId)
+                    : null;
+                const absolute = isAttached
+                    ? this.computeAbsoluteTextPosition(textObj)
+                    : {
+                        left: textObj.left ?? 0,
+                        top: textObj.top ?? 0,
+                        angle: textObj.angle ?? 0
+                    };
+
                 return {
-                    contourId: String(textObj.ownerPlacementId ?? ''),
-                    text: textObj.text,
-                    x: Math.round(tl.x - layment.left),
-                    y: Math.round(tl.y - layment.top),
-                    fontSizeMm: Number(textObj.fontSize) || Config.LABELS.FONT_SIZE_MM
+                    kind: isAttached ? 'attached' : 'free',
+                    text: typeof textObj.text === 'string' ? textObj.text : '',
+                    x: Math.round((absolute.left ?? 0) - layment.left),
+                    y: Math.round((absolute.top ?? 0) - layment.top),
+                    angle: Number.isFinite(absolute.angle) ? absolute.angle : 0,
+                    fontSizeMm: Number(textObj.fontSize) || Config.TEXT.FONT_SIZE_MM,
+                    ownerContourId
                 };
             })
-            .filter(item => item && item.contourId);
+            .filter(Boolean);
     }
 }
