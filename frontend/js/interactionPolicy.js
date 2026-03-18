@@ -3,12 +3,13 @@
 
 (function initInteractionPolicyModule(global) {
     function getObjectMeta(obj) {
-        if (!obj || typeof obj !== 'object') {
-            return null;
-        }
-        return obj.__objectMeta && typeof obj.__objectMeta === 'object'
-            ? obj.__objectMeta
-            : null;
+        const objectMetaApi = global.ObjectMeta || null;
+        return objectMetaApi?.getObjectMeta?.(obj) || null;
+    }
+
+    function getGroupId(obj) {
+        const objectMetaApi = global.ObjectMeta || null;
+        return objectMetaApi?.getGroupId?.(obj) || null;
     }
 
     function getSelectionMode(obj) {
@@ -113,11 +114,41 @@
     }
 
     function canJoinGroup(ctx, obj) {
-        return canSelect(ctx, obj) && !isSemanticallyLocked(obj);
+        if (!canSelect(ctx, obj) || isSemanticallyLocked(obj) || obj?.isTextObject) {
+            return false;
+        }
+        return true;
+    }
+
+    function expandTargetsWithSoftGroups(ctx, targets, predicate = null) {
+        const list = Array.isArray(targets) ? targets.filter(Boolean) : [];
+        const expanded = [];
+        const seen = new Set();
+        const addObject = (obj) => {
+            if (!obj || seen.has(obj)) {
+                return;
+            }
+            if (typeof predicate === 'function' && predicate(obj) === false) {
+                return;
+            }
+            seen.add(obj);
+            expanded.push(obj);
+        };
+
+        list.forEach(obj => {
+            addObject(obj);
+            const groupId = getGroupId(obj);
+            if (!groupId || !ctx?.getSoftGroupMembers) {
+                return;
+            }
+            ctx.getSoftGroupMembers(groupId).forEach(member => addObject(member));
+        });
+
+        return expanded;
     }
 
     function canGroupMoveSelection(ctx, targets) {
-        const list = Array.isArray(targets) ? targets.filter(Boolean) : [];
+        const list = expandTargetsWithSoftGroups(ctx, targets, obj => canMove(ctx, obj));
         if (!list.length) {
             return false;
         }
@@ -190,7 +221,7 @@
         }
 
         if (actionName === 'move') {
-            return targets.filter(obj => canMove(ctx, obj));
+            return expandTargetsWithSoftGroups(ctx, targets, obj => canMove(ctx, obj));
         }
 
         if (actionName === 'rotate') {
@@ -220,6 +251,8 @@
         canParticipateInAlign,
         canParticipateInSnap,
         canParticipateInDistribute,
+        getGroupId,
+        expandTargetsWithSoftGroups,
         canJoinGroup,
         canGroupMoveSelection,
         canToggleLock,

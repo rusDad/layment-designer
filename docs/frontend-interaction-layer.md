@@ -61,6 +61,12 @@
 
 Практически это минимум для команд уровня toolbar/hotkeys/programmatic transforms: `delete`, `move` (включая keyboard nudging), `rotate`, `duplicate`, `align`, `distribute`, `snap` и любые будущие batch-действия редактора.
 
+Для soft-group foundation на текущем шаге group semantics интегрируются в policy/executor прежде всего для `move`-семантики:
+
+- `canJoinGroup(...)` централизованно определяет, можно ли включать объект в soft-group;
+- `resolveActionTargets(..., 'move')` расширяет target-list до всех objects с тем же `groupId`, но оставляет только `canMove(...)`-совместимые targets;
+- drag-sync на canvas events использует тот же policy-resolved список, а не отдельный ad-hoc путь в обход interaction layer.
+
 ---
 
 ## 3) Grouping: только UI/editor feature
@@ -68,10 +74,16 @@
 `Grouping` трактуется как инструмент взаимодействия в editor UI:
 
 - нужен для удобства выделения/перемещения/выравнивания в рамках сессии редактирования;
-- **не является частью бизнес-сущности workspace/export**;
-- не должен влиять на доменный контракт export (backend получает контуры/примитивы/тексты, а не UI-grouping состояние).
+- source of truth для membership — `objectMeta.groupId` у плоских canvas-объектов;
+- `fabric.ActiveSelection` допустим только как временный visual helper, но не как постоянная модель данных;
+- **не является частью бизнес-сущности export**;
+- export DTO остаётся плоским: backend получает контуры/примитивы/тексты без `groupId`.
 
-Следствие: любые `groupId`/временные group-структуры в frontend — технические runtime-детали редактора.
+Следствие:
+
+- любые `groupId`/временные group-структуры в frontend — технические runtime-детали редактора;
+- autosave/manual workspace snapshot может хранить membership только как editor-state (`editorState.groupId`);
+- `orderMeta.workspaceSnapshot`, уходящий в export flow, не должен включать editor-only grouping metadata.
 
 ---
 
@@ -95,6 +107,11 @@ Lock в целевой модели — это прежде всего semantic 
 - `canJoinGroup = false` и `groupMove` для mixed-selection не должен сдвигать locked-объекты;
 - `canDelete = true`;
 - `canSelect = true`.
+
+Дополнительное упрощающее правило для текущего PR:
+
+- grouping запрещён, если selection содержит semantic-locked объект;
+- если объект уже состоит в soft-group и затем получает lock, group-aware move-path двигает только members, проходящих `canMove(...)`.
 
 ### 4.2 Fabric flags как low-level механизм
 
@@ -135,6 +152,11 @@ Fabric lock-флаги (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, ...
 ### 5.2 Правило для text objects
 
 Текстовые объекты в редакторе используют `selectionMode='clickOnly'`.
+
+На текущем шаге soft-group foundation дополнительно фиксируется ограничение:
+
+- `text` не участвует в `Group/Ungroup` как groupable target;
+- это осознанное временное правило до отдельной итерации с явной text-group semantics.
 
 Следствия:
 
