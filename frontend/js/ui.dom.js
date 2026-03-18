@@ -16,6 +16,7 @@ window.UIDom = {
 
   buttons: {
     delete: document.getElementById('deleteButton'),
+    toggleLock: document.getElementById('toggleLockButton'),
     rotate: document.getElementById('rotateButton'),
     duplicate: document.getElementById('duplicateButton'),
     addRect: document.getElementById('addRectButton'),

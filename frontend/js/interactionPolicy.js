@@ -55,7 +55,7 @@
     }
 
     function canRotate(ctx, obj) {
-        if (!obj || isProtectedObject(ctx, obj) || obj.isTextObject) {
+        if (!obj || isProtectedObject(ctx, obj) || obj.isTextObject || isSemanticallyLocked(obj)) {
             return false;
         }
         return !obj.primitiveType;
@@ -99,7 +99,45 @@
     }
 
     function canJoinGroup(ctx, obj) {
-        return canSelect(ctx, obj);
+        return canSelect(ctx, obj) && !isSemanticallyLocked(obj);
+    }
+
+    function canGroupMoveSelection(ctx, targets) {
+        const list = Array.isArray(targets) ? targets.filter(Boolean) : [];
+        if (!list.length) {
+            return false;
+        }
+        return list.every(obj => canMove(ctx, obj));
+    }
+
+    function canToggleLock(ctx, obj) {
+        if (!obj || isProtectedObject(ctx, obj)) {
+            return false;
+        }
+        return true;
+    }
+
+    function getLockSelectionObjects(ctx, targets) {
+        const list = Array.isArray(targets) ? targets : [];
+        return list.filter(obj => canToggleLock(ctx, obj));
+    }
+
+    function getSelectionLockState(ctx, targets) {
+        const objects = getLockSelectionObjects(ctx, targets);
+        if (!objects.length) {
+            return {
+                anyLocked: false,
+                allLocked: false,
+                lockableCount: 0
+            };
+        }
+
+        const anyLocked = objects.some(obj => isSemanticallyLocked(obj));
+        return {
+            anyLocked,
+            allLocked: anyLocked && objects.every(obj => isSemanticallyLocked(obj)),
+            lockableCount: objects.length
+        };
     }
 
     function shouldFollowOwnerMove(ctx, obj, owner) {
@@ -145,6 +183,10 @@
             return targets.filter(obj => canRotate(ctx, obj));
         }
 
+        if (actionName === 'toggleLock') {
+            return getLockSelectionObjects(ctx, targets);
+        }
+
         return targets;
     }
 
@@ -164,9 +206,13 @@
         canParticipateInSnap,
         canParticipateInDistribute,
         canJoinGroup,
+        canGroupMoveSelection,
+        canToggleLock,
         shouldFollowOwnerMove,
         getArrangeSelectionObjects,
         getDuplicateSelectionObjects,
+        getLockSelectionObjects,
+        getSelectionLockState,
         resolveActionTargets
     };
 

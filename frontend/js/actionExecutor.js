@@ -224,6 +224,36 @@
             app.restoreActiveSelection(newObjects);
             return newObjects;
         },
+        toggleLock: async (ctx) => {
+            const { app, canvas } = ctx;
+            const objectMetaApi = app?.objectMetaApi || global.ObjectMeta;
+            const active = canvas?.getActiveObject?.();
+            const selected = app.resolveActionTargets(active, 'toggleLock');
+            if (!selected.length || !objectMetaApi?.patchObjectMeta) {
+                ctx.skipAutosave = true;
+                return null;
+            }
+
+            const lockState = app.getSelectionLockState(active);
+            const nextLocked = !lockState.allLocked;
+            const changedObjects = [];
+
+            selected.forEach(obj => {
+                objectMetaApi.patchObjectMeta(obj, { isLocked: nextLocked });
+                objectMetaApi.applyInteractionState?.(obj);
+                obj.setCoords?.();
+                changedObjects.push(obj);
+            });
+
+            ctx.changedObjects = changedObjects;
+            if (active?.type === 'activeSelection') {
+                app.syncActiveSelectionInteractionState?.(active);
+            }
+            return {
+                changedObjects,
+                isLocked: nextLocked
+            };
+        },
         align: async (ctx) => {
             const { app, canvas, mode } = ctx;
             const active = canvas?.getActiveObject?.();

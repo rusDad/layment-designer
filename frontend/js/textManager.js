@@ -91,9 +91,12 @@ class TextManager {
         }
 
         const isAttached = textObj.kind === 'attached';
+        const currentMeta = textObj.__objectMeta && typeof textObj.__objectMeta === 'object'
+            ? textObj.__objectMeta
+            : null;
         objectMetaApi.patchObjectMeta(textObj, {
             objectRole: 'text',
-            isLocked: false,
+            isLocked: currentMeta?.isLocked === true,
             groupId: null,
             selectionMode: 'default',
             followMode: isAttached ? 'followBoundObject' : 'none',
@@ -359,6 +362,7 @@ class TextManager {
             localOffsetX: Number.isFinite(textObj.localOffsetX) ? textObj.localOffsetX : 0,
             localOffsetY: Number.isFinite(textObj.localOffsetY) ? textObj.localOffsetY : 0,
             localAngle: Number.isFinite(textObj.localAngle) ? textObj.localAngle : 0,
+            isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(textObj) === true,
             x: Math.round((tl.x - layment.left) / layment.scaleX),
             y: Math.round((tl.y - layment.top) / layment.scaleY)
         };
@@ -393,6 +397,7 @@ class TextManager {
             localOffsetX: Number.isFinite(rawText.localOffsetX) ? rawText.localOffsetX : 0,
             localOffsetY: Number.isFinite(rawText.localOffsetY) ? rawText.localOffsetY : 0,
             localAngle: Number.isFinite(rawText.localAngle) ? rawText.localAngle : 0,
+            isLocked: rawText.isLocked === true,
             x: rawText.x,
             y: rawText.y
         };
