@@ -2817,7 +2817,8 @@ class ContourApp {
             }
 
             try {
-                const payloadKey = this.storePreviewSvgPayload(svg);
+                const texts = this.textManager?.buildExportTexts?.() || [];
+                const payloadKey = this.storePreviewSvgPayload(svg, texts);
                 const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
                 viewerUrl.searchParams.set('payloadKey', payloadKey);
                 window.open(viewerUrl.toString(), '_blank', 'noopener');
@@ -2881,17 +2882,27 @@ class ContourApp {
         }
     }
 
-    storePreviewSvgPayload(svg) {
+    storePreviewSvgPayload(svg, texts = []) {
         if (!svg || typeof svg !== 'string') {
             throw new Error('Preview SVG payload is empty');
+        }
+
+        let normalizedTexts = [];
+        if (Array.isArray(texts)) {
+            try {
+                normalizedTexts = JSON.parse(JSON.stringify(texts));
+            } catch (_error) {
+                normalizedTexts = [];
+            }
         }
 
         this.cleanupOldPreviewPayloads();
 
         const key = this.generatePreviewPayloadKey();
         const payload = {
-            version: 2,
+            version: 3,
             svg,
+            texts: normalizedTexts,
             baseMaterialColor: this.baseMaterialColor,
             laymentThicknessMm: this.laymentThicknessMm,
             createdAt: Date.now()
