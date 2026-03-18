@@ -137,6 +137,10 @@
             return targets.filter(obj => canDelete(ctx, obj));
         }
 
+        if (actionName === 'move') {
+            return targets.filter(obj => canMove(ctx, obj));
+        }
+
         if (actionName === 'rotate') {
             return targets.filter(obj => canRotate(ctx, obj));
         }
