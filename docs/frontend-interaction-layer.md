@@ -58,7 +58,7 @@
 
 должны выполняться через `ActionExecutor.executeAction(...)`.
 
-Практически это минимум для команд уровня toolbar/hotkeys: `delete`, `rotate`, `duplicate` и любые будущие batch-действия редактора.
+Практически это минимум для команд уровня toolbar/hotkeys: `delete`, `rotate`, `duplicate`, `align`, `distribute`, `snap` и любые будущие batch-действия редактора.
 
 ---
 
@@ -104,10 +104,10 @@ Fabric lock-флаги (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, ...
 - [x] `delete` (с учётом разных типов объектов и очистки связанных attached-text).
 - [x] `rotate` (целевое действие через policy-resolved target + единая финализация).
 - [x] `duplicate` (batch-дублирование с переносом metadata и follower-логики).
+- [x] `arrange`-семейство: `align`, `distribute`, `snap` (через policy-resolved target list и executor).
 
 ### 5.2 Намеренно пока НЕ переведено
 
-- [ ] `arrange`/`align`/`distribute`/`snap` операции (пока остаются в UI-flow).
 - [ ] Точечные текстовые команды формы/редактирования (например, edit/delete из text UI) вне batch executor.
 - [ ] Локальные операции выбора/ungroup для служебных editor-потоков.
 
@@ -115,7 +115,25 @@ Fabric lock-флаги (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, ...
 
 Перед переносом новой команды в executor:
 
-- [ ] действие проходит через `resolveActionTargets(...)` policy-слой;
-- [ ] обработчик не ломает инвариант `textManager.texts[]` как runtime source of truth;
-- [ ] follower-updates/lock-ограничения учтены централизованно;
-- [ ] финализация не дублируется вне executor.
+- [x] действие проходит через `resolveActionTargets(...)` policy-слой;
+- [x] обработчик не ломает инвариант `textManager.texts[]` как runtime source of truth;
+- [x] follower-updates/lock-ограничения учтены централизованно;
+- [x] финализация не дублируется вне executor.
+
+
+## 6) Arrange operations: policy -> executor
+
+Arrange-операции (`align`, `distribute`, `snap`) теперь идут только через `ActionExecutor.executeAction(...)`.
+
+Канонический поток для arrange:
+
+1. UI в `app.js` только инициирует команду executor'у;
+2. `interactionPolicy.resolveActionTargets(...)` является **единственной точкой**, которая решает, какие объекты участвуют в arrange;
+3. executor при необходимости временно разбирает `activeSelection`, выполняет геометрию и затем восстанавливает selection;
+4. attached-text не участвует в arrange как primary target, но обновляется как follower после перемещения owner-объекта через централизованный follower-update path.
+
+Ограничения policy для arrange:
+
+- `text` не участвует в `align/snap/distribute` как primary target;
+- `safeArea` и `layment` не участвуют;
+- semantic-locked объекты исключаются ещё на policy-слое, даже если полноценный lock UI ещё не введён.

@@ -2,6 +2,26 @@
 // Централизованные правила интеракций. На первом шаге — консервативные дефолты.
 
 (function initInteractionPolicyModule(global) {
+    function getObjectMeta(obj) {
+        if (!obj || typeof obj !== 'object') {
+            return null;
+        }
+        return obj.__objectMeta && typeof obj.__objectMeta === 'object'
+            ? obj.__objectMeta
+            : null;
+    }
+
+    function isSemanticallyLocked(obj) {
+        const meta = getObjectMeta(obj);
+        if (!meta) {
+            return false;
+        }
+        return meta.isLocked === true
+            || meta.locked === true
+            || meta.interactive === false
+            || meta.selectionMode === 'readonly';
+    }
+
     function isProtectedObject(ctx, obj) {
         if (!obj) {
             return true;
@@ -28,7 +48,7 @@
     }
 
     function canMove(ctx, obj) {
-        if (!canSelect(ctx, obj)) {
+        if (!canSelect(ctx, obj) || isSemanticallyLocked(obj)) {
             return false;
         }
         return !(obj.lockMovementX && obj.lockMovementY);
@@ -125,6 +145,8 @@
     }
 
     const api = {
+        getObjectMeta,
+        isSemanticallyLocked,
         canSelect,
         canBoxSelect,
         canDelete,
