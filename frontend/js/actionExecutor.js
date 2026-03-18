@@ -102,16 +102,45 @@
         rotate: async (ctx) => {
             const { app, canvas } = ctx;
             const active = canvas?.getActiveObject?.();
-            const [obj] = app.resolveActionTargets(active, 'rotate');
-            if (!obj) {
+            const selected = app.resolveActionTargets(active, 'rotate');
+            if (!selected.length) {
                 ctx.skipAutosave = true;
                 return null;
             }
 
-            const nextAngle = (obj.angle + 90) % 360;
-            app.contourManager.rotateContour(obj, nextAngle);
-            ctx.changedObjects = [obj];
-            return { angle: nextAngle, object: obj };
+            const originalSelection = active?.type === 'activeSelection'
+                ? active.getObjects().filter(Boolean)
+                : selected.slice();
+            const savedSelection = active?.type === 'activeSelection'
+                ? (app.temporarilyUngroupActiveSelection?.() || { objects: null })
+                : { objects: null };
+            const pivot = getObjectsBoundingCenter(selected);
+            const deltaAngle = 90;
+
+            const changedObjects = applyAction(ctx, selected, (obj) => {
+                const center = obj.getCenterPoint();
+                const rotatedCenter = rotatePointAroundPivot(center, pivot, deltaAngle);
+                const nextAngle = normalizeAngle((obj.angle || 0) + deltaAngle);
+
+                obj.set({
+                    left: rotatedCenter.x,
+                    top: rotatedCenter.y,
+                    angle: nextAngle
+                });
+                app.contourManager.snapToAllowedAngle?.(obj);
+            });
+
+            if (active?.type === 'activeSelection') {
+                const selectionToRestore = originalSelection.length
+                    ? originalSelection
+                    : (savedSelection.objects || selected);
+                app.restoreActiveSelection(selectionToRestore, { source: 'programmatic' });
+            } else if (changedObjects.length === 1) {
+                canvas?.setActiveObject?.(changedObjects[0]);
+                changedObjects[0].setCoords?.();
+            }
+
+            return { changedObjects, pivot, deltaAngle };
         },
         duplicate: async (ctx) => {
             const DUPLICATE_OFFSET = 16;
@@ -407,6 +436,37 @@
             left: obj.left + deltaX,
             top: obj.top + deltaY
         });
+    }
+
+    function normalizeAngle(angle) {
+        const normalized = angle % 360;
+        return normalized < 0 ? normalized + 360 : normalized;
+    }
+
+    function rotatePointAroundPivot(point, pivot, angleDeg) {
+        const angleRad = fabric.util.degreesToRadians(angleDeg || 0);
+        const dx = (point?.x || 0) - (pivot?.x || 0);
+        const dy = (point?.y || 0) - (pivot?.y || 0);
+
+        return {
+            x: (pivot?.x || 0) + (dx * Math.cos(angleRad)) - (dy * Math.sin(angleRad)),
+            y: (pivot?.y || 0) + (dx * Math.sin(angleRad)) + (dy * Math.cos(angleRad))
+        };
+    }
+
+    function getObjectsBoundingCenter(objects) {
+        const points = (Array.isArray(objects) ? objects : [])
+            .flatMap(obj => Object.values(obj?.aCoords || {}).filter(Boolean));
+
+        if (!points.length) {
+            return { x: 0, y: 0 };
+        }
+
+        const bbox = fabric.util.makeBoundingBoxFromPoints(points);
+        return {
+            x: bbox.left + (bbox.width / 2),
+            y: bbox.top + (bbox.height / 2)
+        };
     }
 
     function applyAction(ctx, targets, updater) {

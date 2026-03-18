@@ -1179,7 +1179,9 @@ class ContourApp {
 
         this.canvas.on('object:moving', event => {
             this.handleSoftGroupObjectMoving(event.target);
-            this.syncObjectTextState(event.target);
+            if (event.target?.type !== 'activeSelection') {
+                this.syncObjectTextState(event.target);
+            }
             this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
@@ -1190,7 +1192,9 @@ class ContourApp {
         });
 
         this.canvas.on('object:rotating', event => {
-            this.syncObjectTextState(event.target);
+            if (event.target?.type !== 'activeSelection') {
+                this.syncObjectTextState(event.target);
+            }
             this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
@@ -1198,9 +1202,12 @@ class ContourApp {
         this.canvas.on('object:modified', event => {
             const target = event.target;
             this.finalizeSoftGroupMove(target);
-            this.syncObjectTextState(target);
+            const finalizedSelection = this.finalizeActiveSelectionTransform(target);
+            if (!finalizedSelection) {
+                this.syncObjectTextState(target);
+            }
             this.canvas.requestRenderAll();
-            if (this.shouldAutosaveForObject(target)) {
+            if (finalizedSelection || this.shouldAutosaveForObject(target)) {
                 this.scheduleWorkspaceSave();
             }
             this.syncPrimitiveControlsFromSelection();
@@ -1509,8 +1516,21 @@ class ContourApp {
         active.lockMovementX = !canGroupMove;
         active.lockMovementY = !canGroupMove;
         active.lockRotation = true;
-        active.hasControls = canGroupMove;
+        active.lockScalingX = true;
+        active.lockScalingY = true;
+        active.hasControls = false;
         active.hasBorders = true;
+        active.setControlsVisibility?.({
+            tl: false,
+            tr: false,
+            br: false,
+            bl: false,
+            ml: false,
+            mt: false,
+            mr: false,
+            mb: false,
+            mtr: false
+        });
         active.setCoords?.();
     }
 
@@ -1569,7 +1589,6 @@ class ContourApp {
         }
 
         if (obj.type === 'activeSelection') {
-            obj.getObjects().forEach(item => this.syncObjectTextState(item, { rememberContourLastPosition }));
             obj.setCoords();
             return;
         }
@@ -1594,6 +1613,24 @@ class ContourApp {
         }
 
         obj.setCoords();
+    }
+
+    finalizeActiveSelectionTransform(target) {
+        if (!target || target.type !== 'activeSelection') {
+            return false;
+        }
+
+        const objects = target.getObjects().filter(Boolean);
+        if (!objects.length) {
+            return false;
+        }
+
+        this.canvas.discardActiveObject();
+        objects.forEach(obj => this.syncObjectTextState(obj, { rememberContourLastPosition: true }));
+        this.restoreActiveSelection(objects, {
+            source: this.activeSelectionSource || 'programmatic'
+        });
+        return true;
     }
 
     alignSelected(mode) {
