@@ -25,8 +25,10 @@
 
         const result = await handler(ctx);
         const changedObjects = Array.isArray(ctx.changedObjects) ? ctx.changedObjects : [];
-        const followers = collectFollowers(changedObjects, ctx, app);
-        applyFollowerUpdates(followers, action, payload, ctx, app);
+        if (ctx.followersHandled !== true) {
+            const followers = collectFollowers(changedObjects, ctx, app);
+            applyFollowerUpdates(followers, action, payload, ctx, app);
+        }
 
         finalizeCanvasAction(app, {
             scheduleWorkspaceSave: ctx.skipAutosave !== true
@@ -69,6 +71,33 @@
             });
 
             return { removedCount: objects.length };
+        },
+        move: async (ctx) => {
+            const { app, canvas } = ctx;
+            const active = canvas?.getActiveObject?.();
+            const selected = app.resolveActionTargets(active, 'move');
+            const deltaX = Number(ctx.deltaX) || 0;
+            const deltaY = Number(ctx.deltaY) || 0;
+            if (!selected.length || (!deltaX && !deltaY)) {
+                ctx.skipAutosave = true;
+                return null;
+            }
+
+            const savedSelection = active?.type === 'activeSelection'
+                ? (app.temporarilyUngroupActiveSelection?.() || { objects: null })
+                : { objects: null };
+            const changedObjects = applyAction(ctx, selected, (obj) => {
+                applyDeltaToObject(obj, deltaX, deltaY);
+            });
+
+            if (active?.type === 'activeSelection') {
+                app.restoreActiveSelection(changedObjects.length ? selected : (savedSelection.objects || selected));
+            } else if (changedObjects.length === 1) {
+                canvas?.setActiveObject?.(changedObjects[0]);
+                changedObjects[0].setCoords?.();
+            }
+
+            return { changedObjects, deltaX, deltaY };
         },
         rotate: async (ctx) => {
             const { app, canvas } = ctx;
@@ -365,6 +394,7 @@
 
         const followers = collectFollowers(updated, ctx, ctx?.app);
         applyFollowerUpdates(followers, ctx?.actionName, {}, ctx, ctx?.app);
+        ctx.followersHandled = true;
         ctx.changedObjects = updated;
         return updated;
     }

@@ -779,32 +779,15 @@ class ContourApp {
 
     moveSelectedBy(dx, dy) {
         const active = this.canvas.getActiveObject();
-        if (!active) {
+        const targets = this.resolveActionTargets(active, 'move');
+        const deltaX = Number(dx) || 0;
+        const deltaY = Number(dy) || 0;
+
+        if (!targets.length || (!deltaX && !deltaY)) {
             return false;
         }
 
-        if (active.type === 'activeSelection') {
-            active.getObjects().forEach(obj => {
-                obj.set({
-                    left: obj.left + dx,
-                    top: obj.top + dy
-                });
-                obj.setCoords();
-                this.syncAttachedTextFollowersForOwner(obj, { rememberContourLastPosition: true });
-            });
-            active.setCoords();
-        } else {
-            active.set({
-                left: active.left + dx,
-                top: active.top + dy
-            });
-            active.setCoords();
-            this.syncAttachedTextFollowersForOwner(active, { rememberContourLastPosition: true });
-        }
-
-        this.canvas.requestRenderAll();
-        this.updateStatusBar();
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('move', { deltaX, deltaY }, this);
         return true;
     }
 
