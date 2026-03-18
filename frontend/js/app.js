@@ -580,7 +580,7 @@ class ContourApp {
         this.canvas.selection = true;
         this.canvas.skipTargetFind = false;
         this.setPanCursor(false);
-        this.clearBrowserSelection();
+        //this.clearBrowserSelection();
 
         if (soft) {
             if (this.pendingPointerResetRenderRaf !== null) {
