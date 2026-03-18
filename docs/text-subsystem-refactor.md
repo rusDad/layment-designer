@@ -2,13 +2,13 @@
 
 ## Цель
 
-Зафиксировать целевую архитектуру текстовой подсистемы после перехода от legacy-термина `labels` к единой модели `texts` в:
+Зафиксировать целевую архитектуру текстовой подсистемы после clean break от legacy-термина `labels` к единой модели `texts` в:
 - editor model;
 - workspace snapshot;
 - export DTO;
-- backend-пайплайне DXF.
+- DXF-пайплайне backend.
 
-Документ задаёт «clean break»: новый контракт и новые внутренние точки расширения без поддержки старых веток и хуков в runtime.
+Документ описывает уже целевое состояние: runtime использует только `texts[]`, legacy `labels[]` и отдельный label-manager в UI больше не участвуют.
 
 ---
 
@@ -18,7 +18,7 @@
 
 - `isTextObject: true` — типовой маркер текстового объекта;
 - `kind: 'attached' | 'free'` — режим жизненного цикла;
-- `role: 'default-label' | 'custom' | <future>` — функциональная роль;
+- `role: 'default-text' | 'user-text' | <future>` — функциональная роль;
 - `ownerPlacementId: number | null` — связь с placement контура (только для `attached`);
 - `text: string` — нормализованный текст;
 - `fontSizeMm: number` — размер шрифта в мм;
@@ -38,6 +38,7 @@
    - `localOffsetX/localOffsetY/localAngle === 0`.
 4. Все persist/export операции выполняются только при `scale=1`.
 5. Источник истины для текста в рантайме — `textManager.texts[]`, а не прямой обход canvas.
+6. У одного owner-контура может быть несколько `attached`-текстов.
 
 ---
 
@@ -53,10 +54,11 @@
 - Хранит локальный offset/angle относительно центра контура.
 - При трансформации owner-контура переходит в новое абсолютное положение через пересчёт `local -> absolute`.
 - Ограничивается рамкой `allowedRect` вокруг контура (с `boundsPadMm`).
+- Все attached-тексты owner'а синхронизируются как единый набор, а не как одиночный follower.
 
 ### 2.3 Default text
-- Частный случай `attached` с `role='default-label'`.
-- Создаётся автоматически из метаданных контура (`defaultLabel`) только если отсутствует existing default text для placement.
+- Частный случай `attached` с `role='default-text'`.
+- Создаётся автоматически из метаданных контура (`defaultLabel`) только если для placement ещё нет default-text.
 - Может быть отредактирован как обычный текст, но сохраняет связь с owner-контуром.
 
 ---
@@ -76,20 +78,25 @@
 
 3. **Transform owner-контура**
    - `syncAttachedTextsForContour()` пересчитывает все `attached` через `computeAbsoluteTextPosition()`;
+   - `ActionExecutor` собирает follower-пары для всех attached-text owner'а, а не только для первого найденного текста;
    - затем `clampTextToContourBounds()` и повторная фиксация якоря `updateAttachedTextAnchorFromAbsolute()`.
 
-4. **Delete contour**
+4. **Duplicate contour**
+   - дублируется сам contour;
+   - затем дублируются все attached-text owner'а с переносом semantic metadata и локальных offset/angle.
+
+5. **Delete contour**
    - удаляются все `attached` с данным `ownerPlacementId`.
 
-5. **Persist/restore**
+6. **Persist/restore**
    - snapshot строится из `textManager.getWorkspaceTextsData()`;
    - restore идёт через `normalizeWorkspaceTexts()` и фабрики `createFreeText()/createAttachedText()`.
 
-Ключевой принцип: нет «особого» event-flow для legacy labels — только единый text-flow.
+Ключевой принцип: нет отдельного label-flow — только единый text-flow.
 
 ---
 
-## 4) Новый workspace snapshot (`texts[]`, versioning, clean break)
+## 4) Workspace snapshot (`texts[]`, versioning, clean break)
 
 ### Канонический формат
 
@@ -104,7 +111,7 @@
   "texts": [
     {
       "kind": "attached",
-      "role": "default-label",
+      "role": "default-text",
       "ownerPlacementId": 12,
       "text": "T15",
       "fontSizeMm": 4,
@@ -113,6 +120,18 @@
       "localAngle": 0,
       "x": 140,
       "y": 80
+    },
+    {
+      "kind": "attached",
+      "role": "user-text",
+      "ownerPlacementId": 12,
+      "text": "LOT-7",
+      "fontSizeMm": 4,
+      "localOffsetX": 12,
+      "localOffsetY": 8,
+      "localAngle": 0,
+      "x": 142,
+      "y": 94
     }
   ]
 }
@@ -126,12 +145,13 @@
 
 ### Clean break
 
-- `labels[]` удаляется из workspace-снимка полностью.
+- `labels[]` удалён из workspace-снимка полностью.
 - Любая обратная совместимость по `labels[]` допускается только как отдельный offline-скрипт миграции данных (не в UI runtime).
+- Runtime не хранит параллельные `labels`-коллекции и не использует отдельный `labelManager`.
 
 ---
 
-## 5) Новый export DTO (`texts[]`) и граница builder-слоя
+## 5) Export DTO (`texts[]`) и граница builder-слоя
 
 ## Контракт frontend -> backend
 
@@ -151,6 +171,15 @@
       "angle": 0,
       "fontSizeMm": 4,
       "ownerContourId": "12"
+    },
+    {
+      "kind": "free",
+      "text": "Проверить ориентацию",
+      "x": 40,
+      "y": 30,
+      "angle": 0,
+      "fontSizeMm": 4,
+      "ownerContourId": null
     }
   ]
 }
@@ -161,13 +190,14 @@
 Builder-слой заканчивается на методах:
 - `buildExportContours()`;
 - `buildExportPrimitives()`;
-- `buildExportTexts()`.
+- `textManager.buildExportTexts()` / `app.buildExportTexts()`.
 
 Требования к builder-слою:
 1. Не интерпретирует производство (никакого G-code/DXF-расчёта на frontend).
 2. Отдаёт только геометрию и метаданные текста в мм.
 3. Для `attached` вычисляет абсолютные координаты через `textManager.computeAbsoluteTextPosition()`.
 4. Сериализует `ownerContourId` как строку placement-id.
+5. Не возвращает никакой fallback-структуры `labels[]`.
 
 ---
 
@@ -203,37 +233,26 @@ Builder-слой заканчивается на методах:
 
 ---
 
-## 7) Удалённые legacy hooks/special-cases
+## 7) Что удалено в рамках clean break
 
-Ниже перечислены legacy-узлы, которые должны быть удалены в рамках clean break и не использоваться в новых фичах:
+Из runtime и актуального frontend-кода удалены:
 
-### UI hooks
-- `syncLabelControlsFromSelection()`
-- `applyLabelTextFromInput()`
-- `addLabelForSelection()`
-- `deleteLabelForSelection()`
-- привязка `UIDom.labels.*` обработчиков в `initUIEvents()`
+- файл `frontend/js/labelManager.js`;
+- legacy export-метод `getExportTextsData()` со старым форматом `contourId/text/x/y`;
+- label-oriented naming в executor (`sourceLabel`, `duplicatedLabel` и т.п.);
+- single-attached-text assumption в duplicate/follower paths;
+- любые runtime fallback-ветки по `labels[]`.
 
-### Legacy manager / API
-- файл `frontend/js/labelManager.js` целиком;
-- методы legacy-экспорта `getExportTextsData()` в стиле `contourId/text/x/y` без `kind/angle/ownerContourId`;
-- любые обращения к свойству `labelForPlacementId`.
-
-### Special-cases в ветвлениях
-- ветки вида `if (obj.isTextObject) ... // labels`;
-- логика «запрет поворота для labels» как отдельный кейс (тексты обрабатываются единообразно по `kind`);
-- fallback-парсинг входных payload по ключу `labels`.
-
-### Документация/контракт
-- примеры JSON с `labels[]` в публичном export-контракте;
-- формулировки, где `labels` описаны как единственный источник данных для DXF-маркировки.
+Допускаются только:
+- исторические упоминания `labels[]` в документации как описание удалённого legacy;
+- каноническое имя артефакта `<orderNumber>_labels.dxf`, если это часть производственного naming-конвеншена.
 
 ---
 
-## 8) План внедрения (коротко)
+## 8) Инженерный критерий готовности
 
-1. Зафиксировать docs (`texts[]`, clean break, versioning).
-2. Удалить UI/manager legacy hooks и старые ветки.
-3. Проверить export + создание заказа + генерацию DXF с текстом.
-4. Обновить smoke-тесты и примеры curl.
-5. Отдельно (при необходимости): offline-миграция исторических workspace-файлов.
+1. `textManager.texts[]` остаётся единственным runtime source of truth.
+2. У одного owner-контура поддерживается несколько attached-text объектов.
+3. `delete`, `duplicate` и follower-update paths работают со всем набором attached-text owner'а.
+4. Workspace snapshot и export используют только `texts[]`.
+5. Любая историческая миграция legacy-data допускается только как offline script, не как UI runtime.

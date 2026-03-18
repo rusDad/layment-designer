@@ -195,29 +195,29 @@
                     duplicatedContour.setCoords();
                     newObjects.push(duplicatedContour);
 
-                    const sourceLabel = app.textManager.getAttachedTextByPlacementId(obj.placementId);
-                    if (!sourceLabel) {
-                        continue;
-                    }
-
-                    const duplicatedLabel = app.textManager.createAttachedText(duplicatedContour, {
-                        text: sourceLabel.text || '',
-                        role: sourceLabel.role || 'user-text',
-                        fontSizeMm: sourceLabel.fontSizeMm || sourceLabel.fontSize,
-                        localOffsetX: sourceLabel.localOffsetX,
-                        localOffsetY: sourceLabel.localOffsetY,
-                        localAngle: sourceLabel.localAngle
-                    });
-
-                    if (duplicatedLabel) {
-                        objectMetaApi?.copyObjectMeta?.(sourceLabel, duplicatedLabel);
-                        objectMetaApi?.patchObjectMeta?.(duplicatedLabel, {
-                            followMode: 'followBoundObject',
-                            boundToId: duplicatedLabel.ownerPlacementId
+                    const sourceTexts = app.textManager.getAttachedTextsByPlacementId?.(obj.placementId) || [];
+                    sourceTexts.forEach(sourceText => {
+                        const duplicatedText = app.textManager.createAttachedText(duplicatedContour, {
+                            text: sourceText.text || '',
+                            role: sourceText.role || 'user-text',
+                            fontSizeMm: sourceText.fontSizeMm || sourceText.fontSize,
+                            localOffsetX: sourceText.localOffsetX,
+                            localOffsetY: sourceText.localOffsetY,
+                            localAngle: sourceText.localAngle
                         });
-                        objectMetaApi?.applyInteractionState?.(duplicatedLabel);
-                        duplicatedLabel.setCoords();
-                    }
+
+                        if (!duplicatedText) {
+                            return;
+                        }
+
+                        objectMetaApi?.copyObjectMeta?.(sourceText, duplicatedText);
+                        objectMetaApi?.patchObjectMeta?.(duplicatedText, {
+                            followMode: 'followBoundObject',
+                            boundToId: duplicatedText.ownerPlacementId
+                        });
+                        objectMetaApi?.applyInteractionState?.(duplicatedText);
+                        duplicatedText.setCoords();
+                    });
                 }
             });
 
@@ -414,10 +414,12 @@
             if (!owner?.placementId) {
                 return;
             }
-            const text = app.textManager.getAttachedTextByPlacementId?.(owner.placementId);
-            if (text && policy.shouldFollowOwnerMove(ctx, text, owner)) {
-                followers.push({ owner, follower: text });
-            }
+            const attachedTexts = app.textManager.getAttachedTextsByPlacementId?.(owner.placementId) || [];
+            attachedTexts.forEach(textObj => {
+                if (policy.shouldFollowOwnerMove(ctx, textObj, owner)) {
+                    followers.push({ owner, follower: textObj });
+                }
+            });
         });
 
         return followers;
@@ -431,6 +433,7 @@
 
         const list = Array.isArray(followerPairs) ? followerPairs : [];
         const updated = [];
+        const syncedOwners = new Set();
 
         list.forEach(pair => {
             const follower = pair?.follower;
@@ -439,7 +442,11 @@
                 return;
             }
 
-            app.textManager.syncAttachedTextsForContour(owner);
+            const ownerKey = Number.isFinite(owner.placementId) ? owner.placementId : owner;
+            if (!syncedOwners.has(ownerKey)) {
+                app.textManager.syncAttachedTextsForContour(owner);
+                syncedOwners.add(ownerKey);
+            }
             app.textManager.clampTextToContourBounds(follower);
             app.textManager.updateAttachedTextAnchorFromAbsolute(follower);
             follower.setCoords?.();
