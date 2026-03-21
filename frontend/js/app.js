@@ -1389,12 +1389,6 @@ class ContourApp {
         UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
 
-        UIDom.texts.list?.addEventListener('change', () => {
-            if (this.isSyncingTextControls) {
-                return;
-            }
-            this.syncTextControlsFromSelection();
-        });
         UIDom.texts.value?.addEventListener('input', event => this.applyTextValueFromInput(event.target.value));
         UIDom.texts.fontSize?.addEventListener('change', event => this.applyTextFontSizeFromInput(event.target.value));
         UIDom.texts.angle?.addEventListener('change', event => this.applyTextAngleFromInput(event.target.value));
@@ -1665,20 +1659,20 @@ class ContourApp {
             UIDom.buttons.toggleLock.disabled = lockState.lockableCount < 1;
             UIDom.buttons.toggleLock.textContent = nextLabel;
             UIDom.buttons.toggleLock.dataset.hint = lockState.allLocked
-                ? 'Снять semantic lock с выделенного'
-                : 'Заблокировать выделенное semantic lock-правилом';
+                ? 'Снять блокировку с выделенного'
+                : 'Заблокировать выделенное от случайных изменений';
             UIDom.buttons.toggleLock.title = nextLabel;
             UIDom.buttons.toggleLock.setAttribute('aria-pressed', lockState.allLocked ? 'true' : 'false');
         }
         if (UIDom.buttons.group) {
             UIDom.buttons.group.disabled = !this.hasGroupSelection(active);
-            UIDom.buttons.group.dataset.hint = 'Создать soft-group из незаблокированного contour/primitive selection';
-            UIDom.buttons.group.title = 'Group';
+            UIDom.buttons.group.dataset.hint = 'Сгруппировать выделенные незаблокированные элементы';
+            UIDom.buttons.group.title = 'Сгруппировать';
         }
         if (UIDom.buttons.ungroup) {
             UIDom.buttons.ungroup.disabled = !this.hasUngroupSelection(active);
-            UIDom.buttons.ungroup.dataset.hint = 'Удалить soft-group membership у выделенных групп';
-            UIDom.buttons.ungroup.title = 'Ungroup';
+            UIDom.buttons.ungroup.dataset.hint = 'Разгруппировать выделенные элементы';
+            UIDom.buttons.ungroup.title = 'Разгруппировать';
         }
 
         const alignDisabled = selectedCount < 2;
@@ -1809,7 +1803,7 @@ class ContourApp {
     fillTextForm(textObj) {
         if (UIDom.texts.value) UIDom.texts.value.value = textObj?.text || '';
         if (UIDom.texts.fontSize) UIDom.texts.fontSize.value = Number(textObj?.fontSize) || '';
-        if (UIDom.texts.angle) UIDom.texts.angle.value = Number(textObj?.angle) || 0;
+        if (UIDom.texts.angle) UIDom.texts.angle.value = textObj ? (Number(textObj?.angle) || 0) : '';
         if (UIDom.texts.kind) UIDom.texts.kind.textContent = textObj?.kind || '—';
         if (UIDom.texts.role) UIDom.texts.role.textContent = textObj?.role || '—';
         if (UIDom.texts.owner) UIDom.texts.owner.textContent = Number.isFinite(textObj?.ownerPlacementId) ? String(textObj.ownerPlacementId) : '—';
@@ -1820,43 +1814,25 @@ class ContourApp {
         const selectedText = this.getSelectedTextObject();
         const ownerContour = selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null;
         const targetContour = contour || ownerContour;
+        const formText = selectedText || null;
         const list = UIDom.texts.list;
 
         if (!selectedText && !targetContour) {
             this.setTextPanelEnabled(false);
-            if (list) list.innerHTML = '';
+            if (list) {
+                list.innerHTML = '';
+                list.disabled = true;
+            }
             this.fillTextForm(null);
             return;
         }
 
         this.setTextPanelEnabled(true);
-        const freeTexts = this.textManager.texts.filter(textObj => textObj.kind === 'free');
-        const listTexts = targetContour
-            ? [...this.getAttachedTextsForContour(targetContour), ...freeTexts]
-            : (selectedText ? [selectedText] : []);
-
         if (list) {
-            this.isSyncingTextControls = true;
             list.innerHTML = '';
-            listTexts.forEach((textObj, index) => {
-                textObj.uiId = textObj.uiId || `text-${Date.now()}-${index}`;
-                const option = document.createElement('option');
-                option.value = textObj.uiId;
-                option.textContent = `${index + 1}. ${textObj.kind} · ${textObj.role} · owner ${Number.isFinite(textObj.ownerPlacementId) ? textObj.ownerPlacementId : '—'}`;
-                list.appendChild(option);
-            });
-            if (selectedText?.uiId) list.value = selectedText.uiId;
-            list.disabled = listTexts.length === 0;
-            this.isSyncingTextControls = false;
+            list.disabled = true;
         }
 
-        const fromList = listTexts.find(textObj => textObj.uiId === list?.value) || null;
-        const formText = selectedText || fromList || listTexts[0] || null;
-        if (list && formText?.uiId) {
-            this.isSyncingTextControls = true;
-            list.value = formText.uiId;
-            this.isSyncingTextControls = false;
-        }
         this.fillTextForm(formText);
 
         if (UIDom.texts.value) UIDom.texts.value.disabled = !formText;
@@ -1870,10 +1846,7 @@ class ContourApp {
     }
 
     getEditingTextObject() {
-        const selected = this.getSelectedTextObject();
-        if (selected) return selected;
-        const listValue = UIDom.texts.list?.value;
-        return this.textManager.texts.find(textObj => textObj.uiId === listValue) || null;
+        return this.getSelectedTextObject();
     }
 
     applyTextValueFromInput(value) {
@@ -2816,8 +2789,9 @@ class ContourApp {
                 return;
             }
 
+            const texts = this.textManager?.buildExportTexts?.() || [];
+
             try {
-                const texts = this.textManager?.buildExportTexts?.() || [];
                 const payloadKey = this.storePreviewSvgPayload(svg, texts);
                 const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
                 viewerUrl.searchParams.set('payloadKey', payloadKey);
@@ -2902,7 +2876,7 @@ class ContourApp {
         const payload = {
             version: 3,
             svg,
-            texts: normalizedTexts,
+            texts: Array.isArray(texts) ? texts : [],
             baseMaterialColor: this.baseMaterialColor,
             laymentThicknessMm: this.laymentThicknessMm,
             createdAt: Date.now()
