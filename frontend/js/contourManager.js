@@ -64,6 +64,7 @@ class ContourManager {
             boundToId: null,
             placementId: group.placementId
         });
+        this.app?.applyObjectVisualState?.(group);
 
         group.on('rotating', () => this.snapToAllowedAngle(group));
         group.on('modified', () => this.snapToAllowedAngle(group));
@@ -121,29 +122,7 @@ class ContourManager {
       const collisionContours = new Set();
       const outOfBoundsPrimitives = new Set();
 
-       // Сброс цвета у всех контуров
-      this.contours.forEach(obj => {
-        this.resetPropertiesRecursive(obj, {
-            stroke: Config.COLORS.CONTOUR.NORMAL,        // обычный цвет контура
-            strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
-            opacity: 1,
-            borderColor: Config.COLORS.SELECTION.BORDER,   // цвет рамки выделения (если останется)
-            cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: Config.COLORS.CONTOUR.FILL  // Сброс fill
-        });
-      });
-
-      // Сброс цвета у всех примитивов
-      this.app.primitiveManager.primitives.forEach(obj => {
-        this.resetPropertiesRecursive(obj, {
-            stroke: Config.COLORS.PRIMITIVE.STROKE,
-            strokeWidth: 1,
-            opacity: 1,
-            borderColor: Config.COLORS.SELECTION.BORDER,
-            cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: Config.COLORS.PRIMITIVE.FILL
-        });
-      });
+      this.app?.resetWorkspaceVisualStateIssues?.();
 
       const layment = this.canvas.layment;
       if (!layment) return emptyResult;
@@ -207,27 +186,7 @@ class ContourManager {
           }
         });
 
-       // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
-       problematic.forEach(obj => {
-        if (obj.primitiveType) {
-            // Для примитивов
-            obj.set({
-                stroke: Config.COLORS.PRIMITIVE.ERROR,
-                strokeWidth: 3,
-                opacity: 0.85
-            });
-        } else {
-            // Для контуров
-            this.resetPropertiesRecursive(obj, {
-            stroke:  Config.COLORS.CONTOUR.ERROR,                   //ярко-красный контур
-            strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,  //чуть шире для наглядности
-            opacity: 0.85,
-            borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
-            cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
-            });
-        }
-        obj.setCoords();
-       });
+       this.app?.setObjectsVisualState?.(Array.from(problematic), 'error');
 
        this.canvas.renderAll();
        return {
@@ -524,6 +483,7 @@ class PrimitiveManager {
                 boundToId: null,
                 placementId: null
             });
+            this.app?.applyObjectVisualState?.(obj);
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);

@@ -40,6 +40,7 @@ class ContourApp {
         this.pendingSelectionSource = null;
         this.activeSelectionSource = null;
         this.selectionSanitizeInProgress = false;
+        this.selectionExpandInProgress = false;
         this.softGroupDragState = null;
         this.applyingSoftGroupMove = false;
 
@@ -204,6 +205,89 @@ class ContourApp {
         return activeObject.type === 'activeSelection'
             ? activeObject.getObjects().filter(Boolean)
             : [activeObject];
+    }
+
+
+    getExpandedSelectionWithSoftGroups(objects, predicate = null) {
+        const list = Array.isArray(objects) ? objects.filter(Boolean) : [];
+        if (!list.length) {
+            return [];
+        }
+
+        if (this.interactionPolicy?.expandTargetsWithSoftGroups) {
+            return this.interactionPolicy.expandTargetsWithSoftGroups(this, list, predicate);
+        }
+
+        const expanded = [];
+        const seen = new Set();
+        const addObject = (obj) => {
+            if (!obj || seen.has(obj)) {
+                return;
+            }
+            if (typeof predicate === 'function' && predicate(obj) === false) {
+                return;
+            }
+            seen.add(obj);
+            expanded.push(obj);
+        };
+
+        list.forEach(obj => {
+            addObject(obj);
+            const groupId = this.objectMetaApi?.getGroupId?.(obj);
+            if (!groupId) {
+                return;
+            }
+            this.getSoftGroupMembers(groupId).forEach(member => addObject(member));
+        });
+
+        return expanded;
+    }
+
+    hasSameObjectSet(left, right) {
+        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+            return false;
+        }
+        const rightSet = new Set(right);
+        return left.every(obj => rightSet.has(obj));
+    }
+
+    expandActiveSelectionWithSoftGroupsIfNeeded(active, source) {
+        if (!active || this.selectionExpandInProgress) {
+            return false;
+        }
+
+        const selectedObjects = this.getSelectionObjects(active);
+        if (!selectedObjects.length) {
+            return false;
+        }
+
+        const expandedObjects = this.getExpandedSelectionWithSoftGroups(selectedObjects, obj => {
+            return this.interactionPolicy?.canSelect?.(this, obj) !== false;
+        });
+        if (!expandedObjects.length) {
+            return false;
+        }
+
+        const alreadyExpanded = this.hasSameObjectSet(selectedObjects, expandedObjects);
+        if (alreadyExpanded && (active.type === 'activeSelection' || expandedObjects.length <= 1)) {
+            return false;
+        }
+
+        this.selectionExpandInProgress = true;
+        try {
+            this.canvas.discardActiveObject();
+            if (expandedObjects.length === 1) {
+                this.setActiveObjectWithSelectionSource(expandedObjects[0], source || 'programmatic');
+                expandedObjects[0].setCoords?.();
+                this.canvas.requestRenderAll();
+            } else {
+                this.restoreActiveSelection(expandedObjects, { source: source || 'programmatic' });
+            }
+        } finally {
+            this.selectionExpandInProgress = false;
+        }
+
+        return true;
     }
 
     getGroupSelectionObjects(activeObject = this.canvas.getActiveObject()) {
@@ -450,6 +534,7 @@ class ContourApp {
 
     finalizeSelectionChange(active = this.canvas.getActiveObject(), source = null) {
         this.activeSelectionSource = active ? source : null;
+        this.syncSelectionVisualState(active);
         this.syncActiveSelectionInteractionState(active);
         this.updateButtons();
         this.updateStatusBar();
@@ -465,6 +550,10 @@ class ContourApp {
         const source = this.consumeSelectionSource(active, fallbackSource);
 
         if (!this.selectionSanitizeInProgress && this.sanitizeActiveSelectionIfNeeded(active, source)) {
+            return;
+        }
+
+        if (!this.selectionExpandInProgress && this.expandActiveSelectionWithSoftGroupsIfNeeded(this.canvas.getActiveObject(), source)) {
             return;
         }
 
@@ -1497,6 +1586,140 @@ class ContourApp {
         };
     }
 
+    getObjectVisualPriority(obj) {
+        if (!obj) {
+            return 'normal';
+        }
+        if (obj.layoutVisualState === 'error') {
+            return 'error';
+        }
+        if (this.interactionPolicy?.isSemanticallyLocked?.(obj) === true) {
+            return 'locked';
+        }
+        return 'normal';
+    }
+
+    getObjectVisualStyle(obj) {
+        const priority = this.getObjectVisualPriority(obj);
+        const isPrimitive = !!obj?.primitiveType;
+        const baseStyle = isPrimitive
+            ? {
+                stroke: Config.COLORS.PRIMITIVE.STROKE,
+                strokeWidth: 1,
+                fill: Config.COLORS.PRIMITIVE.FILL,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER
+            }
+            : {
+                stroke: Config.COLORS.CONTOUR.NORMAL,
+                strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
+                fill: Config.COLORS.CONTOUR.FILL,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER
+            };
+
+        if (priority === 'error') {
+            return isPrimitive
+                ? {
+                    ...baseStyle,
+                    stroke: Config.COLORS.PRIMITIVE.ERROR,
+                    strokeWidth: 3,
+                    opacity: 0.85,
+                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
+                }
+                : {
+                    ...baseStyle,
+                    stroke: Config.COLORS.CONTOUR.ERROR,
+                    strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,
+                    opacity: 0.85,
+                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
+                };
+        }
+
+        if (priority === 'locked') {
+            return isPrimitive
+                ? {
+                    ...baseStyle,
+                    stroke: Config.COLORS.PRIMITIVE.LOCKED,
+                    strokeWidth: Config.COLORS.PRIMITIVE.LOCKED_STROKE_WIDTH,
+                    borderColor: Config.COLORS.SELECTION.LOCKED_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.LOCKED_CORNER
+                }
+                : {
+                    ...baseStyle,
+                    stroke: Config.COLORS.CONTOUR.LOCKED,
+                    strokeWidth: Config.COLORS.CONTOUR.LOCKED_STROKE_WIDTH,
+                    borderColor: Config.COLORS.SELECTION.LOCKED_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.LOCKED_CORNER
+                };
+        }
+
+        return baseStyle;
+    }
+
+    applyObjectVisualState(obj) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.type === 'activeSelection' || obj.isTextObject) {
+            return;
+        }
+
+        const style = this.getObjectVisualStyle(obj);
+        this.contourManager?.resetPropertiesRecursive?.(obj, style);
+        obj.setCoords?.();
+    }
+
+    applyVisualStateToObjects(objects) {
+        const list = Array.isArray(objects) ? objects.filter(Boolean) : [];
+        list.forEach(obj => this.applyObjectVisualState(obj));
+    }
+
+    resetWorkspaceVisualStateIssues() {
+        this.getSelectableWorkspaceObjects().forEach(obj => {
+            obj.layoutVisualState = null;
+            this.applyObjectVisualState(obj);
+        });
+    }
+
+    setObjectsVisualState(objects, state = null) {
+        const list = Array.isArray(objects) ? objects.filter(Boolean) : [];
+        list.forEach(obj => {
+            obj.layoutVisualState = state;
+            this.applyObjectVisualState(obj);
+        });
+    }
+
+    syncSelectionVisualState(active = this.canvas.getActiveObject()) {
+        if (!active) {
+            return;
+        }
+
+        if (active.type !== 'activeSelection') {
+            this.applyObjectVisualState(active);
+            return;
+        }
+
+        const selectionObjects = active.getObjects().filter(Boolean);
+        this.applyVisualStateToObjects(selectionObjects);
+
+        const priority = selectionObjects.some(obj => this.getObjectVisualPriority(obj) === 'error')
+            ? 'error'
+            : (selectionObjects.some(obj => this.getObjectVisualPriority(obj) === 'locked') ? 'locked' : 'normal');
+
+        if (priority === 'error') {
+            active.borderColor = Config.COLORS.SELECTION.ERROR_BORDER;
+            active.cornerColor = Config.COLORS.SELECTION.ERROR_CORNER;
+        } else if (priority === 'locked') {
+            active.borderColor = Config.COLORS.SELECTION.LOCKED_BORDER;
+            active.cornerColor = Config.COLORS.SELECTION.LOCKED_CORNER;
+        } else {
+            active.borderColor = Config.COLORS.SELECTION.BORDER;
+            active.cornerColor = Config.COLORS.SELECTION.CORNER;
+        }
+    }
+
     syncActiveSelectionInteractionState(active = this.canvas.getActiveObject()) {
         if (!active || active.type !== 'activeSelection') {
             return;
@@ -2481,6 +2704,7 @@ class ContourApp {
                         groupId: contour.editorState?.groupId ?? contour.groupId ?? null
                     });
                     this.objectMetaApi?.applyInteractionState?.(added);
+                    this.applyObjectVisualState(added);
                     added.angle = contour.angle || 0;
                     added.setCoords();
                     const targetX = this.layment.left + contour.x;
@@ -2515,6 +2739,7 @@ class ContourApp {
                         groupId: savedText.editorState?.groupId ?? null
                     });
                     this.objectMetaApi?.applyInteractionState?.(textObj);
+                    this.applyObjectVisualState(textObj);
                     continue;
                 }
 
@@ -2537,6 +2762,7 @@ class ContourApp {
                     groupId: savedText.editorState?.groupId ?? null
                 });
                 this.objectMetaApi?.applyInteractionState?.(textObj);
+                this.applyObjectVisualState(textObj);
             }
 
             await this.batchRender(() => {
@@ -2556,6 +2782,7 @@ class ContourApp {
                             groupId: primitive.editorState?.groupId ?? primitive.groupId ?? null
                         });
                         this.objectMetaApi?.applyInteractionState?.(addedPrimitive);
+                        this.applyObjectVisualState(addedPrimitive);
                     }
                 }
             });
@@ -2690,27 +2917,7 @@ class ContourApp {
 
         const problematic = new Set();
 
-        this.contourManager.contours.forEach(obj => {
-            this.contourManager.resetPropertiesRecursive(obj, {
-                stroke: Config.COLORS.CONTOUR.NORMAL,
-                strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
-                opacity: 1,
-                borderColor: Config.COLORS.SELECTION.BORDER,
-                cornerColor: Config.COLORS.SELECTION.CORNER,
-                fill: Config.COLORS.CONTOUR.FILL
-            });
-        });
-
-        this.primitiveManager.primitives.forEach(obj => {
-            this.contourManager.resetPropertiesRecursive(obj, {
-                stroke: Config.COLORS.PRIMITIVE.STROKE,
-                strokeWidth: 1,
-                opacity: 1,
-                borderColor: Config.COLORS.SELECTION.BORDER,
-                cornerColor: Config.COLORS.SELECTION.CORNER,
-                fill: Config.COLORS.PRIMITIVE.FILL
-            });
-        });
+        this.resetWorkspaceVisualStateIssues();
 
         const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
         const lWidth = layment.width * layment.scaleX;
@@ -2738,24 +2945,7 @@ class ContourApp {
             }
         });
 
-        problematic.forEach(obj => {
-            if (obj.primitiveType) {
-                obj.set({
-                    stroke: Config.COLORS.PRIMITIVE.ERROR,
-                    strokeWidth: 3,
-                    opacity: 0.85
-                });
-            } else {
-                this.contourManager.resetPropertiesRecursive(obj, {
-                    stroke: Config.COLORS.CONTOUR.ERROR,
-                    strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,
-                    opacity: 0.85,
-                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
-                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
-                });
-            }
-            obj.setCoords();
-        });
+        this.setObjectsVisualState(Array.from(problematic), 'error');
 
         this.canvas.renderAll();
         return {
