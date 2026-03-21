@@ -41,16 +41,16 @@
             <main class="workspace">
                 <div class="workspace-toolbar" aria-label="Расположение и масштаб">
                     <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Основные действия">
-                        <button id="saveWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Сохранить раскладку">Save</button>
-                        <button id="loadWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Загрузить сохранённую раскладку">Load</button>
+                        <button id="saveWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Сохранить раскладку">Сохранить</button>
+                        <button id="loadWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Загрузить сохранённую раскладку">Загрузить</button>
                         <button id="checkLayoutButton" class="tool-button toolbar-action-button button-secondary debug-control" data-hint="Проверить границы и пересечения">Проверить</button>
                     </div>
                     <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Действия с выделением">
                         <button id="deleteButton" class="tool-button toolbar-action-button button-danger" disabled data-hint="Удалить выделенное">Удалить</button>
                         <button id="duplicateButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Дублировать выделенное">Дублировать</button>
                         <button id="toggleLockButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Заблокировать выделенное">Заблокировать</button>
-                        <button id="groupButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Создать soft-group из выделения">Group</button>
-                        <button id="ungroupButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Удалить soft-group для выделения">Ungroup</button>
+                        <button id="groupButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Сгруппировать выделенные элементы">Сгруппировать</button>
+                        <button id="ungroupButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Разгруппировать выделенные элементы">Разгруппировать</button>
                         <button id="rotateButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Повернуть выделенное на 90°">Повернуть</button>
                     </div>
                     <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
@@ -175,23 +175,23 @@
                     </section>
                 </section>
 
-                <h2>Тексты</h2>
+                <h2>Маркировка</h2>
                 <div id="textControls" class="primitive-controls panel-card" aria-disabled="true">
-                    <label>Список: <select id="textList" disabled></select></label>
+                    <div class="text-controls-meta" hidden><label>Список: <select id="textList" disabled></select></label></div>
                     <label>Текст: <input type="text" id="textValue" placeholder="Введите текст" disabled></label>
                     <label>Размер: <input type="number" id="textFontSize" min="1" step="1" disabled></label>
-                    <label>Угол: <input type="number" id="textAngle" step="1" disabled></label>
-                    <div class="primitive-controls-header">Тип: <span id="textKind">—</span></div>
-                    <div class="primitive-controls-header">Роль: <span id="textRole">—</span></div>
-                    <div class="primitive-controls-header">Owner: <span id="textOwner">—</span></div>
+                    <label>Поворот: <input type="number" id="textAngle" step="1" disabled></label>
+                    <div class="primitive-controls-header text-controls-meta" hidden>Тип: <span id="textKind">—</span></div>
+                    <div class="primitive-controls-header text-controls-meta" hidden>Роль: <span id="textRole">—</span></div>
+                    <div class="primitive-controls-header text-controls-meta" hidden>Владелец: <span id="textOwner">—</span></div>
                     <div class="tool-buttons">
-                        <button id="addFreeTextBtn" class="tool-button button-secondary">Добавить free</button>
-                        <button id="addAttachedTextBtn" class="tool-button button-secondary">Добавить attached</button>
+                        <button id="addFreeTextBtn" class="tool-button button-secondary" data-hint="Создать свободный текст на поле">Нанести текст</button>
+                        <button id="addAttachedTextBtn" class="tool-button button-secondary" data-hint="Добавить маркировку к выбранному артикулу">Добавить маркировку</button>
                     </div>
                     <div class="tool-buttons">
-                        <button id="attachTextBtn" class="tool-button button-secondary" disabled>Attach</button>
-                        <button id="detachTextBtn" class="tool-button button-secondary" disabled>Detach</button>
-                        <button id="deleteTextBtn" class="tool-button button-danger" disabled>Delete</button>
+                        <button id="attachTextBtn" class="tool-button button-secondary" disabled data-hint="Привязать выбранный текст к артикулу">Привязать к артикулу</button>
+                        <button id="detachTextBtn" class="tool-button button-secondary" disabled data-hint="Отвязать выбранную маркировку от артикула">Отвязать</button>
+                        <button id="deleteTextBtn" class="tool-button button-danger" disabled data-hint="Удалить выбранный текст">Удалить</button>
                     </div>
                     <small class="panel-empty-state">Выберите контур или текст для управления.</small>
                 </div>
