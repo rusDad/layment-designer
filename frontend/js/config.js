@@ -88,19 +88,25 @@ window.Config = {
         CONTOUR: {
             NORMAL: '#101214ff',
             ERROR: '#e74c3c',
+            LOCKED: '#d78a2d',
             FILL: '#208820',
             NORMAL_STROKE_WIDTH: 1,
+            LOCKED_STROKE_WIDTH: 2,
             ERROR_STROKE_WIDTH: 3
         },
         SELECTION: {
             BORDER: '#3498db',
             CORNER: '#3498db',
+            LOCKED_BORDER: '#d78a2d',
+            LOCKED_CORNER: '#c97a1a',
             ERROR_BORDER: '#e74c3c',
             ERROR_CORNER: '#c0392b'
         },
         PRIMITIVE: {
             STROKE: '#104a10',  // Зеленый для примитивов
             FILL: '#208820',
+            LOCKED: '#d78a2d',
+            LOCKED_STROKE_WIDTH: 2,
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
     },

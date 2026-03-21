@@ -274,12 +274,14 @@
             selected.forEach(obj => {
                 objectMetaApi.patchObjectMeta(obj, { isLocked: nextLocked });
                 objectMetaApi.applyInteractionState?.(obj);
+                app.applyObjectVisualState?.(obj);
                 obj.setCoords?.();
                 changedObjects.push(obj);
             });
 
             ctx.changedObjects = changedObjects;
             if (active?.type === 'activeSelection') {
+                app.syncSelectionVisualState?.(active);
                 app.syncActiveSelectionInteractionState?.(active);
             }
             return {
