@@ -219,6 +219,22 @@ textarea,
     gap: var(--space-2);
 }
 
+#textControls {
+    gap: 10px;
+}
+
+#textControls .tool-buttons {
+    gap: 10px;
+}
+
+#textControls label {
+    grid-template-columns: 74px 1fr;
+}
+
+.text-controls-meta[hidden] {
+    display: none !important;
+}
+
 .primitive-controls[aria-disabled="true"] {
     background: #fcfefd;
 }
