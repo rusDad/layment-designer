@@ -112,6 +112,7 @@ class TextManager {
             originX: 'left',
             originY: 'top',
             fontSize: fontSizeMm ?? Config.TEXT.FONT_SIZE_MM,
+            fontFamily: 'Arial',
             fill: '#000000',
             textBaseline: 'alphabetic',
             angle: 0,
