@@ -3159,6 +3159,7 @@ class ContourApp {
             const texts = this.textManager?.buildExportTexts?.() || [];
 
             try {
+                console.log('preview texts', texts);
                 const payloadKey = this.storePreviewSvgPayload(svg, texts);
                 const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
                 viewerUrl.searchParams.set('payloadKey', payloadKey);
