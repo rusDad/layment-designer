@@ -106,6 +106,46 @@ class ContourManager {
         this.metadataMap = new WeakMap();
         this.canvas.renderAll();
     }
+
+    isObjectOutOfLaymentBounds(obj, layment = this.canvas?.layment) {
+        if (!obj || !layment) {
+            return false;
+        }
+
+        const box = obj.getBoundingRect(true);
+        const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
+        const lWidth = layment.width * layment.scaleX;
+        const lHeight = layment.height * layment.scaleY;
+
+        return box.left < layment.left + padding
+            || box.top < layment.top + padding
+            || box.left + box.width > layment.left + lWidth - padding
+            || box.top + box.height > layment.top + lHeight - padding;
+    }
+
+    getOutOfBoundsWorkspaceObjects() {
+        const layment = this.canvas?.layment;
+        if (!layment) {
+            return [];
+        }
+
+        const outOfBounds = [];
+
+        this.contours.forEach(obj => {
+            if (this.isObjectOutOfLaymentBounds(obj, layment)) {
+                outOfBounds.push(obj);
+            }
+        });
+
+        this.app?.primitiveManager?.primitives?.forEach(obj => {
+            if (this.isObjectOutOfLaymentBounds(obj, layment)) {
+                outOfBounds.push(obj);
+            }
+        });
+
+        return outOfBounds;
+    }
+
     checkCollisionsAndHighlight() {
       const emptyResult = {
         ok: true,
@@ -148,20 +188,12 @@ class ContourManager {
       const layment = this.canvas.layment;
       if (!layment) return emptyResult;
 
-      const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
-
       for (let i = 0; i < this.contours.length; i++) {
           const a = this.contours[i];
           const box = a.getBoundingRect(true);
 
           // 1. Выход за границы ложемента
-          const lWidth = layment.width * layment.scaleX;
-          const lHeight = layment.height * layment.scaleY;
-
-          if (box.left < layment.left + padding ||
-            box.top < layment.top + padding ||
-            box.left + box.width > layment.left + lWidth - padding ||
-            box.top + box.height > layment.top + lHeight - padding) {
+          if (this.isObjectOutOfLaymentBounds(a, layment)) {
             problematic.add(a);
             outOfBoundsContours.add(a);
           }
@@ -194,14 +226,7 @@ class ContourManager {
 
         // Проверка выхода за ложемент для примитивов
         this.app.primitiveManager.primitives.forEach(obj => {
-          const box = obj.getBoundingRect(true);
-          const lWidth = layment.width * layment.scaleX;
-          const lHeight = layment.height * layment.scaleY;
-  
-          if (box.left < layment.left + padding ||
-              box.top < layment.top + padding ||
-              box.left + box.width > layment.left + lWidth - padding ||
-              box.top + box.height > layment.top + lHeight - padding) {
+          if (this.isObjectOutOfLaymentBounds(obj, layment)) {
               problematic.add(obj);
               outOfBoundsPrimitives.add(obj);
           }

@@ -3,6 +3,7 @@
 const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v2';
 const WORKSPACE_MANUAL_KEY = 'laymentDesigner.workspace.v2.manual';
 const AUTOSAVE_DEBOUNCE_MS = 5000;
+const VIEWPORT_RESIZE_FIT_DEBOUNCE_MS = 120;
 
 class ContourApp {
     constructor() {
@@ -42,6 +43,8 @@ class ContourApp {
         this.selectionSanitizeInProgress = false;
         this.softGroupDragState = null;
         this.applyingSoftGroupMove = false;
+        this.viewportResizeFitTimer = null;
+        this.viewportFeedbackActive = false;
 
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
@@ -83,9 +86,15 @@ class ContourApp {
         const resizeCanvas = () => {
             const size = getCanvasSize();
             if (size.width > 0 && size.height > 0) {
+                const canvasWidth = this.canvas.getWidth();
+                const canvasHeight = this.canvas.getHeight();
+                const sizeChanged = canvasWidth !== size.width || canvasHeight !== size.height;
                 this.canvas.setDimensions({ width: size.width, height: size.height });
-                this.resizeCanvasToContent();
-                this.canvas.renderAll();
+                if (sizeChanged) {
+                    this.scheduleViewportRefit();
+                } else {
+                    this.canvas.renderAll();
+                }
             }
         };
 
@@ -663,7 +672,7 @@ class ContourApp {
         this.layment.setCoords();
         this.syncSafeAreaRect();
         if (!this.isRestoringWorkspace) {
-            this.fitToLayment();
+            this.fitViewportAfterLaymentResize();
         }
         this.canvas.requestRenderAll();
         this.scheduleWorkspaceSave();
@@ -685,20 +694,57 @@ class ContourApp {
         this.restoreActiveSelection(saved.objects);
     }
 
-    fitToLayment() {
+    getViewportUnionBounds(objects = []) {
+        const targetObjects = (Array.isArray(objects) ? objects : [objects])
+            .filter(obj => !!obj && typeof obj.getBoundingRect === 'function');
+
+        if (!targetObjects.length) {
+            return null;
+        }
+
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+
+        targetObjects.forEach(obj => {
+            obj.setCoords?.();
+            const rect = obj.getBoundingRect(true, true);
+            left = Math.min(left, rect.left);
+            top = Math.min(top, rect.top);
+            right = Math.max(right, rect.left + rect.width);
+            bottom = Math.max(bottom, rect.top + rect.height);
+        });
+
+        if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+            return null;
+        }
+
+        return {
+            left,
+            top,
+            width: Math.max(1, right - left),
+            height: Math.max(1, bottom - top)
+        };
+    }
+
+    fitViewportToObjects(objects, options = {}) {
         if (!this.canvas || !this.layment) {
-            return;
+            return false;
         }
 
         const viewport = this.getViewportSize();
         if (!viewport.width || !viewport.height) {
-            return;
+            return false;
         }
 
-        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        const rect = this.getViewportUnionBounds(objects);
+        if (!rect) {
+            return false;
+        }
 
-        const rect = this.layment.getBoundingRect(true, true);
-        const padding = 20;
+        const padding = Number.isFinite(options.padding) ? options.padding : 20;
+        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
         const zoomX = viewport.width / (rect.width + padding * 2);
         const zoomY = viewport.height / (rect.height + padding * 2);
         const unclampedZoom = Math.min(zoomX, zoomY);
@@ -719,6 +765,114 @@ class ContourApp {
         this.syncWorkspaceScaleInput();
         this.resizeCanvasToContent();
         this.canvas.requestRenderAll();
+        return true;
+    }
+
+    fitToLayment(options = {}) {
+        return this.fitViewportToObjects([this.layment], options);
+    }
+
+    getOutOfBoundsWorkspaceObjects() {
+        return this.contourManager?.getOutOfBoundsWorkspaceObjects?.() || [];
+    }
+
+    showOrderResultInfo(message, title = Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_TITLE) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-loading');
+        orderResult.container.classList.add('order-result-info');
+        orderResult.title.textContent = title;
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+        orderResult.orderNumber.textContent = '—';
+        orderResult.orderId.textContent = '—';
+        orderResult.statusLinkRow.hidden = true;
+        orderResult.paymentLink.href = '#';
+        orderResult.meta.hidden = true;
+        orderResult.meta.textContent = '';
+        this.lastOrderResult = null;
+    }
+
+    clearViewportIssueFeedback() {
+        if (!this.viewportFeedbackActive) {
+            return;
+        }
+
+        this.viewportFeedbackActive = false;
+        const orderResult = UIDom.orderResult;
+        if (orderResult.container?.classList.contains('order-result-info')) {
+            this.clearOrderResult();
+        }
+    }
+
+    updateViewportIssueFeedback(offendingObjects) {
+        if (!offendingObjects.length) {
+            this.clearViewportIssueFeedback();
+            return;
+        }
+
+        const message = offendingObjects.length === 1
+            ? Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_SINGLE
+            : Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_MULTIPLE;
+
+        this.viewportFeedbackActive = true;
+        this.showOrderResultInfo(message);
+    }
+
+    focusWorkspaceObjects(objects, { padding = 40, selectionSource = 'programmatic' } = {}) {
+        const targetObjects = (Array.isArray(objects) ? objects : [objects]).filter(Boolean);
+        if (!targetObjects.length) {
+            return false;
+        }
+
+        const fitObjects = [this.layment, ...targetObjects];
+        const fitted = this.fitViewportToObjects(fitObjects, { padding });
+
+        if (targetObjects.length === 1) {
+            this.setActiveObjectWithSelectionSource(targetObjects[0], selectionSource);
+            targetObjects[0].setCoords?.();
+            this.canvas.requestRenderAll();
+        } else {
+            this.restoreActiveSelection(targetObjects, { source: selectionSource });
+        }
+
+        return fitted;
+    }
+
+    fitViewportAfterLaymentResize() {
+        const offendingObjects = this.getOutOfBoundsWorkspaceObjects();
+        if (!offendingObjects.length) {
+            this.clearViewportIssueFeedback();
+            return this.fitToLayment();
+        }
+
+        this.updateViewportIssueFeedback(offendingObjects);
+        return this.focusWorkspaceObjects(offendingObjects, {
+            padding: 40,
+            selectionSource: 'programmatic'
+        });
+    }
+
+    fitViewportForCurrentWorkspaceState() {
+        const offendingObjects = this.getOutOfBoundsWorkspaceObjects();
+        if (!offendingObjects.length) {
+            this.clearViewportIssueFeedback();
+            return this.fitToLayment();
+        }
+        return this.fitViewportToObjects([this.layment, ...offendingObjects], { padding: 40 });
+    }
+
+    scheduleViewportRefit() {
+        if (this.viewportResizeFitTimer) {
+            clearTimeout(this.viewportResizeFitTimer);
+        }
+
+        this.viewportResizeFitTimer = setTimeout(() => {
+            this.viewportResizeFitTimer = null;
+            this.fitViewportForCurrentWorkspaceState();
+        }, VIEWPORT_RESIZE_FIT_DEBOUNCE_MS);
     }
 
     isSpacePanModifier(mouseEvent) {
@@ -2266,8 +2420,23 @@ class ContourApp {
     updateStatusBar() {
         const statusEl = UIDom.status.info;
         const active = this.canvas.getActiveObject();
+        const isOutOfBounds = this.contourManager?.isObjectOutOfLaymentBounds?.(active) === true;
 
-        if (!active || active.type === 'activeSelection') {
+        if (!active) {
+            statusEl.textContent = 'Выберите контур или выемку';
+            return;
+        }
+
+        if (active.type === 'activeSelection') {
+            const selectedObjects = active.getObjects().filter(Boolean);
+            const outOfBoundsObjects = new Set(this.getOutOfBoundsWorkspaceObjects());
+            if (selectedObjects.length > 0 && selectedObjects.every(obj => outOfBoundsObjects.has(obj))) {
+                statusEl.textContent = selectedObjects.length === 1
+                    ? 'Элемент вне границ ложемента — исправьте положение перед заказом'
+                    : `Выбрано ${selectedObjects.length} элементов вне границ ложемента — исправьте положение перед заказом`;
+                return;
+            }
+
             statusEl.textContent = 'Выберите контур или выемку';
             return;
         }
@@ -2280,13 +2449,15 @@ class ContourApp {
                 const bbox = active.getBoundingRect(true);
                 const realX = (bbox.left - laymentBbox.left).toFixed(1);
                 const realY = (bbox.top - laymentBbox.top).toFixed(1);
-                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм`;
+                const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
+                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм${warning}`;
                 return;
             }
 
             const realX = (active.left - laymentBbox.left).toFixed(1);
             const realY = (active.top - laymentBbox.top).toFixed(1);
-            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм`;
+            const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
+            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм${warning}`;
             return;
         }
 
@@ -2306,7 +2477,8 @@ class ContourApp {
         const realY = (tl.y - this.layment.top).toFixed(1);
 
         const article = meta.article || '—';
-        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°`; 
+        const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
+        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°${warning}`;
     }
 
     deleteSelected() {
@@ -2605,6 +2777,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = true;
         orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info', 'order-result-loading');
         orderResult.title.textContent = '';
@@ -2624,6 +2797,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info');
         orderResult.container.classList.add('order-result-loading');
@@ -2636,6 +2810,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-error', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-success');
@@ -2656,6 +2831,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-error');
@@ -2668,6 +2844,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success', 'order-result-loading');
         orderResult.container.classList.add('order-result-error');
