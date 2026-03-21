@@ -119,6 +119,9 @@ const renderOrdersList = () => {
     card.className = `order-card${order.orderId === selectedOrderId ? ' is-active' : ''}`;
     card.addEventListener('click', () => selectOrder(order.orderId));
 
+    const main = document.createElement('div');
+    main.className = 'order-card-main';
+
     const title = document.createElement('div');
     title.className = 'order-title';
     title.textContent = order.orderNumber || '—';
@@ -136,14 +139,23 @@ const renderOrdersList = () => {
     created.textContent = `Создан: ${fmt(order.createdAt)}`;
 
     const statusRow = document.createElement('div');
-    statusRow.className = 'status-row';
-    statusRow.appendChild(createBadge('confirmed', Boolean(order.confirmed)));
-    statusRow.appendChild(createBadge('produced', Boolean(order.produced)));
+    statusRow.className = 'status-row order-card-status';
 
-    card.appendChild(title);
-    card.appendChild(cipher);
-    card.appendChild(dim);
-    card.appendChild(created);
+    const confirmedBadge = createBadge('confirmed', Boolean(order.confirmed));
+    confirmedBadge.classList.add('order-status-badge');
+
+    const producedBadge = createBadge('produced', Boolean(order.produced));
+    producedBadge.classList.add('order-status-badge');
+
+    statusRow.appendChild(confirmedBadge);
+    statusRow.appendChild(producedBadge);
+
+    main.appendChild(title);
+    main.appendChild(cipher);
+    main.appendChild(dim);
+    main.appendChild(created);
+
+    card.appendChild(main);
     card.appendChild(statusRow);
 
     ordersListEl.appendChild(card);
