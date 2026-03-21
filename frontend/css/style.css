@@ -91,6 +91,8 @@ button:focus-visible {
 .panel-card,
 .workspace,
 .workspace-toolbar,
+.workspace-toolbar-main-row,
+.workspace-toolbar-arrange-row,
 .workspace-toolbar-group,
 .canvas-scroll-container,
 .status-bar {
@@ -342,6 +344,9 @@ textarea,
 .workspace-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+        "main scale"
+        "arrange scale";
     align-items: start;
     gap: 8px 12px;
     padding: 10px 12px;
@@ -351,13 +356,31 @@ textarea,
     min-height: 50px;
 }
 
-.workspace-toolbar-actions-layout {
+.workspace-toolbar-main-row {
+    grid-area: main;
     min-width: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     align-content: flex-start;
     gap: 8px 10px;
+}
+
+.workspace-toolbar-arrange-row {
+    grid-area: arrange;
+    min-width: 0;
+}
+
+.workspace-toolbar-arrange-block {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid var(--color-border-soft);
+    border-radius: var(--radius-sm);
+    background: #f7fbf9;
+    max-width: 100%;
 }
 
 .workspace-toolbar-group {
@@ -374,6 +397,7 @@ textarea,
 }
 
 .workspace-toolbar-scale-slot {
+    grid-area: scale;
     display: flex;
     justify-content: flex-end;
     align-self: start;
@@ -470,6 +494,10 @@ textarea,
 @media (max-width: 1200px) {
     .workspace-toolbar {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "main"
+            "arrange"
+            "scale";
     }
 
     .workspace-toolbar-scale-slot {
@@ -482,7 +510,8 @@ textarea,
         gap: 10px;
     }
 
-    .workspace-toolbar-actions-layout {
+    .workspace-toolbar-main-row,
+    .workspace-toolbar-arrange-block {
         gap: 6px 8px;
     }
 
@@ -490,8 +519,13 @@ textarea,
         gap: 4px;
     }
 
+    .workspace-toolbar-arrange-block {
+        display: flex;
+        width: 100%;
+    }
+
     .workspace-toolbar-scale-slot {
-        justify-content: flex-end;
+        justify-content: flex-start;
     }
 }
 

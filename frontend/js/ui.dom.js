@@ -44,7 +44,7 @@ window.UIDom = {
 
   panels: {
     catalogList: document.getElementById('catalogList'),
-    toolButtons: document.querySelector('.tool-buttons'),
+    toolButtons: document.getElementById('workspaceAddTools'),
     primitiveControls: document.getElementById('primitiveControls'),
   },
 
