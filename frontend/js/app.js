@@ -2861,6 +2861,15 @@ class ContourApp {
             throw new Error('Preview SVG payload is empty');
         }
 
+        let normalizedTexts = [];
+        if (Array.isArray(texts)) {
+            try {
+                normalizedTexts = JSON.parse(JSON.stringify(texts));
+            } catch (_error) {
+                normalizedTexts = [];
+            }
+        }
+
         this.cleanupOldPreviewPayloads();
 
         const key = this.generatePreviewPayloadKey();
