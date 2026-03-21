@@ -40,7 +40,7 @@
 
             <main class="workspace">
                 <div class="workspace-toolbar" aria-label="Расположение и масштаб">
-                    <div class="workspace-toolbar-actions-layout">
+                    <div class="workspace-toolbar-main-row">
                         <div class="workspace-toolbar-group workspace-toolbar-actions" role="group" aria-label="Основные действия">
                             <button id="saveWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Сохранить раскладку">Сохранить</button>
                             <button id="loadWorkspaceButton" class="tool-button toolbar-action-button button-secondary" data-hint="Загрузить сохранённую раскладку">Загрузить</button>
@@ -54,47 +54,51 @@
                             <button id="ungroupButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Разгруппировать выделенные элементы">Разгруппировать</button>
                             <button id="rotateButton" class="tool-button toolbar-action-button button-secondary" disabled data-hint="Повернуть выделенное на 90°">Повернуть</button>
                         </div>
-                        <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
-                            <button id="alignLeftButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по левому обьекту">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M4 4h8M4 8h6M4 12h9"/></svg>
-                            </button>
-                            <button id="alignCenterXButton" class="tool-button icon-button button-icon" disabled data-hint="Центровать по горизонтали">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M3 4h10M5 8h6M2 12h12"/></svg>
-                            </button>
-                            <button id="alignRightButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по правому обьекту">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4h8M6 8h8M3 12h11"/></svg>
-                            </button>
-                            <button id="alignTopButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по верхнему обьекту">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 4v9M8 4v7M12 4v10"/></svg>
-                            </button>
-                            <button id="alignCenterYButton" class="tool-button icon-button button-icon" disabled data-hint="Центровать по вертикали">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12M4 3v10M8 5v6M12 2v12"/></svg>
-                            </button>
-                            <button id="alignBottomButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по нижнему обьекту">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 3v11M8 5v9M12 2v12"/></svg>
-                            </button>
-                        </div>
-                        <div class="workspace-toolbar-group" role="group" aria-label="Распределение">
-                            <button id="distributeHorizontalGapsButton" class="tool-button icon-button button-icon" disabled data-hint="Распределить по горизонтали)">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2v12M15 2v12M5 4h2v8H5zM9 4h2v8H9z"/></svg>
-                            </button>
-                            <button id="distributeVerticalGapsButton" class="tool-button icon-button button-icon" disabled data-hint="Распределить по вертикали">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1h12M2 15h12M4 5h8v2H4zM4 9h8v2H4z"/></svg>
-                            </button>
-                        </div>
-                        <div class="workspace-toolbar-group" role="group" aria-label="Прикрепление к краю">
-                            <button id="snapLeftButton" class="tool-button icon-button button-icon" disabled data-hint="К левому краю ложемента ">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M12 4l-4 4 4 4M14 4v8"/></svg>
-                            </button>
-                            <button id="snapRightButton" class="tool-button icon-button button-icon" disabled data-hint="К правому краю ложемента">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4l4 4-4 4M2 4v8"/></svg>
-                            </button>
-                            <button id="snapTopButton" class="tool-button icon-button button-icon" disabled data-hint="К верхнему краю ложемента">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 12l4-4 4 4M4 14h8"/></svg>
-                            </button>
-                            <button id="snapBottomButton" class="tool-button icon-button button-icon" disabled data-hint="К нижнему краю ложемента">
-                                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 4l4 4 4-4M4 2h8"/></svg>
-                            </button>
+                    </div>
+                    <div class="workspace-toolbar-arrange-row">
+                        <div class="workspace-toolbar-arrange-block" role="group" aria-label="Arrange инструменты">
+                            <div class="workspace-toolbar-group" role="group" aria-label="Выравнивание">
+                                <button id="alignLeftButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по левому обьекту">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M4 4h8M4 8h6M4 12h9"/></svg>
+                                </button>
+                                <button id="alignCenterXButton" class="tool-button icon-button button-icon" disabled data-hint="Центровать по горизонтали">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M3 4h10M5 8h6M2 12h12"/></svg>
+                                </button>
+                                <button id="alignRightButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по правому обьекту">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4h8M6 8h8M3 12h11"/></svg>
+                                </button>
+                                <button id="alignTopButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по верхнему обьекту">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 4v9M8 4v7M12 4v10"/></svg>
+                                </button>
+                                <button id="alignCenterYButton" class="tool-button icon-button button-icon" disabled data-hint="Центровать по вертикали">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12M4 3v10M8 5v6M12 2v12"/></svg>
+                                </button>
+                                <button id="alignBottomButton" class="tool-button icon-button button-icon" disabled data-hint="Выровнять по нижнему обьекту">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 3v11M8 5v9M12 2v12"/></svg>
+                                </button>
+                            </div>
+                            <div class="workspace-toolbar-group" role="group" aria-label="Распределение">
+                                <button id="distributeHorizontalGapsButton" class="tool-button icon-button button-icon" disabled data-hint="Распределить по горизонтали)">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2v12M15 2v12M5 4h2v8H5zM9 4h2v8H9z"/></svg>
+                                </button>
+                                <button id="distributeVerticalGapsButton" class="tool-button icon-button button-icon" disabled data-hint="Распределить по вертикали">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1h12M2 15h12M4 5h8v2H4zM4 9h8v2H4z"/></svg>
+                                </button>
+                            </div>
+                            <div class="workspace-toolbar-group" role="group" aria-label="Прикрепление к краю">
+                                <button id="snapLeftButton" class="tool-button icon-button button-icon" disabled data-hint="К левому краю ложемента ">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2v12M12 4l-4 4 4 4M14 4v8"/></svg>
+                                </button>
+                                <button id="snapRightButton" class="tool-button icon-button button-icon" disabled data-hint="К правому краю ложемента">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 2v12M4 4l4 4-4 4M2 4v8"/></svg>
+                                </button>
+                                <button id="snapTopButton" class="tool-button icon-button button-icon" disabled data-hint="К верхнему краю ложемента">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12M4 12l4-4 4 4M4 14h8"/></svg>
+                                </button>
+                                <button id="snapBottomButton" class="tool-button icon-button button-icon" disabled data-hint="К нижнему краю ложемента">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12M4 4l4 4 4-4M4 2h8"/></svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="workspace-toolbar-scale-slot">
@@ -155,9 +159,10 @@
                 </div>
 
                 <h2>Инструменты</h2>
-                <div class="tool-buttons panel-card">
+                <div id="workspaceAddTools" class="tool-buttons panel-card">
                     <button id="addRectButton" class="tool-button button-secondary" data-hint="Добавить прямоугольную выемку">➕ прямоугольная выемка</button>
                     <button id="addCircleButton" class="tool-button button-secondary" data-hint="Добавить круглую выемку">➕ круглая выемка</button>
+                    <button id="addFreeTextBtn" class="tool-button button-secondary" data-hint="Создать свободный текст на поле">➕ Нанести текст</button>
                 </div>
 
                 <section class="order-panel panel-card panel-card-highlight" aria-label="Заказ">
@@ -189,7 +194,6 @@
                     <div class="primitive-controls-header text-controls-meta" hidden>Роль: <span id="textRole">—</span></div>
                     <div class="primitive-controls-header text-controls-meta" hidden>Владелец: <span id="textOwner">—</span></div>
                     <div class="tool-buttons">
-                        <button id="addFreeTextBtn" class="tool-button button-secondary" data-hint="Создать свободный текст на поле">Нанести текст</button>
                         <button id="addAttachedTextBtn" class="tool-button button-secondary" data-hint="Добавить маркировку к выбранному артикулу">Добавить маркировку</button>
                     </div>
                     <div class="tool-buttons">
