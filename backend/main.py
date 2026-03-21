@@ -1,9 +1,11 @@
+import math
+
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from admin_api.api import router as admin_router
 from domain_store import BASE_DIR, CONTOURS_DIR, MANIFEST_PATH
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from typing import Any, List, Optional, Dict, Literal
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -26,6 +28,8 @@ app = FastAPI()
 public_router = APIRouter()
 admin_orders_router = APIRouter()
 logger = logging.getLogger(__name__)
+
+MAX_PRIMITIVES_PER_ORDER = 128
 
 
 
@@ -64,7 +68,9 @@ class ContourPlacement(BaseModel):
 
 
 class PrimitivePlacement(BaseModel):
-    type: str
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["rect", "circle"]
     x: float
     y: float
     width: Optional[float] = None
@@ -72,6 +78,17 @@ class PrimitivePlacement(BaseModel):
     radius: Optional[float] = None
     # Future seam: primitives use absolute depth value.
     pocketDepthMm: Optional[float] = None
+
+    @field_validator("x", "y", "width", "height", "radius", "pocketDepthMm", mode="before")
+    @classmethod
+    def validate_numeric_fields(cls, value: Any, info):
+        if value is None:
+            return value
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{info.field_name} must be a number")
+        if not math.isfinite(value):
+            raise ValueError(f"{info.field_name} must be a finite number")
+        return float(value)
 
 
 class TextPlacement(BaseModel):
@@ -90,6 +107,76 @@ class ExportRequest(BaseModel):
     primitives: Optional[List[PrimitivePlacement]] = None
     texts: Optional[List[TextPlacement]] = None
     customer: Optional[CustomerInfo] = None
+
+
+def validate_primitives_for_export(order_data: ExportRequest) -> None:
+    order_width = order_data.orderMeta.width
+    order_height = order_data.orderMeta.height
+
+    if not math.isfinite(order_width) or order_width <= 0:
+        raise HTTPException(status_code=422, detail="orderMeta.width must be a finite number greater than 0")
+    if not math.isfinite(order_height) or order_height <= 0:
+        raise HTTPException(status_code=422, detail="orderMeta.height must be a finite number greater than 0")
+
+    primitives = order_data.primitives or []
+    if len(primitives) > MAX_PRIMITIVES_PER_ORDER:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Too many primitives: {len(primitives)} exceeds limit {MAX_PRIMITIVES_PER_ORDER}",
+        )
+
+    for primitive_index, primitive in enumerate(primitives, start=1):
+        primitive_label = f"Primitive #{primitive_index} ({primitive.type})"
+
+        if primitive.type == "rect":
+            if primitive.width is None:
+                raise HTTPException(status_code=422, detail=f"{primitive_label}: width is required")
+            if primitive.height is None:
+                raise HTTPException(status_code=422, detail=f"{primitive_label}: height is required")
+            if primitive.width <= 0:
+                raise HTTPException(status_code=422, detail=f"{primitive_label}: width must be greater than 0")
+            if primitive.height <= 0:
+                raise HTTPException(status_code=422, detail=f"{primitive_label}: height must be greater than 0")
+            if primitive.x < 0:
+                raise HTTPException(status_code=422, detail=f"{primitive_label}: x must be greater than or equal to 0")
+            if primitive.y < 0:
+                raise HTTPException(status_code=422, detail=f"{primitive_label}: y must be greater than or equal to 0")
+            if primitive.x + primitive.width > order_width:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{primitive_label}: x + width exceeds orderMeta.width",
+                )
+            if primitive.y + primitive.height > order_height:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"{primitive_label}: y + height exceeds orderMeta.height",
+                )
+            continue
+
+        if primitive.radius is None:
+            raise HTTPException(status_code=422, detail=f"{primitive_label}: radius is required")
+        if primitive.radius <= 0:
+            raise HTTPException(status_code=422, detail=f"{primitive_label}: radius must be greater than 0")
+        if primitive.x - primitive.radius < 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{primitive_label}: x - radius must be greater than or equal to 0",
+            )
+        if primitive.y - primitive.radius < 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{primitive_label}: y - radius must be greater than or equal to 0",
+            )
+        if primitive.x + primitive.radius > order_width:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{primitive_label}: x + radius exceeds orderMeta.width",
+            )
+        if primitive.y + primitive.radius > order_height:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{primitive_label}: y + radius exceeds orderMeta.height",
+            )
 
 
 def _orders_dir() -> Path:
@@ -365,6 +452,7 @@ def get_contours_manifest():
 async def export_layment(payload: Dict[str, Any]):
     try:
         order_data = ExportRequest.model_validate(payload)
+        validate_primitives_for_export(order_data)
         price_preview = calculate_price_preview(order_data)
         final_gcode = build_final_gcode(order_data)
 
@@ -483,6 +571,8 @@ async def export_layment(payload: Dict[str, Any]):
         return response
     except HTTPException:
         raise
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors()) from e
     except GCodeEngineError as e:
         raise HTTPException(status_code=e.status_code, detail=e.message) from e
     except Exception as e:
