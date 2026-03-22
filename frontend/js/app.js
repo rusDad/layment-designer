@@ -3,6 +3,7 @@
 const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v2';
 const WORKSPACE_MANUAL_KEY = 'laymentDesigner.workspace.v2.manual';
 const AUTOSAVE_DEBOUNCE_MS = 5000;
+const VIEWPORT_RESIZE_FIT_DEBOUNCE_MS = 120;
 
 class ContourApp {
     constructor() {
@@ -20,6 +21,7 @@ class ContourApp {
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
         this.isSyncingPrimitiveControls = false;
+        this.isSyncingTextControls = false;
         this.exportButtonDefaultText = UIDom.buttons.export?.textContent || 'Завершить';
         this.exportCooldownMs = 5000;
         this.exportInProgress = false;
@@ -36,6 +38,18 @@ class ContourApp {
         this.suppressCanvasUntilMouseUp = false;
         this.pendingPointerResetRenderRaf = null;
         this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
+        this.pendingSelectionSource = null;
+        this.activeSelectionSource = null;
+        this.selectionSanitizeInProgress = false;
+        this.selectionExpandInProgress = false;
+        this.softGroupDragState = null;
+        this.applyingSoftGroupMove = false;
+        this.viewportResizeFitTimer = null;
+        this.viewportFeedbackActive = false;
+
+        this.objectMetaApi = window.ObjectMeta || null;
+        this.interactionPolicy = window.InteractionPolicy || null;
+        this.actionExecutor = window.ActionExecutor || null;
 
         this.init();
     }
@@ -49,7 +63,7 @@ class ContourApp {
         await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.syncTextControlsFromSelection();
         this.fitToLayment();
         await this.loadWorkspaceFromStorage();
     }
@@ -73,9 +87,15 @@ class ContourApp {
         const resizeCanvas = () => {
             const size = getCanvasSize();
             if (size.width > 0 && size.height > 0) {
+                const canvasWidth = this.canvas.getWidth();
+                const canvasHeight = this.canvas.getHeight();
+                const sizeChanged = canvasWidth !== size.width || canvasHeight !== size.height;
                 this.canvas.setDimensions({ width: size.width, height: size.height });
-                this.resizeCanvasToContent();
-                this.canvas.renderAll();
+                if (sizeChanged) {
+                    this.scheduleViewportRefit();
+                } else {
+                    this.canvas.renderAll();
+                }
             }
         };
 
@@ -147,7 +167,406 @@ class ContourApp {
     initializeServices() {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
-        this.labelManager = new LabelManager(this.canvas, this, this.contourManager);
+        this.textManager = new TextManager(this.canvas, this, this.contourManager);
+    }
+
+    resolveActionTargets(activeObject, actionName = null) {
+        if (this.interactionPolicy?.resolveActionTargets) {
+            return this.interactionPolicy.resolveActionTargets(this, activeObject, actionName);
+        }
+
+        if (!activeObject) {
+            return [];
+        }
+        return activeObject.type === 'activeSelection' ? activeObject.getObjects().filter(Boolean) : [activeObject];
+    }
+
+    generateSoftGroupId() {
+        if (window.crypto?.randomUUID) {
+            return `grp_${window.crypto.randomUUID()}`;
+        }
+        return `grp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+
+    getSelectableWorkspaceObjects() {
+        return this.canvas.getObjects().filter(obj => {
+            return obj
+                && obj !== this.layment
+                && obj !== this.safeArea
+                && obj.type !== 'activeSelection';
+        });
+    }
+
+    getSoftGroupMembers(groupId) {
+        const normalizedGroupId = this.objectMetaApi?.normalizeGroupId?.(groupId) || null;
+        if (!normalizedGroupId) {
+            return [];
+        }
+        return this.getSelectableWorkspaceObjects().filter(obj => {
+            return this.objectMetaApi?.getGroupId?.(obj) === normalizedGroupId;
+        });
+    }
+
+    getSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        if (!activeObject) {
+            return [];
+        }
+        return activeObject.type === 'activeSelection'
+            ? activeObject.getObjects().filter(Boolean)
+            : [activeObject];
+    }
+
+
+    getExpandedSelectionWithSoftGroups(objects, predicate = null) {
+        const list = Array.isArray(objects) ? objects.filter(Boolean) : [];
+        if (!list.length) {
+            return [];
+        }
+
+        if (this.interactionPolicy?.expandTargetsWithSoftGroups) {
+            return this.interactionPolicy.expandTargetsWithSoftGroups(this, list, predicate);
+        }
+
+        const expanded = [];
+        const seen = new Set();
+        const addObject = (obj) => {
+            if (!obj || seen.has(obj)) {
+                return;
+            }
+            if (typeof predicate === 'function' && predicate(obj) === false) {
+                return;
+            }
+            seen.add(obj);
+            expanded.push(obj);
+        };
+
+        list.forEach(obj => {
+            addObject(obj);
+            const groupId = this.objectMetaApi?.getGroupId?.(obj);
+            if (!groupId) {
+                return;
+            }
+            this.getSoftGroupMembers(groupId).forEach(member => addObject(member));
+        });
+
+        return expanded;
+    }
+
+    hasSameObjectSet(left, right) {
+        if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+            return false;
+        }
+        const rightSet = new Set(right);
+        return left.every(obj => rightSet.has(obj));
+    }
+
+    expandActiveSelectionWithSoftGroupsIfNeeded(active, source) {
+        if (!active || this.selectionExpandInProgress) {
+            return false;
+        }
+
+        const selectedObjects = this.getSelectionObjects(active);
+        if (!selectedObjects.length) {
+            return false;
+        }
+
+        const expandedObjects = this.getExpandedSelectionWithSoftGroups(selectedObjects, obj => {
+            return this.interactionPolicy?.canSelect?.(this, obj) !== false;
+        });
+        if (!expandedObjects.length) {
+            return false;
+        }
+
+        const alreadyExpanded = this.hasSameObjectSet(selectedObjects, expandedObjects);
+        if (alreadyExpanded && (active.type === 'activeSelection' || expandedObjects.length <= 1)) {
+            return false;
+        }
+
+        this.selectionExpandInProgress = true;
+        try {
+            this.canvas.discardActiveObject();
+            if (expandedObjects.length === 1) {
+                this.setActiveObjectWithSelectionSource(expandedObjects[0], source || 'programmatic');
+                expandedObjects[0].setCoords?.();
+                this.canvas.requestRenderAll();
+            } else {
+                this.restoreActiveSelection(expandedObjects, { source: source || 'programmatic' });
+            }
+        } finally {
+            this.selectionExpandInProgress = false;
+        }
+
+        return true;
+    }
+
+    getGroupSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        return this.getSelectionObjects(activeObject)
+            .filter(obj => this.interactionPolicy?.canJoinGroup?.(this, obj) === true);
+    }
+
+    getUngroupSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        return this.getSelectionObjects(activeObject)
+            .filter(obj => !!this.objectMetaApi?.getGroupId?.(obj));
+    }
+
+    hasGroupSelection(activeObject = this.canvas.getActiveObject()) {
+        const selectedObjects = this.getSelectionObjects(activeObject);
+        const groupableObjects = this.getGroupSelectionObjects(activeObject);
+        return selectedObjects.length >= 2 && groupableObjects.length === selectedObjects.length;
+    }
+
+    hasUngroupSelection(activeObject = this.canvas.getActiveObject()) {
+        return this.getUngroupSelectionObjects(activeObject).length >= 1;
+    }
+
+    groupSelected() {
+        const selectedObjects = this.getSelectionObjects();
+        const groupableObjects = this.getGroupSelectionObjects();
+        if (selectedObjects.length < 2 || groupableObjects.length !== selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
+            return false;
+        }
+
+        const nextGroupId = this.generateSoftGroupId();
+        groupableObjects.forEach(obj => {
+            this.objectMetaApi.patchObjectMeta(obj, { groupId: nextGroupId });
+            obj.setCoords?.();
+        });
+
+        this.restoreActiveSelection(groupableObjects, { source: 'programmatic' });
+        this.scheduleWorkspaceSave();
+        return true;
+    }
+
+    ungroupSelected() {
+        const selectedObjects = this.getUngroupSelectionObjects();
+        if (!selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
+            return false;
+        }
+
+        const targetGroupIds = Array.from(new Set(selectedObjects
+            .map(obj => this.objectMetaApi?.getGroupId?.(obj))
+            .filter(Boolean)));
+        const changedObjects = [];
+
+        targetGroupIds.forEach(groupId => {
+            this.getSoftGroupMembers(groupId).forEach(member => {
+                this.objectMetaApi.patchObjectMeta(member, { groupId: null });
+                member.setCoords?.();
+                changedObjects.push(member);
+            });
+        });
+
+        const activeSelection = changedObjects.length > 1 ? changedObjects : selectedObjects.filter(Boolean);
+        if (activeSelection.length > 0) {
+            this.restoreActiveSelection(activeSelection, { source: 'programmatic' });
+        } else {
+            this.canvas.discardActiveObject();
+            this.canvas.requestRenderAll();
+        }
+        this.scheduleWorkspaceSave();
+        return true;
+    }
+
+    handleSoftGroupObjectMoving(target) {
+        if (!target || this.applyingSoftGroupMove) {
+            return;
+        }
+
+        const selectedObjects = this.resolveActionTargets(target, 'move');
+        if (!selectedObjects.length) {
+            this.softGroupDragState = null;
+            return;
+        }
+
+        let dragState = this.softGroupDragState;
+        if (!dragState || dragState.target !== target) {
+            this.beginSoftGroupMove(target, selectedObjects);
+            dragState = this.softGroupDragState;
+        }
+        if (!dragState || dragState.target !== target) {
+            return;
+        }
+
+        const currentAnchor = {
+            left: Number(target.left) || 0,
+            top: Number(target.top) || 0
+        };
+        const deltaX = currentAnchor.left - dragState.anchorLeft;
+        const deltaY = currentAnchor.top - dragState.anchorTop;
+        if (!deltaX && !deltaY) {
+            return;
+        }
+
+        this.applyingSoftGroupMove = true;
+        try {
+            dragState.trackedObjects.forEach(item => {
+                item.obj.set({
+                    left: item.left + deltaX,
+                    top: item.top + deltaY
+                });
+                this.syncObjectTextState(item.obj);
+            });
+        } finally {
+            this.applyingSoftGroupMove = false;
+        }
+    }
+
+    finalizeSoftGroupMove(target) {
+        const dragState = this.softGroupDragState;
+        if (!dragState || dragState.target !== target) {
+            this.softGroupDragState = null;
+            return;
+        }
+
+        dragState.trackedObjects.forEach(item => {
+            item.obj.setCoords?.();
+        });
+        this.softGroupDragState = null;
+    }
+
+    beginSoftGroupMove(target, selectedObjects = this.resolveActionTargets(target, 'move')) {
+        if (!target) {
+            this.softGroupDragState = null;
+            return null;
+        }
+
+        const moveTargets = Array.isArray(selectedObjects) ? selectedObjects.filter(Boolean) : [];
+        if (!moveTargets.length) {
+            this.softGroupDragState = null;
+            return null;
+        }
+
+        const activeSelectionMembers = target.type === 'activeSelection'
+            ? new Set(target.getObjects().filter(Boolean))
+            : null;
+        const trackedObjects = moveTargets
+            .filter(obj => {
+                if (obj === target) {
+                    return false;
+                }
+                if (activeSelectionMembers?.has(obj)) {
+                    return false;
+                }
+                return true;
+            })
+            .map(obj => ({
+                obj,
+                left: Number(obj.left) || 0,
+                top: Number(obj.top) || 0
+            }));
+
+        this.softGroupDragState = {
+            target,
+            anchorLeft: Number(target.left) || 0,
+            anchorTop: Number(target.top) || 0,
+            trackedObjects
+        };
+        return this.softGroupDragState;
+    }
+
+    markNextSelectionSource(source) {
+        this.pendingSelectionSource = typeof source === 'string' && source ? source : null;
+    }
+
+    consumeSelectionSource(activeObject, fallback = null) {
+        const pendingSource = this.pendingSelectionSource;
+        this.pendingSelectionSource = null;
+        if (typeof pendingSource === 'string' && pendingSource) {
+            return pendingSource;
+        }
+        if (!activeObject) {
+            return null;
+        }
+        if (typeof fallback === 'string' && fallback) {
+            return fallback;
+        }
+        return activeObject.type === 'activeSelection' ? 'programmatic' : 'click';
+    }
+
+    detectSelectionSourceFromPointerEvent(event) {
+        const nativeEvent = event?.e;
+        if (nativeEvent?.button !== 0) {
+            return null;
+        }
+        if (event?.target) {
+            return 'click';
+        }
+        if (this.canvas?.selection === false || this.canvas?.skipTargetFind === true) {
+            return null;
+        }
+        return 'marquee';
+    }
+
+    setActiveObjectWithSelectionSource(obj, source = 'programmatic') {
+        if (!obj) {
+            return;
+        }
+        this.markNextSelectionSource(source);
+        this.canvas.setActiveObject(obj);
+    }
+
+    sanitizeActiveSelectionIfNeeded(active, source) {
+        if (!active || active.type !== 'activeSelection' || source !== 'marquee') {
+            return false;
+        }
+
+        const selectedObjects = active.getObjects().filter(Boolean);
+        const allowedObjects = selectedObjects.filter(obj => {
+            if (this.interactionPolicy?.canBoxSelect) {
+                return this.interactionPolicy.canBoxSelect(this, obj);
+            }
+            return this.interactionPolicy?.canSelect?.(this, obj) !== false;
+        });
+
+        if (allowedObjects.length === selectedObjects.length) {
+            return false;
+        }
+
+        this.selectionSanitizeInProgress = true;
+        try {
+            this.canvas.discardActiveObject();
+
+            if (allowedObjects.length === 1) {
+                this.setActiveObjectWithSelectionSource(allowedObjects[0], 'marquee');
+            } else if (allowedObjects.length > 1) {
+                this.restoreActiveSelection(allowedObjects, { source: 'marquee' });
+            } else {
+                this.activeSelectionSource = null;
+                this.canvas.requestRenderAll();
+            }
+        } finally {
+            this.selectionSanitizeInProgress = false;
+        }
+
+        return true;
+    }
+
+    finalizeSelectionChange(active = this.canvas.getActiveObject(), source = null) {
+        this.activeSelectionSource = active ? source : null;
+        this.syncSelectionVisualState(active);
+        this.syncActiveSelectionInteractionState(active);
+        this.updateButtons();
+        this.updateStatusBar();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncTextControlsFromSelection();
+    }
+
+    handleSelectionChanged(_eventName) {
+        const active = this.canvas.getActiveObject();
+        const fallbackSource = active?.type === 'activeSelection'
+            ? (this.activeSelectionSource || 'programmatic')
+            : (this.activeSelectionSource || 'click');
+        const source = this.consumeSelectionSource(active, fallbackSource);
+
+        if (!this.selectionSanitizeInProgress && this.sanitizeActiveSelectionIfNeeded(active, source)) {
+            return;
+        }
+
+        if (!this.selectionExpandInProgress && this.expandActiveSelectionWithSoftGroupsIfNeeded(this.canvas.getActiveObject(), source)) {
+            return;
+        }
+
+        this.finalizeSelectionChange(this.canvas.getActiveObject(), source);
     }
 
     createSafeAreaRect() {
@@ -331,7 +750,7 @@ class ContourApp {
             );
 
             const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
-            this.labelManager.ensureDefaultLabelForContour(contourObj, item.defaultLabel);
+            this.textManager.ensureDefaultTextForContour(contourObj, item.defaultLabel);
         });
 
         this.scheduleWorkspaceSave();
@@ -342,7 +761,7 @@ class ContourApp {
         this.layment.setCoords();
         this.syncSafeAreaRect();
         if (!this.isRestoringWorkspace) {
-            this.fitToLayment();
+            this.fitViewportAfterLaymentResize();
         }
         this.canvas.requestRenderAll();
         this.scheduleWorkspaceSave();
@@ -364,20 +783,57 @@ class ContourApp {
         this.restoreActiveSelection(saved.objects);
     }
 
-    fitToLayment() {
+    getViewportUnionBounds(objects = []) {
+        const targetObjects = (Array.isArray(objects) ? objects : [objects])
+            .filter(obj => !!obj && typeof obj.getBoundingRect === 'function');
+
+        if (!targetObjects.length) {
+            return null;
+        }
+
+        let left = Infinity;
+        let top = Infinity;
+        let right = -Infinity;
+        let bottom = -Infinity;
+
+        targetObjects.forEach(obj => {
+            obj.setCoords?.();
+            const rect = obj.getBoundingRect(true, true);
+            left = Math.min(left, rect.left);
+            top = Math.min(top, rect.top);
+            right = Math.max(right, rect.left + rect.width);
+            bottom = Math.max(bottom, rect.top + rect.height);
+        });
+
+        if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+            return null;
+        }
+
+        return {
+            left,
+            top,
+            width: Math.max(1, right - left),
+            height: Math.max(1, bottom - top)
+        };
+    }
+
+    fitViewportToObjects(objects, options = {}) {
         if (!this.canvas || !this.layment) {
-            return;
+            return false;
         }
 
         const viewport = this.getViewportSize();
         if (!viewport.width || !viewport.height) {
-            return;
+            return false;
         }
 
-        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+        const rect = this.getViewportUnionBounds(objects);
+        if (!rect) {
+            return false;
+        }
 
-        const rect = this.layment.getBoundingRect(true, true);
-        const padding = 20;
+        const padding = Number.isFinite(options.padding) ? options.padding : 20;
+        this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
         const zoomX = viewport.width / (rect.width + padding * 2);
         const zoomY = viewport.height / (rect.height + padding * 2);
         const unclampedZoom = Math.min(zoomX, zoomY);
@@ -398,6 +854,114 @@ class ContourApp {
         this.syncWorkspaceScaleInput();
         this.resizeCanvasToContent();
         this.canvas.requestRenderAll();
+        return true;
+    }
+
+    fitToLayment(options = {}) {
+        return this.fitViewportToObjects([this.layment], options);
+    }
+
+    getOutOfBoundsWorkspaceObjects() {
+        return this.contourManager?.getOutOfBoundsWorkspaceObjects?.() || [];
+    }
+
+    showOrderResultInfo(message, title = Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_TITLE) {
+        const orderResult = UIDom.orderResult;
+        if (!orderResult.container) return;
+
+        orderResult.container.hidden = false;
+        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-loading');
+        orderResult.container.classList.add('order-result-info');
+        orderResult.title.textContent = title;
+        orderResult.message.textContent = message;
+        orderResult.details.hidden = true;
+        orderResult.orderNumber.textContent = '—';
+        orderResult.orderId.textContent = '—';
+        orderResult.statusLinkRow.hidden = true;
+        orderResult.paymentLink.href = '#';
+        orderResult.meta.hidden = true;
+        orderResult.meta.textContent = '';
+        this.lastOrderResult = null;
+    }
+
+    clearViewportIssueFeedback() {
+        if (!this.viewportFeedbackActive) {
+            return;
+        }
+
+        this.viewportFeedbackActive = false;
+        const orderResult = UIDom.orderResult;
+        if (orderResult.container?.classList.contains('order-result-info')) {
+            this.clearOrderResult();
+        }
+    }
+
+    updateViewportIssueFeedback(offendingObjects) {
+        if (!offendingObjects.length) {
+            this.clearViewportIssueFeedback();
+            return;
+        }
+
+        const message = offendingObjects.length === 1
+            ? Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_SINGLE
+            : Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_MULTIPLE;
+
+        this.viewportFeedbackActive = true;
+        this.showOrderResultInfo(message);
+    }
+
+    focusWorkspaceObjects(objects, { padding = 40, selectionSource = 'programmatic' } = {}) {
+        const targetObjects = (Array.isArray(objects) ? objects : [objects]).filter(Boolean);
+        if (!targetObjects.length) {
+            return false;
+        }
+
+        const fitObjects = [this.layment, ...targetObjects];
+        const fitted = this.fitViewportToObjects(fitObjects, { padding });
+
+        if (targetObjects.length === 1) {
+            this.setActiveObjectWithSelectionSource(targetObjects[0], selectionSource);
+            targetObjects[0].setCoords?.();
+            this.canvas.requestRenderAll();
+        } else {
+            this.restoreActiveSelection(targetObjects, { source: selectionSource });
+        }
+
+        return fitted;
+    }
+
+    fitViewportAfterLaymentResize() {
+        const offendingObjects = this.getOutOfBoundsWorkspaceObjects();
+        if (!offendingObjects.length) {
+            this.clearViewportIssueFeedback();
+            return this.fitToLayment();
+        }
+
+        this.updateViewportIssueFeedback(offendingObjects);
+        return this.focusWorkspaceObjects(offendingObjects, {
+            padding: 40,
+            selectionSource: 'programmatic'
+        });
+    }
+
+    fitViewportForCurrentWorkspaceState() {
+        const offendingObjects = this.getOutOfBoundsWorkspaceObjects();
+        if (!offendingObjects.length) {
+            this.clearViewportIssueFeedback();
+            return this.fitToLayment();
+        }
+        return this.fitViewportToObjects([this.layment, ...offendingObjects], { padding: 40 });
+    }
+
+    scheduleViewportRefit() {
+        if (this.viewportResizeFitTimer) {
+            clearTimeout(this.viewportResizeFitTimer);
+        }
+
+        this.viewportResizeFitTimer = setTimeout(() => {
+            this.viewportResizeFitTimer = null;
+            this.fitViewportForCurrentWorkspaceState();
+        }, VIEWPORT_RESIZE_FIT_DEBOUNCE_MS);
     }
 
     isSpacePanModifier(mouseEvent) {
@@ -739,7 +1303,7 @@ class ContourApp {
                         this.updateButtons();
                         this.updateStatusBar();
                         this.syncPrimitiveControlsFromSelection();
-                        this.syncLabelControlsFromSelection();
+                        this.syncTextControlsFromSelection();
                     }
                     break;
                 default:
@@ -763,44 +1327,15 @@ class ContourApp {
 
     moveSelectedBy(dx, dy) {
         const active = this.canvas.getActiveObject();
-        if (!active) {
+        const targets = this.resolveActionTargets(active, 'move');
+        const deltaX = Number(dx) || 0;
+        const deltaY = Number(dy) || 0;
+
+        if (!targets.length || (!deltaX && !deltaY)) {
             return false;
         }
 
-        if (active.type === 'activeSelection') {
-            active.getObjects().forEach(obj => {
-                if (!obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea) {
-                    obj._lastLeft = obj.left;
-                    obj._lastTop = obj.top;
-                }
-                obj.set({
-                    left: obj.left + dx,
-                    top: obj.top + dy
-                });
-                obj.setCoords();
-                if (!obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea) {
-                    this.labelManager.onContourMoving(obj);
-                }
-            });
-            active.setCoords();
-        } else {
-            if (!active.primitiveType && !active.isLabel && active !== this.layment && active !== this.safeArea) {
-                active._lastLeft = active.left;
-                active._lastTop = active.top;
-            }
-            active.set({
-                left: active.left + dx,
-                top: active.top + dy
-            });
-            active.setCoords();
-            if (!active.primitiveType && !active.isLabel && active !== this.layment && active !== this.safeArea) {
-                this.labelManager.onContourMoving(active);
-            }
-        }
-
-        this.canvas.requestRenderAll();
-        this.updateStatusBar();
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('move', { deltaX, deltaY }, this);
         return true;
     }
 
@@ -820,6 +1355,8 @@ class ContourApp {
             }
 
             if (!this.canStartPanning(nativeEvent)) {
+                this.beginSoftGroupMove(event.target);
+                this.markNextSelectionSource(this.detectSelectionSourceFromPointerEvent(event));
                 return;
             }
 
@@ -859,37 +1396,34 @@ class ContourApp {
 
         this.canvas.on('mouse:up', () => {
             this.stopPanning();
+            this.finalizeSoftGroupMove(this.canvas.getActiveObject());
         });
 
         this.canvas.on('mouse:wheel', event => {
             this.zoomViewportByPointer(event.e);
         });
 
-        this.canvas.on('selection:created', () => {
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+        this.canvas.on('selection:created', event => {
+            this.handleSelectionChanged('selection:created', event);
         });
 
-        this.canvas.on('selection:updated', () => {
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+        this.canvas.on('selection:updated', event => {
+            this.handleSelectionChanged('selection:updated', event);
         });
 
         this.canvas.on('selection:cleared', () => {
+            this.pendingSelectionSource = null;
+            this.activeSelectionSource = null;
             this.updateButtons();
             this.updateStatusBar();
             this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+            this.syncTextControlsFromSelection();
         });
 
         this.canvas.on('object:moving', event => {
-            const target = event.target;
-            if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
-                this.labelManager.onContourMoving(target);
+            this.handleSoftGroupObjectMoving(event.target);
+            if (event.target?.type !== 'activeSelection') {
+                this.syncObjectTextState(event.target);
             }
             this.canvas.requestRenderAll();
             this.updateStatusBar();
@@ -900,22 +1434,27 @@ class ContourApp {
             this.updateStatusBar();
         });
 
-        this.canvas.on('object:rotating', () => {
+        this.canvas.on('object:rotating', event => {
+            if (event.target?.type !== 'activeSelection') {
+                this.syncObjectTextState(event.target);
+            }
             this.canvas.requestRenderAll();
             this.updateStatusBar();
         });
 
         this.canvas.on('object:modified', event => {
             const target = event.target;
-            if (target && !target.primitiveType && !target.isLabel && target !== this.layment && target !== this.safeArea) {
-                this.labelManager.onContourModified(target);
+            this.finalizeSoftGroupMove(target);
+            const finalizedSelection = this.finalizeActiveSelectionTransform(target);
+            if (!finalizedSelection) {
+                this.syncObjectTextState(target);
             }
             this.canvas.requestRenderAll();
-            if (this.shouldAutosaveForObject(target)) {
+            if (finalizedSelection || this.shouldAutosaveForObject(target)) {
                 this.scheduleWorkspaceSave();
             }
             this.syncPrimitiveControlsFromSelection();
-            this.syncLabelControlsFromSelection();
+            this.syncTextControlsFromSelection();
             this.updateStatusBar();
         });
     }    
@@ -923,6 +1462,13 @@ class ContourApp {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
         UIDom.buttons.rotate.onclick = () => this.rotateSelected();
         UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
+        UIDom.buttons.toggleLock.onclick = () => this.toggleLockSelected();
+        if (UIDom.buttons.group) {
+            UIDom.buttons.group.onclick = () => this.groupSelected();
+        }
+        if (UIDom.buttons.ungroup) {
+            UIDom.buttons.ungroup.onclick = () => this.ungroupSelected();
+        }
         UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
         UIDom.buttons.loadWorkspace.onclick = async () => {
             this.cancelAutosave();
@@ -1086,9 +1632,14 @@ class ContourApp {
         UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
         UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
 
-        UIDom.labels.textInput?.addEventListener('input', event => this.applyLabelTextFromInput(event.target.value));
-        UIDom.labels.addBtn?.addEventListener('click', () => this.addLabelForSelection());
-        UIDom.labels.deleteBtn?.addEventListener('click', () => this.deleteLabelForSelection());
+        UIDom.texts.value?.addEventListener('input', event => this.applyTextValueFromInput(event.target.value));
+        UIDom.texts.fontSize?.addEventListener('change', event => this.applyTextFontSizeFromInput(event.target.value));
+        UIDom.texts.angle?.addEventListener('change', event => this.applyTextAngleFromInput(event.target.value));
+        UIDom.texts.addFreeBtn?.addEventListener('click', () => this.addFreeTextForSelection());
+        UIDom.texts.addAttachedBtn?.addEventListener('click', () => this.addAttachedTextForSelection());
+        UIDom.texts.attachBtn?.addEventListener('click', () => this.attachSelectedTextToSelectionContour());
+        UIDom.texts.detachBtn?.addEventListener('click', () => this.detachSelectedText());
+        UIDom.texts.deleteBtn?.addEventListener('click', () => this.deleteSelectedText());
     }
 
 
@@ -1158,20 +1709,200 @@ class ContourApp {
 
     getArrangeSelectionObjects() {
         const active = this.canvas.getActiveObject();
-        if (!active) {
-            return [];
-        }
-        if (active.type === 'activeSelection') {
-            return active.getObjects().filter(obj => this.isArrangeTarget(obj));
-        }
-        return this.isArrangeTarget(active) ? [active] : [];
+        return this.resolveActionTargets(active, 'arrange');
     }
 
-    isArrangeTarget(obj) {
-        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
-            return false;
+    getLockSelectionObjects(activeObject = this.canvas.getActiveObject()) {
+        if (this.interactionPolicy?.getLockSelectionObjects) {
+            const targets = activeObject?.type === 'activeSelection'
+                ? activeObject.getObjects().filter(Boolean)
+                : (activeObject ? [activeObject] : []);
+            return this.interactionPolicy.getLockSelectionObjects(this, targets);
         }
-        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
+
+        return this.resolveActionTargets(activeObject, 'toggleLock');
+    }
+
+    getSelectionLockState(activeObject = this.canvas.getActiveObject()) {
+        if (this.interactionPolicy?.getSelectionLockState) {
+            const targets = activeObject?.type === 'activeSelection'
+                ? activeObject.getObjects().filter(Boolean)
+                : (activeObject ? [activeObject] : []);
+            return this.interactionPolicy.getSelectionLockState(this, targets);
+        }
+
+        const lockableObjects = this.getLockSelectionObjects(activeObject);
+        const anyLocked = lockableObjects.some(obj => this.interactionPolicy?.isSemanticallyLocked?.(obj) === true);
+        return {
+            anyLocked,
+            allLocked: anyLocked && lockableObjects.every(obj => this.interactionPolicy?.isSemanticallyLocked?.(obj) === true),
+            lockableCount: lockableObjects.length
+        };
+    }
+
+    getObjectVisualPriority(obj) {
+        if (!obj) {
+            return 'normal';
+        }
+        if (obj.layoutVisualState === 'error') {
+            return 'error';
+        }
+        if (this.interactionPolicy?.isSemanticallyLocked?.(obj) === true) {
+            return 'locked';
+        }
+        return 'normal';
+    }
+
+    getObjectVisualStyle(obj) {
+        const priority = this.getObjectVisualPriority(obj);
+        const isPrimitive = !!obj?.primitiveType;
+        const baseStyle = isPrimitive
+            ? {
+                stroke: Config.COLORS.PRIMITIVE.STROKE,
+                strokeWidth: 1,
+                fill: Config.COLORS.PRIMITIVE.FILL,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER
+            }
+            : {
+                stroke: Config.COLORS.CONTOUR.NORMAL,
+                strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
+                fill: Config.COLORS.CONTOUR.FILL,
+                opacity: 1,
+                borderColor: Config.COLORS.SELECTION.BORDER,
+                cornerColor: Config.COLORS.SELECTION.CORNER
+            };
+
+        if (priority === 'error') {
+            return isPrimitive
+                ? {
+                    ...baseStyle,
+                    stroke: Config.COLORS.PRIMITIVE.ERROR,
+                    strokeWidth: 3,
+                    opacity: 0.85,
+                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
+                }
+                : {
+                    ...baseStyle,
+                    stroke: Config.COLORS.CONTOUR.ERROR,
+                    strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,
+                    opacity: 0.85,
+                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
+                };
+        }
+
+        if (priority === 'locked') {
+            return isPrimitive
+                ? {
+                    ...baseStyle,
+                    stroke: Config.COLORS.PRIMITIVE.LOCKED,
+                    strokeWidth: Config.COLORS.PRIMITIVE.LOCKED_STROKE_WIDTH,
+                    borderColor: Config.COLORS.SELECTION.LOCKED_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.LOCKED_CORNER
+                }
+                : {
+                    ...baseStyle,
+                    stroke: Config.COLORS.CONTOUR.LOCKED,
+                    strokeWidth: Config.COLORS.CONTOUR.LOCKED_STROKE_WIDTH,
+                    borderColor: Config.COLORS.SELECTION.LOCKED_BORDER,
+                    cornerColor: Config.COLORS.SELECTION.LOCKED_CORNER
+                };
+        }
+
+        return baseStyle;
+    }
+
+    applyObjectVisualState(obj) {
+        if (!obj || obj === this.layment || obj === this.safeArea || obj.type === 'activeSelection' || obj.isTextObject) {
+            return;
+        }
+
+        const style = this.getObjectVisualStyle(obj);
+        this.contourManager?.resetPropertiesRecursive?.(obj, style);
+        obj.setCoords?.();
+    }
+
+    applyVisualStateToObjects(objects) {
+        const list = Array.isArray(objects) ? objects.filter(Boolean) : [];
+        list.forEach(obj => this.applyObjectVisualState(obj));
+    }
+
+    resetWorkspaceVisualStateIssues() {
+        this.getSelectableWorkspaceObjects().forEach(obj => {
+            obj.layoutVisualState = null;
+            this.applyObjectVisualState(obj);
+        });
+    }
+
+    setObjectsVisualState(objects, state = null) {
+        const list = Array.isArray(objects) ? objects.filter(Boolean) : [];
+        list.forEach(obj => {
+            obj.layoutVisualState = state;
+            this.applyObjectVisualState(obj);
+        });
+    }
+
+    syncSelectionVisualState(active = this.canvas.getActiveObject()) {
+        if (!active) {
+            return;
+        }
+
+        if (active.type !== 'activeSelection') {
+            this.applyObjectVisualState(active);
+            return;
+        }
+
+        const selectionObjects = active.getObjects().filter(Boolean);
+        this.applyVisualStateToObjects(selectionObjects);
+
+        const priority = selectionObjects.some(obj => this.getObjectVisualPriority(obj) === 'error')
+            ? 'error'
+            : (selectionObjects.some(obj => this.getObjectVisualPriority(obj) === 'locked') ? 'locked' : 'normal');
+
+        if (priority === 'error') {
+            active.borderColor = Config.COLORS.SELECTION.ERROR_BORDER;
+            active.cornerColor = Config.COLORS.SELECTION.ERROR_CORNER;
+        } else if (priority === 'locked') {
+            active.borderColor = Config.COLORS.SELECTION.LOCKED_BORDER;
+            active.cornerColor = Config.COLORS.SELECTION.LOCKED_CORNER;
+        } else {
+            active.borderColor = Config.COLORS.SELECTION.BORDER;
+            active.cornerColor = Config.COLORS.SELECTION.CORNER;
+        }
+    }
+
+    syncActiveSelectionInteractionState(active = this.canvas.getActiveObject()) {
+        if (!active || active.type !== 'activeSelection') {
+            return;
+        }
+
+        const selectedObjects = active.getObjects().filter(Boolean);
+        const canGroupMove = this.interactionPolicy?.canGroupMoveSelection
+            ? this.interactionPolicy.canGroupMoveSelection(this, selectedObjects)
+            : selectedObjects.every(obj => this.interactionPolicy?.canMove?.(this, obj) !== false);
+
+        active.lockMovementX = !canGroupMove;
+        active.lockMovementY = !canGroupMove;
+        active.lockRotation = true;
+        active.lockScalingX = true;
+        active.lockScalingY = true;
+        active.hasControls = false;
+        active.hasBorders = true;
+        active.setControlsVisibility?.({
+            tl: false,
+            tr: false,
+            br: false,
+            bl: false,
+            ml: false,
+            mt: false,
+            mr: false,
+            mb: false,
+            mtr: false
+        });
+        active.setCoords?.();
     }
 
     temporarilyUngroupActiveSelection() {
@@ -1186,171 +1917,103 @@ class ContourApp {
         return { objects };
     }
 
-    restoreActiveSelection(objects) {
+    restoreActiveSelection(objects, { source = 'restoreActiveSelection' } = {}) {
         if (!objects || !objects.length) {
             return;
         }
 
         if (objects.length === 1) {
-            this.canvas.setActiveObject(objects[0]);
+            this.setActiveObjectWithSelectionSource(objects[0], source);
             objects[0].setCoords();
             this.canvas.requestRenderAll();
             return;
         }
 
         const selection = new fabric.ActiveSelection(objects, { canvas: this.canvas });
+        this.markNextSelectionSource(source);
         this.canvas.setActiveObject(selection);
+        this.syncActiveSelectionInteractionState(selection);
         selection.setCoords();
         this.canvas.requestRenderAll();
     }
 
-    applyDeltaToObject(obj, deltaX, deltaY) {
-        const isContour = !obj.primitiveType && !obj.isLabel && obj !== this.layment && obj !== this.safeArea;
-        if (isContour) {
+    isContourObject(obj) {
+        return !!obj && !obj.primitiveType && !obj.isTextObject && obj !== this.layment && obj !== this.safeArea;
+    }
+
+    syncAttachedTextFollowersForOwner(obj, { rememberContourLastPosition = false } = {}) {
+        if (!this.isContourObject(obj)) {
+            return;
+        }
+
+        if (rememberContourLastPosition) {
             obj._lastLeft = obj.left;
             obj._lastTop = obj.top;
         }
 
-        obj.set({
-            left: obj.left + deltaX,
-            top: obj.top + deltaY
-        });
-        obj.setCoords();
-
-        if (isContour) {
-            this.labelManager.onContourMoving(obj);
-        }
+        this.textManager.syncAttachedTextsForContour(obj);
     }
 
-    finalizeArrangeOperation() {
-        this.canvas.requestRenderAll();
-        this.updateStatusBar();
-        this.scheduleWorkspaceSave();
+    syncObjectTextState(obj, { rememberContourLastPosition = false } = {}) {
+        if (!obj) {
+            return;
+        }
+
+        if (obj.type === 'activeSelection') {
+            obj.setCoords();
+            return;
+        }
+
+        if (this.isContourObject(obj)) {
+            if (rememberContourLastPosition) {
+                obj._lastLeft = obj.left;
+                obj._lastTop = obj.top;
+            }
+            obj.setCoords();
+            this.textManager.syncAttachedTextsForContour(obj);
+            return;
+        }
+
+        if (obj.isTextObject) {
+            if (obj.kind === 'attached') {
+                this.textManager.clampTextToContourBounds(obj);
+                this.textManager.updateAttachedTextAnchorFromAbsolute(obj);
+            }
+            obj.setCoords();
+            return;
+        }
+
+        obj.setCoords();
+    }
+
+    finalizeActiveSelectionTransform(target) {
+        if (!target || target.type !== 'activeSelection') {
+            return false;
+        }
+
+        const objects = target.getObjects().filter(Boolean);
+        if (!objects.length) {
+            return false;
+        }
+
+        this.canvas.discardActiveObject();
+        objects.forEach(obj => this.syncObjectTextState(obj, { rememberContourLastPosition: true }));
+        this.restoreActiveSelection(objects, {
+            source: this.activeSelectionSource || 'programmatic'
+        });
+        return true;
     }
 
     alignSelected(mode) {
-        const selected = this.getArrangeSelectionObjects();
-        if (selected.length < 2) {
-            return;
-        }
-
-        this.temporarilyUngroupActiveSelection();
-
-        const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
-        const minLeft = Math.min(...boxes.map(item => item.bbox.left));
-        const maxRight = Math.max(...boxes.map(item => item.bbox.left + item.bbox.width));
-        const minTop = Math.min(...boxes.map(item => item.bbox.top));
-        const maxBottom = Math.max(...boxes.map(item => item.bbox.top + item.bbox.height));
-        const centerX = minLeft + ((maxRight - minLeft) / 2);
-        const centerY = minTop + ((maxBottom - minTop) / 2);
-
-        for (const item of boxes) {
-            let targetLeft = item.bbox.left;
-            let targetTop = item.bbox.top;
-
-            if (mode === 'left') targetLeft = minLeft;
-            if (mode === 'center-x') targetLeft = centerX - (item.bbox.width / 2);
-            if (mode === 'right') targetLeft = maxRight - item.bbox.width;
-            if (mode === 'top') targetTop = minTop;
-            if (mode === 'center-y') targetTop = centerY - (item.bbox.height / 2);
-            if (mode === 'bottom') targetTop = maxBottom - item.bbox.height;
-
-            const deltaX = targetLeft - item.bbox.left;
-            const deltaY = targetTop - item.bbox.top;
-            this.applyDeltaToObject(item.obj, deltaX, deltaY);
-        }
-
-        this.finalizeArrangeOperation();
-        this.restoreActiveSelection(selected);
-        this.updateButtons();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.actionExecutor?.executeAction?.('align', { mode }, this);
     }
 
     distributeSelected(mode) {
-        const selected = this.getArrangeSelectionObjects();
-        if (selected.length < 3) {
-            return;
-        }
-
-        this.temporarilyUngroupActiveSelection();
-
-        const axis = mode === 'horizontal-gaps' ? 'x' : 'y';
-        const boxes = selected.map(obj => ({ obj, bbox: obj.getBoundingRect(true) }));
-        const sorted = boxes.sort((a, b) => axis === 'x' ? a.bbox.left - b.bbox.left : a.bbox.top - b.bbox.top);
-
-        if (axis === 'x') {
-            const totalWidth = sorted.reduce((sum, item) => sum + item.bbox.width, 0);
-            const span = (sorted[sorted.length - 1].bbox.left + sorted[sorted.length - 1].bbox.width) - sorted[0].bbox.left;
-            const gap = (span - totalWidth) / (sorted.length - 1);
-            let cursor = sorted[0].bbox.left + sorted[0].bbox.width + gap;
-
-            for (let i = 1; i < sorted.length - 1; i += 1) {
-                const targetLeft = cursor;
-                const deltaX = targetLeft - sorted[i].bbox.left;
-                this.applyDeltaToObject(sorted[i].obj, deltaX, 0);
-                cursor += sorted[i].bbox.width + gap;
-            }
-        } else {
-            const totalHeight = sorted.reduce((sum, item) => sum + item.bbox.height, 0);
-            const span = (sorted[sorted.length - 1].bbox.top + sorted[sorted.length - 1].bbox.height) - sorted[0].bbox.top;
-            const gap = (span - totalHeight) / (sorted.length - 1);
-            let cursor = sorted[0].bbox.top + sorted[0].bbox.height + gap;
-
-            for (let i = 1; i < sorted.length - 1; i += 1) {
-                const targetTop = cursor;
-                const deltaY = targetTop - sorted[i].bbox.top;
-                this.applyDeltaToObject(sorted[i].obj, 0, deltaY);
-                cursor += sorted[i].bbox.height + gap;
-            }
-        }
-
-        this.finalizeArrangeOperation();
-        this.restoreActiveSelection(selected);
-        this.updateButtons();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.actionExecutor?.executeAction?.('distribute', { mode }, this);
     }
 
     snapSelectedToSide(side) {
-        const selected = this.getArrangeSelectionObjects();
-        if (selected.length < 1) {
-            return;
-        }
-         // важно: разгруппировать ПОСЛЕ того, как мы получили список объектов
-        this.temporarilyUngroupActiveSelection();
-
-        const targetArea = (this.safeArea || this.layment).getBoundingRect(true);
-        const clearanceMm = 3;
-        const clearancePx = clearanceMm;
-
-        for (const obj of selected) {
-            const bbox = obj.getBoundingRect(true);
-            let deltaX = 0;
-            let deltaY = 0;
-
-            if (side === 'left') {
-                const targetLeft = targetArea.left + clearancePx;
-                deltaX = targetLeft - bbox.left;
-            } else if (side === 'right') {
-                const targetLeft = targetArea.left + targetArea.width - clearancePx - bbox.width;
-                deltaX = targetLeft - bbox.left;
-            } else if (side === 'top') {
-                const targetTop = targetArea.top + clearancePx;
-                deltaY = targetTop - bbox.top;
-            } else if (side === 'bottom') {
-                const targetTop = targetArea.top + targetArea.height - clearancePx - bbox.height;
-                deltaY = targetTop - bbox.top;
-            }
-
-            this.applyDeltaToObject(obj, deltaX, deltaY);
-        }
-
-        this.finalizeArrangeOperation();
-        this.restoreActiveSelection(selected);
-        this.updateButtons();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
+        this.actionExecutor?.executeAction?.('snap', { side }, this);
     }
 
     updateButtons() {
@@ -1358,12 +2021,36 @@ class ContourApp {
         const selectedCount = selected.length;
         const active = this.canvas.getActiveObject();
         const has = !!active;
+        const lockState = this.getSelectionLockState(active);
 
-        UIDom.buttons.delete.disabled = !has;
-        UIDom.buttons.rotate.disabled = !has || !!active?.primitiveType;
+        const deleteAllowed = has && this.resolveActionTargets(active, 'delete').length > 0;
+        const rotateAllowed = this.resolveActionTargets(active, 'rotate').length > 0;
+
+        UIDom.buttons.delete.disabled = !deleteAllowed;
+        UIDom.buttons.rotate.disabled = !rotateAllowed;
 
         const duplicateTargets = this.getDuplicateSelectionObjects();
         UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
+        if (UIDom.buttons.toggleLock) {
+            const nextLabel = lockState.allLocked ? 'Разблокировать' : 'Заблокировать';
+            UIDom.buttons.toggleLock.disabled = lockState.lockableCount < 1;
+            UIDom.buttons.toggleLock.textContent = nextLabel;
+            UIDom.buttons.toggleLock.dataset.hint = lockState.allLocked
+                ? 'Снять блокировку с выделенного'
+                : 'Заблокировать выделенное от случайных изменений';
+            UIDom.buttons.toggleLock.title = nextLabel;
+            UIDom.buttons.toggleLock.setAttribute('aria-pressed', lockState.allLocked ? 'true' : 'false');
+        }
+        if (UIDom.buttons.group) {
+            UIDom.buttons.group.disabled = !this.hasGroupSelection(active);
+            UIDom.buttons.group.dataset.hint = 'Сгруппировать выделенные незаблокированные элементы';
+            UIDom.buttons.group.title = 'Сгруппировать';
+        }
+        if (UIDom.buttons.ungroup) {
+            UIDom.buttons.ungroup.disabled = !this.hasUngroupSelection(active);
+            UIDom.buttons.ungroup.dataset.hint = 'Разгруппировать выделенные элементы';
+            UIDom.buttons.ungroup.title = 'Разгруппировать';
+        }
 
         const alignDisabled = selectedCount < 2;
         UIDom.buttons.alignLeft.disabled = alignDisabled;
@@ -1387,22 +2074,7 @@ class ContourApp {
 
     getDuplicateSelectionObjects() {
         const active = this.canvas.getActiveObject();
-        if (!active) {
-            return [];
-        }
-
-        if (active.type === 'activeSelection') {
-            return active.getObjects().filter(obj => this.isDuplicateTarget(obj));
-        }
-
-        return this.isDuplicateTarget(active) ? [active] : [];
-    }
-
-    isDuplicateTarget(obj) {
-        if (!obj || obj === this.layment || obj === this.safeArea || obj.isLabel) {
-            return false;
-        }
-        return !!obj.primitiveType || (!obj.primitiveType && !obj.isLabel);
+        return this.resolveActionTargets(active, 'duplicate');
     }
 
     getSingleSelectedPrimitive() {
@@ -1477,123 +2149,167 @@ class ContourApp {
     }
 
 
-    getSelectedContourForLabel() {
+    getSelectedContourForText() {
         const active = this.canvas.getActiveObject();
-        if (!active || active.type === 'activeSelection' || active.primitiveType || active.isLabel || active === this.layment || active === this.safeArea) {
+        if (!active || active.type === 'activeSelection' || active.primitiveType || active.isTextObject || active === this.layment || active === this.safeArea) {
             return null;
         }
         return active;
     }
 
-    getSelectedLabelObject() {
+    getSelectedTextObject() {
         const active = this.canvas.getActiveObject();
         if (!active || active.type === 'activeSelection') {
             return null;
         }
-        return active.isLabel ? active : null;
+        return active.isTextObject ? active : null;
     }
 
-    setLabelPanelEnabled(enabled) {
-        const panel = UIDom.labels.panel;
-        if (!panel) {
-            return;
-        }
+    setTextPanelEnabled(enabled) {
+        const panel = UIDom.texts.panel;
+        if (!panel) return;
         panel.hidden = !enabled;
         panel.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-        if (UIDom.labels.textInput) UIDom.labels.textInput.disabled = !enabled;
-        if (!enabled) {
-            if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = true;
-            if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = true;
-        }
     }
 
-    syncLabelControlsFromSelection() {
-        const contour = this.getSelectedContourForLabel();
-        const selectedLabel = this.getSelectedLabelObject();
-
-        if (!contour && !selectedLabel) {
-            this.setLabelPanelEnabled(false);
-            if (UIDom.labels.textInput) UIDom.labels.textInput.value = '';
-            return;
-        }
-
-        this.setLabelPanelEnabled(true);
-
-        if (selectedLabel) {
-            if (UIDom.labels.textInput) UIDom.labels.textInput.value = selectedLabel.text || '';
-            if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = true;
-            if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = false;
-            return;
-        }
-
-        const label = this.labelManager.getLabelByPlacementId(contour.placementId);
-        const meta = this.contourManager.metadataMap.get(contour);
-        if (UIDom.labels.textInput) {
-            UIDom.labels.textInput.value = label ? (label.text || '') : (meta?.defaultLabel || '');
-        }
-        if (UIDom.labels.addBtn) UIDom.labels.addBtn.disabled = Boolean(label);
-        if (UIDom.labels.deleteBtn) UIDom.labels.deleteBtn.disabled = !label;
+    getAttachedTextsForContour(contour) {
+        if (!contour?.placementId) return [];
+        return this.textManager.getAttachedTextsForContour(contour);
     }
 
-    applyLabelTextFromInput(value) {
-        const selectedLabel = this.getSelectedLabelObject();
-        const contour = this.getSelectedContourForLabel();
-        const targetLabel = selectedLabel || (contour ? this.labelManager.getLabelByPlacementId(contour.placementId) : null);
+    fillTextForm(textObj) {
+        if (UIDom.texts.value) UIDom.texts.value.value = textObj?.text || '';
+        if (UIDom.texts.fontSize) UIDom.texts.fontSize.value = Number(textObj?.fontSize) || '';
+        if (UIDom.texts.angle) UIDom.texts.angle.value = textObj ? (Number(textObj?.angle) || 0) : '';
+        if (UIDom.texts.kind) UIDom.texts.kind.textContent = textObj?.kind || '—';
+        if (UIDom.texts.role) UIDom.texts.role.textContent = textObj?.role || '—';
+        if (UIDom.texts.owner) UIDom.texts.owner.textContent = Number.isFinite(textObj?.ownerPlacementId) ? String(textObj.ownerPlacementId) : '—';
+    }
 
-        if (!targetLabel) {
+    syncTextControlsFromSelection() {
+        const contour = this.getSelectedContourForText();
+        const selectedText = this.getSelectedTextObject();
+        const ownerContour = selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null;
+        const targetContour = contour || ownerContour;
+        const formText = selectedText || null;
+        const list = UIDom.texts.list;
+
+        if (!selectedText && !targetContour) {
+            this.setTextPanelEnabled(false);
+            if (list) {
+                list.innerHTML = '';
+                list.disabled = true;
+            }
+            this.fillTextForm(null);
             return;
         }
 
-        targetLabel.set({ text: value });
-        targetLabel.dirty = true;
-        targetLabel.setCoords();
+        this.setTextPanelEnabled(true);
+        if (list) {
+            list.innerHTML = '';
+            list.disabled = true;
+        }
+
+        this.fillTextForm(formText);
+
+        if (UIDom.texts.value) UIDom.texts.value.disabled = !formText;
+        if (UIDom.texts.fontSize) UIDom.texts.fontSize.disabled = !formText;
+        if (UIDom.texts.angle) UIDom.texts.angle.disabled = !formText;
+        if (UIDom.texts.addFreeBtn) UIDom.texts.addFreeBtn.disabled = false;
+        if (UIDom.texts.addAttachedBtn) UIDom.texts.addAttachedBtn.disabled = !targetContour;
+        if (UIDom.texts.attachBtn) UIDom.texts.attachBtn.disabled = !(formText && formText.kind === 'free' && targetContour);
+        if (UIDom.texts.detachBtn) UIDom.texts.detachBtn.disabled = !(formText && formText.kind === 'attached');
+        if (UIDom.texts.deleteBtn) UIDom.texts.deleteBtn.disabled = !formText;
+    }
+
+    getEditingTextObject() {
+        return this.getSelectedTextObject();
+    }
+
+    applyTextValueFromInput(value) {
+        const textObj = this.getEditingTextObject();
+        if (!textObj) return;
+        textObj.set({ text: value });
+        textObj.dirty = true;
+        textObj.setCoords();
         this.canvas.requestRenderAll();
         this.scheduleWorkspaceSave();
-        this.syncLabelControlsFromSelection();
     }
 
-    addLabelForSelection() {
-        const contour = this.getSelectedContourForLabel();
-        if (!contour) {
-            return;
-        }
-
-        const text = UIDom.labels.textInput?.value ?? '';
-        const label = this.labelManager.createOrUpdateLabelForContour(contour, text);
-        if (!label) {
-            return;
-        }
-
-        this.canvas.setActiveObject(label);
+    applyTextFontSizeFromInput(value) {
+        const textObj = this.getEditingTextObject();
+        const fontSize = Number(value);
+        if (!textObj || !Number.isFinite(fontSize) || fontSize <= 0) return;
+        textObj.set({ fontSize });
+        textObj.fontSizeMm = fontSize;
+        textObj.setCoords();
         this.canvas.requestRenderAll();
-        this.syncLabelControlsFromSelection();
         this.scheduleWorkspaceSave();
     }
 
-    deleteLabelForSelection() {
-        const selectedLabel = this.getSelectedLabelObject();
-        if (selectedLabel) {
-            this.labelManager.removeLabel(selectedLabel);
-            this.canvas.discardActiveObject();
-            this.canvas.requestRenderAll();
-            this.syncLabelControlsFromSelection();
-            this.scheduleWorkspaceSave();
-            return;
+    applyTextAngleFromInput(value) {
+        const textObj = this.getEditingTextObject();
+        const angle = Number(value);
+        if (!textObj || !Number.isFinite(angle)) return;
+        textObj.set({ angle });
+        if (textObj.kind === 'attached') {
+            this.textManager.updateAttachedTextAnchorFromAbsolute(textObj);
         }
-
-        const contour = this.getSelectedContourForLabel();
-        if (!contour) {
-            return;
-        }
-
-        const label = this.labelManager.getLabelByPlacementId(contour.placementId);
-        if (!label) {
-            return;
-        }
-
-        this.labelManager.removeLabel(label);
+        textObj.setCoords();
         this.canvas.requestRenderAll();
-        this.syncLabelControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    addFreeTextForSelection() {
+        const text = UIDom.texts.value?.value || '';
+        const left = this.layment.left + 20;
+        const top = this.layment.top + 20;
+        const textObj = this.textManager.createFreeText({ text, left, top, role: 'user-text' });
+        this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    addAttachedTextForSelection() {
+        const selectedText = this.getSelectedTextObject();
+        const contour = this.getSelectedContourForText() || (selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null);
+        if (!contour) return;
+        const text = UIDom.texts.value?.value || '';
+        const textObj = this.textManager.createAttachedText(contour, { text, role: 'user-text' });
+        if (!textObj) return;
+        this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    attachSelectedTextToSelectionContour() {
+        const textObj = this.getEditingTextObject();
+        const contour = this.getSelectedContourForText();
+        if (!textObj || !contour) return;
+        this.textManager.attachTextToContour(textObj, contour, 'user-text');
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    detachSelectedText() {
+        const textObj = this.getEditingTextObject();
+        if (!textObj || textObj.kind !== 'attached') return;
+        this.textManager.detachText(textObj);
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
+        this.scheduleWorkspaceSave();
+    }
+
+    deleteSelectedText() {
+        const selectedText = this.getEditingTextObject();
+        if (!selectedText) return;
+        this.textManager.removeText(selectedText);
+        this.canvas.discardActiveObject();
+        this.canvas.requestRenderAll();
+        this.syncTextControlsFromSelection();
         this.scheduleWorkspaceSave();
     }
 
@@ -1927,8 +2643,23 @@ class ContourApp {
     updateStatusBar() {
         const statusEl = UIDom.status.info;
         const active = this.canvas.getActiveObject();
+        const isOutOfBounds = this.contourManager?.isObjectOutOfLaymentBounds?.(active) === true;
 
-        if (!active || active.type === 'activeSelection') {
+        if (!active) {
+            statusEl.textContent = 'Выберите контур или выемку';
+            return;
+        }
+
+        if (active.type === 'activeSelection') {
+            const selectedObjects = active.getObjects().filter(Boolean);
+            const outOfBoundsObjects = new Set(this.getOutOfBoundsWorkspaceObjects());
+            if (selectedObjects.length > 0 && selectedObjects.every(obj => outOfBoundsObjects.has(obj))) {
+                statusEl.textContent = selectedObjects.length === 1
+                    ? 'Элемент вне границ ложемента — исправьте положение перед заказом'
+                    : `Выбрано ${selectedObjects.length} элементов вне границ ложемента — исправьте положение перед заказом`;
+                return;
+            }
+
             statusEl.textContent = 'Выберите контур или выемку';
             return;
         }
@@ -1941,13 +2672,15 @@ class ContourApp {
                 const bbox = active.getBoundingRect(true);
                 const realX = (bbox.left - laymentBbox.left).toFixed(1);
                 const realY = (bbox.top - laymentBbox.top).toFixed(1);
-                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм`;
+                const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
+                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм${warning}`;
                 return;
             }
 
             const realX = (active.left - laymentBbox.left).toFixed(1);
             const realY = (active.top - laymentBbox.top).toFixed(1);
-            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм`;
+            const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
+            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм${warning}`;
             return;
         }
 
@@ -1967,159 +2700,25 @@ class ContourApp {
         const realY = (tl.y - this.layment.top).toFixed(1);
 
         const article = meta.article || '—';
-        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°`; 
+        const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
+        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°${warning}`;
     }
 
     deleteSelected() {
-        const active = this.canvas.getActiveObject();
-        if (!active) return;
-
-        const objects = (active.type === 'activeSelection')
-        ? active.getObjects().slice()
-        : [active];
-        // КРИТИЧНО: сначала убираем activeSelection, потом удаляем объекты
-        this.batchRender(() => {
-            this.canvas.discardActiveObject();
-            for (const o of objects) {
-              if (!o) continue;
-              if (o.isLabel) {
-                this.labelManager.removeLabel(o);
-                continue;
-              }
-
-              if (o.primitiveType) {
-                this.primitiveManager.removePrimitive(o, false);
-                continue;
-              }
-              // contour
-              if (this.labelManager.removeLabelsForPlacementId && o.placementId != null) {
-                this.labelManager.removeLabelsForPlacementId(o.placementId);
-              } else if (this.labelManager.removeLabelsForContourId && o.contourId) {
-                // на случай старой схемы
-                this.labelManager.removeLabelsForContourId(o.contourId);
-              }
-
-              this.contourManager.removeContour(o, false);
-            }
-        });
-
-      this.updateButtons();
-      this.updateStatusBar?.();
-      this.syncPrimitiveControlsFromSelection();
-      this.syncLabelControlsFromSelection();
-      this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('delete', {}, this);
     }
 
 
     async duplicateSelected() {
-        const DUPLICATE_OFFSET = 16;
-        const selected = this.getDuplicateSelectionObjects();
-        if (!selected.length) {
-            return;
-        }
-
-        const newObjects = [];
-
-        await this.batchRender(async () => {
-            this.canvas.discardActiveObject();
-
-            for (const obj of selected) {
-                if (!obj || obj.isLabel || obj === this.layment || obj === this.safeArea) {
-                    continue;
-                }
-
-                if (obj.primitiveType === 'rect') {
-                    const copy = this.primitiveManager.addPrimitive(
-                        'rect',
-                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
-                        { width: obj.width, height: obj.height },
-                        { pocketDepthMm: obj.pocketDepthMm }
-                    );
-                    copy.set({
-                        scaleX: obj.scaleX,
-                        scaleY: obj.scaleY,
-                        stroke: obj.stroke,
-                        strokeWidth: obj.strokeWidth,
-                        fill: obj.fill,
-                        opacity: obj.opacity,
-                        angle: obj.angle || 0
-                    });
-                    copy.setCoords();
-                    newObjects.push(copy);
-                    continue;
-                }
-
-                if (obj.primitiveType === 'circle') {
-                    const copy = this.primitiveManager.addPrimitive(
-                        'circle',
-                        { x: obj.left + DUPLICATE_OFFSET, y: obj.top + DUPLICATE_OFFSET },
-                        { radius: obj.radius },
-                        { pocketDepthMm: obj.pocketDepthMm }
-                    );
-                    copy.set({
-                        scaleX: obj.scaleX,
-                        scaleY: obj.scaleY,
-                        stroke: obj.stroke,
-                        strokeWidth: obj.strokeWidth,
-                        fill: obj.fill,
-                        opacity: obj.opacity
-                    });
-                    copy.setCoords();
-                    newObjects.push(copy);
-                    continue;
-                }
-
-                const meta = this.contourManager.metadataMap.get(obj);
-                if (!meta?.assets?.svg) {
-                    continue;
-                }
-
-                const contourCenter = obj.getCenterPoint();
-                await this.contourManager.addContour(
-                    `/contours/${meta.assets.svg}`,
-                    { x: contourCenter.x + DUPLICATE_OFFSET, y: contourCenter.y + DUPLICATE_OFFSET },
-                    meta
-                );
-                const duplicatedContour = this.contourManager.contours[this.contourManager.contours.length - 1];
-                duplicatedContour.set({ angle: obj.angle || 0 });
-                duplicatedContour.setCoords();
-                newObjects.push(duplicatedContour);
-
-                const sourceLabel = this.labelManager.getLabelByPlacementId(obj.placementId);
-                if (sourceLabel) {
-                    const dx = sourceLabel.left - contourCenter.x;
-                    const dy = sourceLabel.top - contourCenter.y;
-                    const duplicatedCenter = duplicatedContour.getCenterPoint();
-                    const duplicatedLabel = this.labelManager.createLabel({
-                        placementId: duplicatedContour.placementId,
-                        text: sourceLabel.text || '',
-                        left: duplicatedCenter.x + dx,
-                        top: duplicatedCenter.y + dy,
-                        fontSize: sourceLabel.fontSize
-                    });
-                    if (duplicatedLabel) {
-                        duplicatedLabel.set({ angle: sourceLabel.angle || 0 });
-                        duplicatedLabel.setCoords();
-                    }
-                }
-            }
-        });
-
-        this.restoreActiveSelection(newObjects);
-        this.canvas.requestRenderAll();
-        this.updateButtons();
-        this.updateStatusBar();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncLabelControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        await this.actionExecutor?.executeAction?.('duplicate', {}, this);
     }
 
     rotateSelected() {
-        const obj = this.canvas.getActiveObject();
-        if (!obj || obj.primitiveType || obj.isLabel) return;  // Нет поворота для примитивов и labels
-        const next = (obj.angle + 90) % 360;
-        this.contourManager.rotateContour(obj, next);
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('rotate', {}, this);
+    }
+
+    toggleLockSelected() {
+        this.actionExecutor?.executeAction?.('toggleLock', {}, this);
     }
 
     shouldAutosaveForObject(obj) {
@@ -2147,10 +2746,11 @@ class ContourApp {
         }, AUTOSAVE_DEBOUNCE_MS);
     }
 
-    buildWorkspaceSnapshot() {
+    buildWorkspaceSnapshot(options = {}) {
+        const includeEditorState = options.includeEditorState !== false;
         const layment = this.canvas.layment;
         return {
-            schemaVersion: 2,
+            schemaVersion: 4,
             savedAt: new Date().toISOString(),
             layment: {
                 width: Math.round(layment.width),
@@ -2160,9 +2760,9 @@ class ContourApp {
             workspaceScale: 1,
             baseMaterialColor: this.baseMaterialColor,
             laymentThicknessMm: this.laymentThicknessMm,
-            contours: this.contourManager.getWorkspaceContoursData(),
-            primitives: this.contourManager.getPrimitivesData(),
-            labels: this.labelManager.getWorkspaceLabelsData()
+            contours: this.contourManager.getWorkspaceContoursData({ includeEditorState }),
+            primitives: this.contourManager.getPrimitivesData({ includeEditorState }),
+            texts: this.textManager.getWorkspaceTextsData({ includeEditorState })
         };
     }
 
@@ -2194,7 +2794,7 @@ class ContourApp {
             return false;
         }
 
-        if (data.schemaVersion !== 2) {
+        if (data.schemaVersion !== 3 && data.schemaVersion !== 4) {
             console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
             return false;
         }
@@ -2216,7 +2816,7 @@ class ContourApp {
                     this.canvas.discardActiveObject();
                     this.contourManager.clearContours();
                     this.primitiveManager.clearPrimitives();
-                    this.labelManager.clearLabels();
+                    this.textManager.clearTexts();
                 });
 
             const offset = typeof data.layment?.offset === 'number' ? data.layment.offset : this.laymentOffset;
@@ -2270,6 +2870,13 @@ class ContourApp {
                     );
                     const added = this.contourManager.contours[this.contourManager.contours.length - 1];
                     added.placementId = contour.placementId;
+                    this.objectMetaApi?.patchObjectMeta?.(added, {
+                        placementId: contour.placementId,
+                        isLocked: contour.isLocked === true,
+                        groupId: contour.editorState?.groupId ?? contour.groupId ?? null
+                    });
+                    this.objectMetaApi?.applyInteractionState?.(added);
+                    this.applyObjectVisualState(added);
                     added.angle = contour.angle || 0;
                     added.setCoords();
                     const targetX = this.layment.left + contour.x;
@@ -2289,35 +2896,65 @@ class ContourApp {
             const maxPlacementId = placementIds.length ? Math.max(...placementIds) : 0;
             this.contourManager.nextPlacementSeq = maxPlacementId + 1;
 
-            if (Array.isArray(data.labels)) {
-                for (const labelData of data.labels) {
-                    const contour = this.contourManager.contours.find(c => c.placementId === labelData.placementId);
-                    if (!contour) {
-                        continue;
-                    }
-                    this.labelManager.createLabel({
-                        placementId: labelData.placementId,
-                        text: labelData.text,
-                        left: this.layment.left + labelData.x,
-                        top: this.layment.top + labelData.y,
-                        fontSize: labelData.fontSizeMm
+            const savedTexts = this.textManager.normalizeWorkspaceTexts(data.texts);
+            for (const savedText of savedTexts) {
+                if (savedText.kind === 'free') {
+                    const textObj = this.textManager.createFreeText({
+                        text: savedText.text,
+                        role: savedText.role,
+                        left: this.layment.left + savedText.x,
+                        top: this.layment.top + savedText.y,
+                        fontSizeMm: savedText.fontSizeMm
                     });
+                    this.objectMetaApi?.patchObjectMeta?.(textObj, {
+                        isLocked: savedText.isLocked === true,
+                        groupId: savedText.editorState?.groupId ?? null
+                    });
+                    this.objectMetaApi?.applyInteractionState?.(textObj);
+                    this.applyObjectVisualState(textObj);
+                    continue;
                 }
-            } else {
-                for (const contour of this.contourManager.contours) {
-                    const meta = this.contourManager.metadataMap.get(contour);
-                    this.labelManager.ensureDefaultLabelForContour(contour, meta?.defaultLabel);
+
+                const contour = this.contourManager.contours.find(c => c.placementId === savedText.ownerPlacementId);
+                if (!contour) {
+                    continue;
                 }
+                const textObj = this.textManager.createAttachedText(contour, {
+                    text: savedText.text,
+                    role: savedText.role,
+                    left: this.layment.left + savedText.x,
+                    top: this.layment.top + savedText.y,
+                    fontSizeMm: savedText.fontSizeMm,
+                    localOffsetX: savedText.localOffsetX,
+                    localOffsetY: savedText.localOffsetY,
+                    localAngle: savedText.localAngle
+                });
+                this.objectMetaApi?.patchObjectMeta?.(textObj, {
+                    isLocked: savedText.isLocked === true,
+                    groupId: savedText.editorState?.groupId ?? null
+                });
+                this.objectMetaApi?.applyInteractionState?.(textObj);
+                this.applyObjectVisualState(textObj);
             }
 
             await this.batchRender(() => {
                 for (const primitive of data.primitives || []) {
                     const x = this.layment.left + primitive.x;
                     const y = this.layment.top + primitive.y;
+                    let addedPrimitive = null;
                     if (primitive.type === 'rect') {
-                        this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height }, { pocketDepthMm: primitive.pocketDepthMm });
+                        addedPrimitive = this.primitiveManager.addPrimitive('rect', { x, y }, { width: primitive.width, height: primitive.height }, { pocketDepthMm: primitive.pocketDepthMm });
                     } else if (primitive.type === 'circle') {
-                        this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius }, { pocketDepthMm: primitive.pocketDepthMm });
+                        addedPrimitive = this.primitiveManager.addPrimitive('circle', { x, y }, { radius: primitive.radius }, { pocketDepthMm: primitive.pocketDepthMm });
+                    }
+
+                    if (addedPrimitive) {
+                        this.objectMetaApi?.patchObjectMeta?.(addedPrimitive, {
+                            isLocked: primitive.isLocked === true,
+                            groupId: primitive.editorState?.groupId ?? primitive.groupId ?? null
+                        });
+                        this.objectMetaApi?.applyInteractionState?.(addedPrimitive);
+                        this.applyObjectVisualState(addedPrimitive);
                     }
                 }
             });
@@ -2327,7 +2964,7 @@ class ContourApp {
                 this.updateButtons();
                 this.updateStatusBar();
                 this.syncPrimitiveControlsFromSelection();
-                this.syncLabelControlsFromSelection();
+                this.syncTextControlsFromSelection();
             });
         } finally {
             this.isRestoringWorkspace = false;
@@ -2367,6 +3004,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = true;
         orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info', 'order-result-loading');
         orderResult.title.textContent = '';
@@ -2386,6 +3024,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info');
         orderResult.container.classList.add('order-result-loading');
@@ -2398,6 +3037,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-error', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-success');
@@ -2418,6 +3058,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success', 'order-result-info', 'order-result-loading');
         orderResult.container.classList.add('order-result-error');
@@ -2430,6 +3071,7 @@ class ContourApp {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
 
+        this.viewportFeedbackActive = false;
         orderResult.container.hidden = false;
         orderResult.container.classList.remove('order-result-success', 'order-result-loading');
         orderResult.container.classList.add('order-result-error');
@@ -2452,27 +3094,7 @@ class ContourApp {
 
         const problematic = new Set();
 
-        this.contourManager.contours.forEach(obj => {
-            this.contourManager.resetPropertiesRecursive(obj, {
-                stroke: Config.COLORS.CONTOUR.NORMAL,
-                strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
-                opacity: 1,
-                borderColor: Config.COLORS.SELECTION.BORDER,
-                cornerColor: Config.COLORS.SELECTION.CORNER,
-                fill: Config.COLORS.CONTOUR.FILL
-            });
-        });
-
-        this.primitiveManager.primitives.forEach(obj => {
-            this.contourManager.resetPropertiesRecursive(obj, {
-                stroke: Config.COLORS.PRIMITIVE.STROKE,
-                strokeWidth: 1,
-                opacity: 1,
-                borderColor: Config.COLORS.SELECTION.BORDER,
-                cornerColor: Config.COLORS.SELECTION.CORNER,
-                fill: Config.COLORS.PRIMITIVE.FILL
-            });
-        });
+        this.resetWorkspaceVisualStateIssues();
 
         const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
         const lWidth = layment.width * layment.scaleX;
@@ -2500,24 +3122,7 @@ class ContourApp {
             }
         });
 
-        problematic.forEach(obj => {
-            if (obj.primitiveType) {
-                obj.set({
-                    stroke: Config.COLORS.PRIMITIVE.ERROR,
-                    strokeWidth: 3,
-                    opacity: 0.85
-                });
-            } else {
-                this.contourManager.resetPropertiesRecursive(obj, {
-                    stroke: Config.COLORS.CONTOUR.ERROR,
-                    strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,
-                    opacity: 0.85,
-                    borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
-                    cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
-                });
-            }
-            obj.setCoords();
-        });
+        this.setObjectsVisualState(Array.from(problematic), 'error');
 
         this.canvas.renderAll();
         return {
@@ -2551,8 +3156,11 @@ class ContourApp {
                 return;
             }
 
+            const texts = this.textManager?.buildExportTexts?.() || [];
+
             try {
-                const payloadKey = this.storePreviewSvgPayload(svg);
+                console.log('preview texts', texts);
+                const payloadKey = this.storePreviewSvgPayload(svg, texts);
                 const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
                 viewerUrl.searchParams.set('payloadKey', payloadKey);
                 window.open(viewerUrl.toString(), '_blank', 'noopener');
@@ -2564,19 +3172,19 @@ class ContourApp {
     }
 
     buildPreviewSvg() {
-        const labels = this.canvas.getObjects().filter(obj => obj?.isLabel);
-        const prev = labels.map(label => ({
-            label,
-            visible: label.visible
+        const textObjects = this.canvas.getObjects().filter(obj => obj?.isTextObject);
+        const prev = textObjects.map(textObj => ({
+            textObj,
+            visible: textObj.visible
         }));
 
-        labels.forEach(label => label.set('visible', false));
+        textObjects.forEach(textObj => textObj.set('visible', false));
         this.canvas.requestRenderAll();
 
         try {
             return this.canvas.toSVG();
         } finally {
-            prev.forEach(({ label, visible }) => label.set('visible', visible));
+            prev.forEach(({ textObj, visible }) => textObj.set('visible', visible));
             this.canvas.requestRenderAll();
         }
     }
@@ -2616,17 +3224,27 @@ class ContourApp {
         }
     }
 
-    storePreviewSvgPayload(svg) {
+    storePreviewSvgPayload(svg, texts = []) {
         if (!svg || typeof svg !== 'string') {
             throw new Error('Preview SVG payload is empty');
+        }
+
+        let normalizedTexts = [];
+        if (Array.isArray(texts)) {
+            try {
+                normalizedTexts = JSON.parse(JSON.stringify(texts));
+            } catch (_error) {
+                normalizedTexts = [];
+            }
         }
 
         this.cleanupOldPreviewPayloads();
 
         const key = this.generatePreviewPayloadKey();
         const payload = {
-            version: 2,
+            version: 3,
             svg,
+            texts: Array.isArray(texts) ? texts : [],
             baseMaterialColor: this.baseMaterialColor,
             laymentThicknessMm: this.laymentThicknessMm,
             createdAt: Date.now()
@@ -2805,6 +3423,10 @@ class ContourApp {
             ? "with-tools"
             : "empty";
 
+        const contours = this.buildExportContours();
+        const primitives = this.buildExportPrimitives();
+        const texts = this.buildExportTexts();
+
         //  КОНТРАКТ
         const data = {
             orderMeta: {
@@ -2816,14 +3438,14 @@ class ContourApp {
             laymentThicknessMm: this.laymentThicknessMm,
             laymentType,
             canvasPng: layoutPng,
-            workspaceSnapshot: this.buildWorkspaceSnapshot()
+            workspaceSnapshot: this.buildWorkspaceSnapshot({ includeEditorState: false })
             },
             layoutPng,
             layoutSvg,
 
-            contours: this.contourManager.getContoursData(),
-            primitives: this.contourManager.getPrimitivesData(),
-            labels: this.labelManager.getExportLabelsData(),
+            contours,
+            primitives,
+            texts,
             customer: this.pendingCustomer
         };
 
@@ -2861,6 +3483,23 @@ class ContourApp {
         } finally {
             this.pendingCustomer = null;
         }
+    }
+
+    buildExportContours() {
+        return this.contourManager.getContoursData();
+    }
+
+    buildExportPrimitives() {
+        return this.contourManager.getPrimitivesData({ includeEditorState: false });
+    }
+
+    buildExportTexts() {
+        const layment = this.canvas?.layment;
+        if (!layment) {
+            return [];
+        }
+
+        return this.textManager.buildExportTexts();
     }
 
     createLaymentPreviewPng(padPx = 20) {

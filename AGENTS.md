@@ -52,7 +52,7 @@ Request JSON:
     { "id": "str", "x": "mm", "y": "mm", "angle": "deg", "scaleOverride": "number" }
   ],
   "primitives": [],
-  "labels": []
+  "texts": []
 }
 ```
 Backend обязан читать orderMeta.width/height, а не ширину/высоту на верхнем уровне.
@@ -86,7 +86,7 @@ Response JSON:
 ## DXF — второй производственный выход (маркировка/лазер):
 
 - Заказ должен иметь DXF артефакт(ы).
-- labels — часть заказа и используется для генерации DXF под лазерную маркировку.
+- texts — часть заказа и используются для генерации DXF под лазерную маркировку.
 
 ## Frontend vendor libs (важно) :
 

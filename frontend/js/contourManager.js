@@ -54,12 +54,28 @@ class ContourManager {
         group.contourId = metadata.id;
         group.placementId = this.nextPlacementSeq++;
 
+        const objectMetaApi = this.app?.objectMetaApi || window.ObjectMeta;
+        objectMetaApi?.initObjectMeta?.(group, {
+            objectRole: 'contour',
+            isLocked: false,
+            groupId: null,
+            selectionMode: 'normal',
+            followMode: 'none',
+            boundToId: null,
+            placementId: group.placementId
+        });
+        this.app?.applyObjectVisualState?.(group);
+
         group.on('rotating', () => this.snapToAllowedAngle(group));
         group.on('modified', () => this.snapToAllowedAngle(group));
 
         this.contours.push(group);
         this.canvas.add(group);
-        this.canvas.setActiveObject(group);
+        if (this.app?.setActiveObjectWithSelectionSource) {
+            this.app.setActiveObjectWithSelectionSource(group, 'programmatic');
+        } else {
+            this.canvas.setActiveObject(group);
+        }
         this.canvas.renderAll();
     }
 
@@ -91,6 +107,46 @@ class ContourManager {
         this.metadataMap = new WeakMap();
         this.canvas.renderAll();
     }
+
+    isObjectOutOfLaymentBounds(obj, layment = this.canvas?.layment) {
+        if (!obj || !layment) {
+            return false;
+        }
+
+        const box = obj.getBoundingRect(true);
+        const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
+        const lWidth = layment.width * layment.scaleX;
+        const lHeight = layment.height * layment.scaleY;
+
+        return box.left < layment.left + padding
+            || box.top < layment.top + padding
+            || box.left + box.width > layment.left + lWidth - padding
+            || box.top + box.height > layment.top + lHeight - padding;
+    }
+
+    getOutOfBoundsWorkspaceObjects() {
+        const layment = this.canvas?.layment;
+        if (!layment) {
+            return [];
+        }
+
+        const outOfBounds = [];
+
+        this.contours.forEach(obj => {
+            if (this.isObjectOutOfLaymentBounds(obj, layment)) {
+                outOfBounds.push(obj);
+            }
+        });
+
+        this.app?.primitiveManager?.primitives?.forEach(obj => {
+            if (this.isObjectOutOfLaymentBounds(obj, layment)) {
+                outOfBounds.push(obj);
+            }
+        });
+
+        return outOfBounds;
+    }
+
     checkCollisionsAndHighlight() {
       const emptyResult = {
         ok: true,
@@ -106,47 +162,17 @@ class ContourManager {
       const collisionContours = new Set();
       const outOfBoundsPrimitives = new Set();
 
-       // Сброс цвета у всех контуров
-      this.contours.forEach(obj => {
-        this.resetPropertiesRecursive(obj, {
-            stroke: Config.COLORS.CONTOUR.NORMAL,        // обычный цвет контура
-            strokeWidth: Config.COLORS.CONTOUR.NORMAL_STROKE_WIDTH,
-            opacity: 1,
-            borderColor: Config.COLORS.SELECTION.BORDER,   // цвет рамки выделения (если останется)
-            cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: Config.COLORS.CONTOUR.FILL  // Сброс fill
-        });
-      });
-
-      // Сброс цвета у всех примитивов
-      this.app.primitiveManager.primitives.forEach(obj => {
-        this.resetPropertiesRecursive(obj, {
-            stroke: Config.COLORS.PRIMITIVE.STROKE,
-            strokeWidth: 1,
-            opacity: 1,
-            borderColor: Config.COLORS.SELECTION.BORDER,
-            cornerColor: Config.COLORS.SELECTION.CORNER,
-            fill: Config.COLORS.PRIMITIVE.FILL
-        });
-      });
+      this.app?.resetWorkspaceVisualStateIssues?.();
 
       const layment = this.canvas.layment;
       if (!layment) return emptyResult;
-
-      const padding = Config.GEOMETRY.LAYMENT_PADDING * layment.scaleX;
 
       for (let i = 0; i < this.contours.length; i++) {
           const a = this.contours[i];
           const box = a.getBoundingRect(true);
 
           // 1. Выход за границы ложемента
-          const lWidth = layment.width * layment.scaleX;
-          const lHeight = layment.height * layment.scaleY;
-
-          if (box.left < layment.left + padding ||
-            box.top < layment.top + padding ||
-            box.left + box.width > layment.left + lWidth - padding ||
-            box.top + box.height > layment.top + lHeight - padding) {
+          if (this.isObjectOutOfLaymentBounds(a, layment)) {
             problematic.add(a);
             outOfBoundsContours.add(a);
           }
@@ -179,40 +205,13 @@ class ContourManager {
 
         // Проверка выхода за ложемент для примитивов
         this.app.primitiveManager.primitives.forEach(obj => {
-          const box = obj.getBoundingRect(true);
-          const lWidth = layment.width * layment.scaleX;
-          const lHeight = layment.height * layment.scaleY;
-  
-          if (box.left < layment.left + padding ||
-              box.top < layment.top + padding ||
-              box.left + box.width > layment.left + lWidth - padding ||
-              box.top + box.height > layment.top + lHeight - padding) {
+          if (this.isObjectOutOfLaymentBounds(obj, layment)) {
               problematic.add(obj);
               outOfBoundsPrimitives.add(obj);
           }
         });
 
-       // Подсвечиваем проблемные контуры красным + полупрозрачность для наглядности
-       problematic.forEach(obj => {
-        if (obj.primitiveType) {
-            // Для примитивов
-            obj.set({
-                stroke: Config.COLORS.PRIMITIVE.ERROR,
-                strokeWidth: 3,
-                opacity: 0.85
-            });
-        } else {
-            // Для контуров
-            this.resetPropertiesRecursive(obj, {
-            stroke:  Config.COLORS.CONTOUR.ERROR,                   //ярко-красный контур
-            strokeWidth: Config.COLORS.CONTOUR.ERROR_STROKE_WIDTH,  //чуть шире для наглядности
-            opacity: 0.85,
-            borderColor: Config.COLORS.SELECTION.ERROR_BORDER,
-            cornerColor: Config.COLORS.SELECTION.ERROR_CORNER
-            });
-        }
-        obj.setCoords();
-       });
+       this.app?.setObjectsVisualState?.(Array.from(problematic), 'error');
 
        this.canvas.renderAll();
        return {
@@ -364,14 +363,16 @@ class ContourManager {
         return angle;
     }
 
-    getWorkspaceContoursData() {
+    getWorkspaceContoursData(options = {}) {
        const layment = this.canvas.layment;
+       const includeEditorState = options.includeEditorState !== false;
 
        return this.contours.map(obj => {
             const meta = this.metadataMap.get(obj);
             const tl = obj.aCoords.tl;
+            const groupId = this.app?.objectMetaApi?.getGroupId?.(obj) || null;
 
-            return {
+            const snapshot = {
                 id: meta.id,
                 article: meta.article,
                 name: meta.name,
@@ -382,20 +383,27 @@ class ContourManager {
                 angle: this.normalizeExportAngle(obj.angle),
                 scaleOverride: meta.scaleOverride ?? 1,
                 depthOverrideMm: Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined,
-                placementId: obj.placementId
+                placementId: obj.placementId,
+                isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
             };
+            if (includeEditorState) {
+                snapshot.editorState = { groupId };
+            }
+            return snapshot;
         });
     }
 
-    getPrimitivesData() {
+    getPrimitivesData(options = {}) {
         const layment = this.canvas.layment;
+        const includeEditorState = options.includeEditorState === true;
 
         return this.app.primitiveManager.primitives.map(obj => {
             const bbox = obj.getBoundingRect(true);
             const scaleX = obj.scaleX;  // Поскольку scaleY = scaleX для circle
             const scaleY = obj.scaleY;
+            const groupId = this.app?.objectMetaApi?.getGroupId?.(obj) || null;
 
-            return {
+            const snapshot = {
                 type: obj.primitiveType,
                 x: obj.primitiveType === 'rect' 
                     ? Math.round((bbox.left - layment.left) / layment.scaleX)
@@ -412,8 +420,13 @@ class ContourManager {
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
                     : undefined,
-                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined
+                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined,
+                isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
             };
+            if (includeEditorState) {
+                snapshot.editorState = { groupId };
+            }
+            return snapshot;
         });
     }
 
@@ -485,10 +498,25 @@ class PrimitiveManager {
             if (Number.isFinite(options.pocketDepthMm)) {
                 obj.pocketDepthMm = options.pocketDepthMm;
             }
+            const objectMetaApi = this.app?.objectMetaApi || window.ObjectMeta;
+            objectMetaApi?.initObjectMeta?.(obj, {
+                objectRole: 'primitive',
+                isLocked: false,
+                groupId: null,
+                selectionMode: 'normal',
+                followMode: 'none',
+                boundToId: null,
+                placementId: null
+            });
+            this.app?.applyObjectVisualState?.(obj);
             obj.on('modified', () => this.validatePrimitive(obj));
             this.primitives.push(obj);
             this.canvas.add(obj);
-            this.canvas.setActiveObject(obj);
+            if (this.app?.setActiveObjectWithSelectionSource) {
+                this.app.setActiveObjectWithSelectionSource(obj, 'programmatic');
+            } else {
+                this.canvas.setActiveObject(obj);
+            }
             this.canvas.renderAll();
             return obj;
         }
@@ -619,4 +647,3 @@ class PrimitiveManager {
         this.canvas.renderAll();
     }
 }
-

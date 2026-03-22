@@ -16,6 +16,9 @@ window.UIDom = {
 
   buttons: {
     delete: document.getElementById('deleteButton'),
+    toggleLock: document.getElementById('toggleLockButton'),
+    group: document.getElementById('groupButton'),
+    ungroup: document.getElementById('ungroupButton'),
     rotate: document.getElementById('rotateButton'),
     duplicate: document.getElementById('duplicateButton'),
     addRect: document.getElementById('addRectButton'),
@@ -41,17 +44,24 @@ window.UIDom = {
 
   panels: {
     catalogList: document.getElementById('catalogList'),
-    toolButtons: document.querySelector('.tool-buttons'),
+    toolButtons: document.getElementById('workspaceAddTools'),
     primitiveControls: document.getElementById('primitiveControls'),
   },
 
-
-
-  labels: {
-    panel: document.getElementById('labelControls'),
-    textInput: document.getElementById('labelText'),
-    addBtn: document.getElementById('addLabelBtn'),
-    deleteBtn: document.getElementById('deleteLabelBtn'),
+  texts: {
+    panel: document.getElementById('textControls'),
+    list: document.getElementById('textList'),
+    value: document.getElementById('textValue'),
+    fontSize: document.getElementById('textFontSize'),
+    angle: document.getElementById('textAngle'),
+    kind: document.getElementById('textKind'),
+    role: document.getElementById('textRole'),
+    owner: document.getElementById('textOwner'),
+    addFreeBtn: document.getElementById('addFreeTextBtn'),
+    addAttachedBtn: document.getElementById('addAttachedTextBtn'),
+    attachBtn: document.getElementById('attachTextBtn'),
+    detachBtn: document.getElementById('detachTextBtn'),
+    deleteBtn: document.getElementById('deleteTextBtn'),
   },
 
   primitive: {
@@ -69,9 +79,6 @@ window.UIDom = {
     categorySelect: document.getElementById('categorySelect'),
     searchInput: document.getElementById('catalogSearch'),
   },
-
-
-
 
   customerModal: {
     overlay: document.getElementById('customerModalOverlay'),

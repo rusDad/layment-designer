@@ -21,7 +21,7 @@ window.Config = {
         STEP_CTRL: 0.2
     },
 
-    LABELS: {
+    TEXT: {
         FONT_SIZE_MM: 5,
         DEFAULT_OFFSET: { x: 6, y: 0 },
         BOUNDS_PAD_MM: 5
@@ -88,19 +88,25 @@ window.Config = {
         CONTOUR: {
             NORMAL: '#101214ff',
             ERROR: '#e74c3c',
+            LOCKED: '#d78a2d',
             FILL: '#208820',
             NORMAL_STROKE_WIDTH: 1,
+            LOCKED_STROKE_WIDTH: 2,
             ERROR_STROKE_WIDTH: 3
         },
         SELECTION: {
             BORDER: '#3498db',
             CORNER: '#3498db',
+            LOCKED_BORDER: '#d78a2d',
+            LOCKED_CORNER: '#c97a1a',
             ERROR_BORDER: '#e74c3c',
             ERROR_CORNER: '#c0392b'
         },
         PRIMITIVE: {
             STROKE: '#104a10',  // Зеленый для примитивов
             FILL: '#208820',
+            LOCKED: '#d78a2d',
+            LOCKED_STROKE_WIDTH: 2,
             ERROR: '#ff0000'     // Красный для ошибок (выход за край)
         }
     },
@@ -156,5 +162,8 @@ window.Config = {
         OUT_OF_BOUNDS_ERROR: 'Элемент вышел за границы ложемента',
         TOO_CLOSE_ERROR: 'Инструменты слишком близко друг к другу',
         VALID_LAYOUT: 'Раскладка валидна! Можно заказывать',
+        VIEWPORT_OUT_OF_BOUNDS_TITLE: 'Проверьте раскладку',
+        VIEWPORT_OUT_OF_BOUNDS_SINGLE: 'После изменения размера ложемента один элемент оказался вне допустимых границ. Мы оставили его на месте и показали в рабочей области. Исправьте положение перед предпросмотром и заказом.',
+        VIEWPORT_OUT_OF_BOUNDS_MULTIPLE: 'После изменения размера ложемента несколько элементов оказались вне допустимых границ. Мы оставили их на месте и показали в рабочей области. Исправьте положение перед предпросмотром и заказом.',
     }
 };    

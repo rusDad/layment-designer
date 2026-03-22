@@ -154,6 +154,7 @@ def _write_text(
     y: float,
     text: str,
     height: float,
+    angle: float,
     order_height: float,
     handle: str | None = None,
     cad_like: bool = False,
@@ -179,7 +180,7 @@ def _write_text(
         "40",
         _format_number(height),
         "50",
-        "0",
+        _format_number(angle),
         "7",
         "STANDARD",
         "1",
@@ -193,7 +194,7 @@ def _emit_entities(
     order_width: float,
     order_height: float,
     *,
-    include_labels: bool,
+    include_texts: bool,
     cad_like: bool = False,
     next_handle: Callable[[], str] | None = None,
 ) -> List[str]:
@@ -267,24 +268,27 @@ def _emit_entities(
                 cad_like=cad_like,
             )
 
-    if include_labels:
-        for label in (getattr(order_data, "labels", None) or []):
-            text = _sanitize_text(_value_from_obj_or_dict(label, "text", ""))
+    if include_texts:
+        text_entries = (getattr(order_data, "texts", None) or [])
+        for text_entry in text_entries:
+            text = _sanitize_text(_value_from_obj_or_dict(text_entry, "text", ""))
             if not text:
                 continue
 
-            x = _to_float(_value_from_obj_or_dict(label, "x"))
-            y = _to_float(_value_from_obj_or_dict(label, "y"))
-            font_size = _to_float(_value_from_obj_or_dict(label, "fontSizeMm", 4.0), 4.0)
+            x = _to_float(_value_from_obj_or_dict(text_entry, "x"))
+            y = _to_float(_value_from_obj_or_dict(text_entry, "y"))
+            font_size = _to_float(_value_from_obj_or_dict(text_entry, "fontSizeMm", 4.0), 4.0)
             height = font_size if font_size > 0 else 4.0
+            angle = _to_float(_value_from_obj_or_dict(text_entry, "angle", 0.0), 0.0)
 
             _write_text(
                 lines,
-                "LABELS",
+                "TEXTS",
                 x=x,
                 y=y,
                 text=text,
                 height=height,
+                angle=angle,
                 order_height=order_height,
                 handle=_entity_handle(),
                 cad_like=cad_like,
@@ -319,7 +323,7 @@ def _emit_tables_cad(lines: List[str]) -> None:
         "0", "LAYER", "100", "AcDbSymbolTableRecord", "100", "AcDbLayerTableRecord", "2", "LAYMENT", "70", "0", "62", "7", "6", "CONTINUOUS",
         "0", "LAYER", "100", "AcDbSymbolTableRecord", "100", "AcDbLayerTableRecord", "2", "CONTOURS", "70", "0", "62", "2", "6", "CONTINUOUS",
         "0", "LAYER", "100", "AcDbSymbolTableRecord", "100", "AcDbLayerTableRecord", "2", "PRIMITIVES", "70", "0", "62", "4", "6", "CONTINUOUS",
-        "0", "LAYER", "100", "AcDbSymbolTableRecord", "100", "AcDbLayerTableRecord", "2", "LABELS", "70", "0", "62", "7", "6", "CONTINUOUS",
+        "0", "LAYER", "100", "AcDbSymbolTableRecord", "100", "AcDbLayerTableRecord", "2", "TEXTS", "70", "0", "62", "7", "6", "CONTINUOUS",
         "0", "ENDTAB",
         "0", "TABLE", "2", "STYLE", "70", "1",
         "0", "STYLE", "100", "AcDbSymbolTableRecord", "100", "AcDbTextStyleTableRecord", "2", "STANDARD", "70", "0", "40", "0", "41", "1", "50", "0", "71", "0", "42", "2.5", "3", "Arial.ttf", "4", "",
@@ -368,12 +372,12 @@ def generate_order_layout_dxf_minimal(order_data: Any) -> Tuple[str, List[str]]:
         "0", "SECTION", "2", "TABLES", "0", "ENDSEC",
         "0", "SECTION", "2", "ENTITIES",
     ]
-    missing_contours = _emit_entities(lines, order_data, order_width, order_height, include_labels=False)
+    missing_contours = _emit_entities(lines, order_data, order_width, order_height, include_texts=False)
     lines.extend(["0", "ENDSEC", "0", "EOF"])
     return "\n".join(lines) + "\n", sorted(set(missing_contours))
 
 
-def generate_order_layout_dxf_cad(order_data: Any, include_labels: bool = True) -> Tuple[str, List[str]]:
+def generate_order_layout_dxf_cad(order_data: Any, include_texts: bool = True) -> Tuple[str, List[str]]:
     order_width = float(order_data.orderMeta.width)
     order_height = float(order_data.orderMeta.height)
 
@@ -396,7 +400,7 @@ def generate_order_layout_dxf_cad(order_data: Any, include_labels: bool = True) 
         order_data,
         order_width,
         order_height,
-        include_labels=include_labels,
+        include_texts=include_texts,
         cad_like=True,
         next_handle=next_handle,
     )
