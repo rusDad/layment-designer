@@ -418,10 +418,10 @@ class ContourManager {
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
                     : undefined,
-                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined,
-                isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
+                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined
             };
             if (includeEditorState) {
+                snapshot.isLocked = this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true;
                 snapshot.editorState = { groupId };
             }
             return snapshot;
