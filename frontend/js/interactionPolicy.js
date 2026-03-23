@@ -23,6 +23,20 @@
             : (meta?.selectionMode === 'default' ? 'normal' : (meta?.selectionMode || 'normal'));
     }
 
+    function getObjectRole(obj) {
+        const meta = getObjectMeta(obj);
+        if (typeof meta?.objectRole === 'string' && meta.objectRole.trim()) {
+            return meta.objectRole;
+        }
+        if (obj?.isTextObject) {
+            return 'text';
+        }
+        if (obj?.primitiveType) {
+            return 'primitive';
+        }
+        return 'generic';
+    }
+
     function isSemanticallyLocked(obj) {
         const meta = getObjectMeta(obj);
         if (!meta) {
@@ -45,7 +59,7 @@
         if (!obj || isProtectedObject(ctx, obj)) {
             return false;
         }
-        return obj.selectable !== false;
+        return getSelectionMode(obj) !== 'noSelect';
     }
 
     function canBoxSelect(ctx, obj) {
@@ -66,14 +80,21 @@
         if (!canSelect(ctx, obj) || isSemanticallyLocked(obj)) {
             return false;
         }
-        return !(obj.lockMovementX && obj.lockMovementY);
+        return true;
     }
 
     function canRotate(ctx, obj) {
-        if (!obj || isProtectedObject(ctx, obj) || obj.isTextObject || isSemanticallyLocked(obj)) {
+        if (!obj || isProtectedObject(ctx, obj) || isSemanticallyLocked(obj)) {
             return false;
         }
-        return !obj.primitiveType;
+        const objectRole = getObjectRole(obj);
+        if (objectRole === 'text' || obj.isTextObject) {
+            return false;
+        }
+        if (objectRole === 'primitive' || obj.primitiveType) {
+            return false;
+        }
+        return true;
     }
 
     function canDuplicate(ctx, obj) {
@@ -260,6 +281,7 @@
         canParticipateInAlign,
         canParticipateInSnap,
         canParticipateInDistribute,
+        getObjectRole,
         getGroupId,
         expandTargetsWithSoftGroups,
         canJoinGroup,

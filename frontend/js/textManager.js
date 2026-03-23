@@ -91,9 +91,7 @@ class TextManager {
         }
 
         const isAttached = textObj.kind === 'attached';
-        const currentMeta = textObj.__objectMeta && typeof textObj.__objectMeta === 'object'
-            ? textObj.__objectMeta
-            : null;
+        const currentMeta = objectMetaApi.getObjectMeta?.(textObj) || null;
         objectMetaApi.patchObjectMeta(textObj, {
             objectRole: 'text',
             isLocked: currentMeta?.isLocked === true,
