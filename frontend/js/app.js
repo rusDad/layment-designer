@@ -29,28 +29,17 @@ class ContourApp {
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
         this.laymentThicknessMm = 35;
         this.pendingCustomer = null;
-        this.isPanning = false;
-        this.panStart = null;
-        this.isSpacePressed = false;
-        this.primaryPointerDown = false;
-        this.primaryDownStartedOutsideCanvas = false;
-        this.pointerDownStartedInProtectedUi = false;
-        this.suppressCanvasUntilMouseUp = false;
-        this.pendingPointerResetRenderRaf = null;
-        this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
-        this.pendingSelectionSource = null;
-        this.activeSelectionSource = null;
-        this.selectionSanitizeInProgress = false;
         this.selectionExpandInProgress = false;
-        this.softGroupDragState = null;
-        this.pendingSoftGroupFinalizeObjects = null;
-        this.applyingSoftGroupMove = false;
         this.viewportResizeFitTimer = null;
         this.viewportFeedbackActive = false;
 
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
         this.actionExecutor = window.ActionExecutor || null;
+        this.selectionPointerController = window.SelectionPointerController?.create?.(this, {
+            protectedUiSelector: '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])',
+            editableSelector: 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
+        }) || null;
 
         this.init();
     }
@@ -338,211 +327,43 @@ class ContourApp {
     }
 
     handleSoftGroupObjectMoving(target) {
-        if (!target || this.applyingSoftGroupMove) {
-            return;
-        }
-
-        const selectedObjects = this.resolveActionTargets(target, 'move');
-        if (!selectedObjects.length) {
-            this.softGroupDragState = null;
-            return;
-        }
-
-        let dragState = this.softGroupDragState;
-        if (!dragState || dragState.target !== target) {
-            this.beginSoftGroupMove(target, selectedObjects);
-            dragState = this.softGroupDragState;
-        }
-        if (!dragState || dragState.target !== target) {
-            return;
-        }
-
-        const currentAnchor = {
-            left: Number(target.left) || 0,
-            top: Number(target.top) || 0
-        };
-        const deltaX = currentAnchor.left - dragState.anchorLeft;
-        const deltaY = currentAnchor.top - dragState.anchorTop;
-        if (!deltaX && !deltaY) {
-            return;
-        }
-
-        this.applyingSoftGroupMove = true;
-        try {
-            dragState.trackedObjects.forEach(item => {
-                item.obj.set({
-                    left: item.left + deltaX,
-                    top: item.top + deltaY
-                });
-                this.syncObjectTextState(item.obj);
-            });
-        } finally {
-            this.applyingSoftGroupMove = false;
-        }
+        this.selectionPointerController?.handleSoftGroupObjectMoving(target);
     }
 
     finalizeSoftGroupMove(target) {
-        const dragState = this.softGroupDragState;
-        if (!dragState || dragState.target !== target) {
-            const pendingObjects = Array.isArray(this.pendingSoftGroupFinalizeObjects)
-                ? this.pendingSoftGroupFinalizeObjects.filter(Boolean)
-                : [];
-            this.softGroupDragState = null;
-            this.pendingSoftGroupFinalizeObjects = null;
-            return pendingObjects;
-        }
-
-        const trackedObjects = dragState.trackedObjects
-            .map(item => item?.obj)
-            .filter(Boolean);
-        this.softGroupDragState = null;
-        this.pendingSoftGroupFinalizeObjects = null;
-        return trackedObjects;
+        return this.selectionPointerController?.finalizeSoftGroupMove(target) || [];
     }
 
     beginSoftGroupMove(target, selectedObjects = this.resolveActionTargets(target, 'move')) {
-        if (!target) {
-            this.softGroupDragState = null;
-            return null;
-        }
-
-        const moveTargets = Array.isArray(selectedObjects) ? selectedObjects.filter(Boolean) : [];
-        if (!moveTargets.length) {
-            this.softGroupDragState = null;
-            return null;
-        }
-
-        const activeSelectionMembers = target.type === 'activeSelection'
-            ? new Set(target.getObjects().filter(Boolean))
-            : null;
-        const trackedObjects = moveTargets
-            .filter(obj => {
-                if (obj === target) {
-                    return false;
-                }
-                if (activeSelectionMembers?.has(obj)) {
-                    return false;
-                }
-                return true;
-            })
-            .map(obj => ({
-                obj,
-                left: Number(obj.left) || 0,
-                top: Number(obj.top) || 0
-            }));
-
-        this.softGroupDragState = {
-            target,
-            anchorLeft: Number(target.left) || 0,
-            anchorTop: Number(target.top) || 0,
-            trackedObjects
-        };
-        return this.softGroupDragState;
+        return this.selectionPointerController?.beginSoftGroupMove(target, selectedObjects) || null;
     }
 
     markNextSelectionSource(source) {
-        this.pendingSelectionSource = typeof source === 'string' && source ? source : null;
+        this.selectionPointerController?.markNextSelectionSource(source);
     }
 
     consumeSelectionSource(activeObject, fallback = null) {
-        const pendingSource = this.pendingSelectionSource;
-        this.pendingSelectionSource = null;
-        if (typeof pendingSource === 'string' && pendingSource) {
-            return pendingSource;
-        }
-        if (!activeObject) {
-            return null;
-        }
-        if (typeof fallback === 'string' && fallback) {
-            return fallback;
-        }
-        return activeObject.type === 'activeSelection' ? 'programmatic' : 'click';
+        return this.selectionPointerController?.consumeSelectionSource(activeObject, fallback) || null;
     }
 
     detectSelectionSourceFromPointerEvent(event) {
-        const nativeEvent = event?.e;
-        if (nativeEvent?.button !== 0) {
-            return null;
-        }
-        if (event?.target) {
-            return 'click';
-        }
-        if (this.canvas?.selection === false || this.canvas?.skipTargetFind === true) {
-            return null;
-        }
-        return 'marquee';
+        return this.selectionPointerController?.detectSelectionSourceFromPointerEvent(event) || null;
     }
 
     setActiveObjectWithSelectionSource(obj, source = 'programmatic') {
-        if (!obj) {
-            return;
-        }
-        this.markNextSelectionSource(source);
-        this.canvas.setActiveObject(obj);
+        this.selectionPointerController?.setActiveObjectWithSelectionSource(obj, source);
     }
 
     sanitizeActiveSelectionIfNeeded(active, source) {
-        if (!active || active.type !== 'activeSelection' || source !== 'marquee') {
-            return false;
-        }
-
-        const selectedObjects = active.getObjects().filter(Boolean);
-        const allowedObjects = selectedObjects.filter(obj => {
-            if (this.interactionPolicy?.canBoxSelect) {
-                return this.interactionPolicy.canBoxSelect(this, obj);
-            }
-            return this.interactionPolicy?.canSelect?.(this, obj) !== false;
-        });
-
-        if (allowedObjects.length === selectedObjects.length) {
-            return false;
-        }
-
-        this.selectionSanitizeInProgress = true;
-        try {
-            this.canvas.discardActiveObject();
-
-            if (allowedObjects.length === 1) {
-                this.setActiveObjectWithSelectionSource(allowedObjects[0], 'marquee');
-            } else if (allowedObjects.length > 1) {
-                this.restoreActiveSelection(allowedObjects, { source: 'marquee' });
-            } else {
-                this.activeSelectionSource = null;
-                this.canvas.requestRenderAll();
-            }
-        } finally {
-            this.selectionSanitizeInProgress = false;
-        }
-
-        return true;
+        return this.selectionPointerController?.sanitizeActiveSelectionIfNeeded(active, source) || false;
     }
 
     finalizeSelectionChange(active = this.canvas.getActiveObject(), source = null) {
-        this.activeSelectionSource = active ? source : null;
-        this.syncSelectionVisualState(active);
-        this.syncActiveSelectionInteractionState(active);
-        this.updateButtons();
-        this.updateStatusBar();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
+        this.selectionPointerController?.finalizeSelectionChange(active, source);
     }
 
     handleSelectionChanged(_eventName) {
-        const active = this.canvas.getActiveObject();
-        const fallbackSource = active?.type === 'activeSelection'
-            ? (this.activeSelectionSource || 'programmatic')
-            : (this.activeSelectionSource || 'click');
-        const source = this.consumeSelectionSource(active, fallbackSource);
-
-        if (!this.selectionSanitizeInProgress && this.sanitizeActiveSelectionIfNeeded(active, source)) {
-            return;
-        }
-
-        if (!this.selectionExpandInProgress && this.expandActiveSelectionWithSoftGroupsIfNeeded(this.canvas.getActiveObject(), source)) {
-            return;
-        }
-
-        this.finalizeSelectionChange(this.canvas.getActiveObject(), source);
+        this.selectionPointerController?.handleSelectionChanged();
     }
 
     createSafeAreaRect() {
@@ -941,15 +762,11 @@ class ContourApp {
     }
 
     isSpacePanModifier(mouseEvent) {
-        return Boolean(mouseEvent?.spaceKey || this.isSpacePressed);
+        return this.selectionPointerController?.isSpacePanModifier(mouseEvent) || false;
     }
 
     canStartPanning(mouseEvent) {
-        if (!mouseEvent) {
-            return false;
-        }
-
-       return mouseEvent.button === 1 || (mouseEvent.button === 0 && this.isSpacePanModifier(mouseEvent));
+        return this.selectionPointerController?.canStartPanning(mouseEvent) || false;
     }
 
     zoomViewportByPointer(mouseEvent) {
@@ -1000,137 +817,43 @@ class ContourApp {
     }
 
     stopPanning() {
-        if (!this.isPanning || !this.canvas) {
-            return;
-        }
-
-        this.isPanning = false;
-        this.panStart = null;
-        this.canvas.selection = true;
-        this.canvas.skipTargetFind = false;
-        this.setPanCursor(false);
+        this.selectionPointerController?.stopPanning();
     }
 
     isInsideCanvas(target) {
-        if (!this.canvas?.wrapperEl || !(target instanceof Node)) {
-            return false;
-        }
-
-        return this.canvas.wrapperEl.contains(target);
+        return this.selectionPointerController?.isInsideCanvas(target) || false;
     }
 
     isProtectedUiTarget(target) {
-        if (!(target instanceof Node)) {
-            return false;
-        }
-
-        const element = target instanceof Element ? target : target.parentElement;
-        if (!element) {
-            return false;
-        }
-
-        return !!element.closest(
-            '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])'
-        );
+        return this.selectionPointerController?.isProtectedUiTarget(target) || false;
     }
 
     clearBrowserSelection() {
-        const selection = window.getSelection?.();
-        if (selection && selection.rangeCount > 0) {
-            selection.removeAllRanges();
-        }
+        this.selectionPointerController?.clearBrowserSelection();
     }
 
     isEditableElement(element) {
-        if (!(element instanceof Element)) {
-            return false;
-        }
-
-        return !!element.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+        return this.selectionPointerController?.isEditableElement(element) || false;
     }
 
     isEditableTarget(target) {
-        if (!(target instanceof Node)) {
-            return false;
-        }
-
-        const element = target instanceof Element ? target : target.parentElement;
-        return this.isEditableElement(element);
+        return this.selectionPointerController?.isEditableTarget(target) || false;
     }
 
     logPointerFocus(eventName, target) {
-        if (!this.pointerFocusDebug) {
-            return;
-        }
-
-        const active = document.activeElement;
-        console.debug('[pointer-focus-debug]', eventName, {
-            targetTag: target instanceof Element ? target.tagName : target?.nodeName,
-            activeTag: active?.tagName,
-            activeId: active?.id || null,
-            activeClass: active?.className || null
-        });
+        this.selectionPointerController?.logPointerFocus(eventName, target);
     }
 
     schedulePointerResetRender() {
-        if (!this.canvas) {
-            return;
-        }
-
-        if (this.pendingPointerResetRenderRaf !== null) {
-            cancelAnimationFrame(this.pendingPointerResetRenderRaf);
-            this.pendingPointerResetRenderRaf = null;
-        }
-
-        this.pendingPointerResetRenderRaf = requestAnimationFrame(() => {
-            this.pendingPointerResetRenderRaf = null;
-            if (this.isEditableElement(document.activeElement)) {
-                return;
-            }
-            this.canvas.requestRenderAll();
-        });
+        this.selectionPointerController?.schedulePointerResetRender();
     }
 
     finishActiveTextEditing() {
-        if (!this.canvas) {
-            return;
-        }
-
-        const activeObject = this.canvas.getActiveObject();
-        if (!activeObject || activeObject.type !== 'i-text' || !activeObject.isEditing) {
-            return;
-        }
-
-        activeObject.exitEditing();
-        activeObject.hiddenTextarea?.blur?.();
+        this.selectionPointerController?.finishActiveTextEditing();
     }
 
     resetPointerInteraction({ soft = false } = {}) {
-        if (!this.canvas) {
-            return;
-        }
-
-        this.stopPanning();
-        this.isPanning = false;
-        this.panStart = null;
-        this.primaryPointerDown = false;
-        this.primaryDownStartedOutsideCanvas = false;
-        this.pointerDownStartedInProtectedUi = false;
-        this.suppressCanvasUntilMouseUp = false;
-        this.canvas.selection = true;
-        this.canvas.skipTargetFind = false;
-        this.setPanCursor(false);
-        //this.clearBrowserSelection();
-
-        if (soft) {
-            if (this.pendingPointerResetRenderRaf !== null) {
-                cancelAnimationFrame(this.pendingPointerResetRenderRaf);
-                this.pendingPointerResetRenderRaf = null;
-            }
-            return;
-        }
-
-        this.schedulePointerResetRender();
+        this.selectionPointerController?.resetPointerInteraction({ soft });
     }
 
     setupEventListeners() {
@@ -1141,96 +864,20 @@ class ContourApp {
         this.bindCatalogEvents();
         this.bindStatusHintEvents();
         this.bindCustomerModalEvents();
+        this.bindKeyboardInteractionRuntime();
         this.bindKeyboardShortcuts();
         this.syncWorkspaceScaleInput();
     }
 
     bindGlobalPointerSafety() {
-        document.addEventListener('mousedown', event => {
-            if (event.button !== 0) {
-                return;
-            }
+        this.selectionPointerController?.bindGlobalPointerSafety();
+    }
 
-            this.logPointerFocus('mousedown', event.target);
-
-            const startedInsideCanvas = this.isInsideCanvas(event.target);
-            const startedInProtectedUi = !startedInsideCanvas && this.isProtectedUiTarget(event.target);
-
-            this.primaryPointerDown = true;
-            this.primaryDownStartedOutsideCanvas = !startedInsideCanvas;
-            this.pointerDownStartedInProtectedUi = startedInProtectedUi;
-            // External drag safety should apply only to truly external sources.
-            // Legitimate UI controls (forms/modals/catalog inputs) must keep focus
-            // and should not arm canvas suppression.
-            this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas && !this.pointerDownStartedInProtectedUi;
-
-            if (this.suppressCanvasUntilMouseUp && !this.pointerDownStartedInProtectedUi) {
-                this.stopPanning();
-                this.canvas.discardActiveObject();
-                this.canvas.requestRenderAll();
-            }
-        }, true);
-
-        window.addEventListener('mouseup', event => {
-            if (event.button !== 0) {
-                return;
-            }
-
-            this.logPointerFocus('mouseup', event.target);
-
-            const endedOnEditableUi = this.isEditableTarget(event.target);
-            if (!this.isInsideCanvas(event.target)) {
-                this.finishActiveTextEditing();
-            }
-
-            if (endedOnEditableUi) {
-                this.resetPointerInteraction({ soft: true });
-                return;
-            }
-
-            this.resetPointerInteraction();
-        }, true);
-
-        window.addEventListener('blur', () => {
-            this.resetPointerInteraction();
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                this.resetPointerInteraction();
-            }
-        });
-
-        this.canvas.wrapperEl.addEventListener('mouseenter', event => {
-            if (!this.primaryPointerDown || !this.suppressCanvasUntilMouseUp) {
-                return;
-            }
-
-            this.stopPanning();
-            this.canvas.discardActiveObject();
-            this.clearBrowserSelection();
-
-            event.preventDefault();
-            event.stopPropagation();
-            this.canvas.requestRenderAll();
-        });
+    bindKeyboardInteractionRuntime() {
+        this.selectionPointerController?.bindKeyboardEvents();
     }
 
     bindKeyboardShortcuts() {
-        document.addEventListener('keydown', event => {
-            if (event.code !== 'Space') {
-                return;
-            }
-            this.isSpacePressed = true;
-        });
-
-        document.addEventListener('keyup', event => {
-            if (event.code !== 'Space') {
-                return;
-            }
-            this.isSpacePressed = false;
-        });
-
         document.addEventListener('keydown', event => {
             const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
             if (event.defaultPrevented || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
@@ -1316,112 +963,7 @@ class ContourApp {
     }
 
     bindCanvasEvents() {
-        this.setPanCursor(false);
-
-        this.canvas.on('mouse:down', event => {
-            const nativeEvent = event.e;
-
-            if (this.suppressCanvasUntilMouseUp && nativeEvent?.button === 0) {
-                nativeEvent.preventDefault();
-                nativeEvent.stopPropagation();
-                this.stopPanning();
-                this.canvas.discardActiveObject();
-                this.canvas.requestRenderAll();
-                return;
-            }
-
-            if (!this.canStartPanning(nativeEvent)) {
-                this.beginSoftGroupMove(event.target);
-                this.markNextSelectionSource(this.detectSelectionSourceFromPointerEvent(event));
-                return;
-            }
-
-            nativeEvent.preventDefault();
-            nativeEvent.stopPropagation();
-
-            this.isPanning = true;
-            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
-            this.canvas.selection = false;
-            this.canvas.skipTargetFind = true;
-            this.setPanCursor(true);
-        });
-
-        this.canvas.on('mouse:move', event => {
-            const nativeEvent = event.e;
-
-            if (this.suppressCanvasUntilMouseUp && this.primaryPointerDown) {
-                nativeEvent?.preventDefault?.();
-                this.stopPanning();
-                return;
-            }
-
-            if (!this.isPanning) {
-                return;
-            }
-
-            const dx = nativeEvent.clientX - this.panStart.x;
-            const dy = nativeEvent.clientY - this.panStart.y;
-            const vpt = this.canvas.viewportTransform;
-
-            vpt[4] += dx;
-            vpt[5] += dy;
-
-            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
-            this.canvas.requestRenderAll();
-        });
-
-        this.canvas.on('mouse:up', () => {
-            this.stopPanning();
-            this.pendingSoftGroupFinalizeObjects = this.finalizeSoftGroupMove(this.canvas.getActiveObject());
-        });
-
-        this.canvas.on('mouse:wheel', event => {
-            this.zoomViewportByPointer(event.e);
-        });
-
-        this.canvas.on('selection:created', event => {
-            this.handleSelectionChanged('selection:created', event);
-        });
-
-        this.canvas.on('selection:updated', event => {
-            this.handleSelectionChanged('selection:updated', event);
-        });
-
-        this.canvas.on('selection:cleared', () => {
-            this.pendingSelectionSource = null;
-            this.activeSelectionSource = null;
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncTextControlsFromSelection();
-        });
-
-        this.canvas.on('object:moving', event => {
-            this.handleSoftGroupObjectMoving(event.target);
-            if (event.target?.type !== 'activeSelection') {
-                this.syncObjectTextState(event.target);
-            }
-            this.canvas.requestRenderAll();
-            this.updateStatusBar();
-        });
-
-        this.canvas.on('object:scaling', () => {
-            this.canvas.requestRenderAll();
-            this.updateStatusBar();
-        });
-
-        this.canvas.on('object:rotating', event => {
-            if (event.target?.type !== 'activeSelection') {
-                this.syncObjectTextState(event.target);
-            }
-            this.canvas.requestRenderAll();
-            this.updateStatusBar();
-        });
-
-        this.canvas.on('object:modified', event => {
-            const target = event.target;
-            this.finalizePointerDrivenTransform(target);
-        });
+        this.selectionPointerController?.bindCanvasEvents();
     }    
     bindUIButtonEvents() {
         UIDom.buttons.delete.onclick = () => this.deleteSelected();
@@ -2025,7 +1567,7 @@ class ContourApp {
                 { rememberContourLastPosition: true }
             );
             this.restoreActiveSelection(selectionObjects, {
-                source: this.activeSelectionSource || 'programmatic'
+                source: this.selectionPointerController?.getActiveSelectionSource?.() || 'programmatic'
             });
             this.refreshCanvasMutationState({ scheduleWorkspaceSave: true });
             return true;
@@ -2054,7 +1596,7 @@ class ContourApp {
         this.canvas.discardActiveObject();
         this.applySharedMoveInvariants(objects, { rememberContourLastPosition: true });
         this.restoreActiveSelection(objects, {
-            source: this.activeSelectionSource || 'programmatic'
+            source: this.selectionPointerController?.getActiveSelectionSource?.() || 'programmatic'
         });
         return true;
     }
