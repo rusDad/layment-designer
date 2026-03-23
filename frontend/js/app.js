@@ -2235,14 +2235,65 @@ class ContourApp {
         return this.getSelectedTextObject();
     }
 
+    finalizeTextMutation(textObj, {
+        shouldNormalize = true,
+        shouldSyncControls = true,
+        shouldUpdateButtons = false,
+        shouldUpdateStatusBar = false,
+        shouldScheduleWorkspaceSave = true
+    } = {}) {
+        if (shouldNormalize && textObj?.isTextObject) {
+            this.syncObjectTextState(textObj);
+        }
+
+        this.canvas.requestRenderAll();
+
+        if (shouldSyncControls) {
+            this.syncTextControlsFromSelection();
+        }
+        if (shouldUpdateButtons) {
+            this.updateButtons();
+        }
+        if (shouldUpdateStatusBar) {
+            this.updateStatusBar();
+        }
+        if (shouldScheduleWorkspaceSave) {
+            this.scheduleWorkspaceSave();
+        }
+    }
+
+    finalizePrimitivePropertyMutation(primitive, {
+        prevDimensions = null,
+        applied = false,
+        shouldScheduleWorkspaceSave = true
+    } = {}) {
+        if (!primitive) {
+            return false;
+        }
+
+        this.syncPrimitiveControlsFromSelection();
+        this.updateStatusBar();
+
+        if (!applied) {
+            return false;
+        }
+
+        const nextDimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
+        const changed = JSON.stringify(prevDimensions) !== JSON.stringify(nextDimensions);
+
+        if (changed && shouldScheduleWorkspaceSave) {
+            this.scheduleWorkspaceSave();
+        }
+
+        return changed;
+    }
+
     applyTextValueFromInput(value) {
         const textObj = this.getEditingTextObject();
         if (!textObj) return;
         textObj.set({ text: value });
         textObj.dirty = true;
-        textObj.setCoords();
-        this.canvas.requestRenderAll();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(textObj);
     }
 
     applyTextFontSizeFromInput(value) {
@@ -2251,9 +2302,7 @@ class ContourApp {
         if (!textObj || !Number.isFinite(fontSize) || fontSize <= 0) return;
         textObj.set({ fontSize });
         textObj.fontSizeMm = fontSize;
-        textObj.setCoords();
-        this.canvas.requestRenderAll();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(textObj);
     }
 
     applyTextAngleFromInput(value) {
@@ -2261,12 +2310,7 @@ class ContourApp {
         const angle = Number(value);
         if (!textObj || !Number.isFinite(angle)) return;
         textObj.set({ angle });
-        if (textObj.kind === 'attached') {
-            this.textManager.updateAttachedTextAnchorFromAbsolute(textObj);
-        }
-        textObj.setCoords();
-        this.canvas.requestRenderAll();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(textObj);
     }
 
     addFreeTextForSelection() {
@@ -2298,18 +2342,14 @@ class ContourApp {
         const contour = this.getSelectedContourForText();
         if (!textObj || !contour) return;
         this.textManager.attachTextToContour(textObj, contour, 'user-text');
-        this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(textObj);
     }
 
     detachSelectedText() {
         const textObj = this.getEditingTextObject();
         if (!textObj || textObj.kind !== 'attached') return;
         this.textManager.detachText(textObj);
-        this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(textObj);
     }
 
     deleteSelectedText() {
@@ -2317,9 +2357,7 @@ class ContourApp {
         if (!selectedText) return;
         this.textManager.removeText(selectedText);
         this.canvas.discardActiveObject();
-        this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(null);
     }
 
     applyPrimitiveDimensionsFromInputs() {
@@ -2351,16 +2389,7 @@ class ContourApp {
             applied = this.primitiveManager.applyDimensions(primitive, { radius });
         }
 
-        this.syncPrimitiveControlsFromSelection();
-        this.updateStatusBar();
-
-        if (applied) {
-            const nextDimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
-            const changed = JSON.stringify(prevDimensions) !== JSON.stringify(nextDimensions);
-            if (changed) {
-                this.scheduleWorkspaceSave();
-            }
-        }
+        this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied });
     }
 
     //  подписка на события для статус-бара
