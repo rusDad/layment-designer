@@ -257,6 +257,63 @@
             app.restoreActiveSelection(newObjects);
             return newObjects;
         },
+        group: async (ctx) => {
+            const { app } = ctx;
+            const objectMetaApi = app?.objectMetaApi || global.ObjectMeta;
+            const selectedObjects = app.getSelectionObjects?.() || [];
+            const groupableObjects = app.getGroupSelectionObjects?.() || [];
+            if (selectedObjects.length < 2 || groupableObjects.length !== selectedObjects.length || !objectMetaApi?.patchObjectMeta) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            const nextGroupId = app.generateSoftGroupId?.();
+            if (!nextGroupId) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            groupableObjects.forEach(obj => {
+                objectMetaApi.patchObjectMeta(obj, { groupId: nextGroupId });
+                obj.setCoords?.();
+            });
+
+            ctx.changedObjects = groupableObjects;
+            app.restoreActiveSelection(groupableObjects, { source: 'programmatic' });
+            return true;
+        },
+        ungroup: async (ctx) => {
+            const { app, canvas } = ctx;
+            const objectMetaApi = app?.objectMetaApi || global.ObjectMeta;
+            const selectedObjects = app.getUngroupSelectionObjects?.() || [];
+            if (!selectedObjects.length || !objectMetaApi?.patchObjectMeta) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            const targetGroupIds = Array.from(new Set(selectedObjects
+                .map(obj => objectMetaApi?.getGroupId?.(obj))
+                .filter(Boolean)));
+            const changedObjects = [];
+
+            targetGroupIds.forEach(groupId => {
+                app.getSoftGroupMembers?.(groupId)?.forEach(member => {
+                    objectMetaApi.patchObjectMeta(member, { groupId: null });
+                    member.setCoords?.();
+                    changedObjects.push(member);
+                });
+            });
+
+            const activeSelection = changedObjects.length > 1 ? changedObjects : selectedObjects.filter(Boolean);
+            if (activeSelection.length > 0) {
+                app.restoreActiveSelection(activeSelection, { source: 'programmatic' });
+            } else {
+                canvas?.discardActiveObject?.();
+            }
+
+            ctx.changedObjects = changedObjects;
+            return true;
+        },
         toggleLock: async (ctx) => {
             const { app, canvas } = ctx;
             const objectMetaApi = app?.objectMetaApi || global.ObjectMeta;
@@ -426,6 +483,110 @@
 
             app.restoreActiveSelection(changedObjects.length ? selected : (savedSelection.objects || selected));
             return { changedObjects, side };
+        },
+        textPropertyUpdate: async (ctx) => {
+            const { app, property, value } = ctx;
+            const textObj = app.getEditingTextObject?.();
+            if (!textObj?.isTextObject) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            if (property === 'text') {
+                const nextText = typeof value === 'string' ? value : '';
+                if ((textObj.text ?? '') === nextText) {
+                    ctx.skipAutosave = true;
+                    return false;
+                }
+                textObj.set({ text: nextText });
+                textObj.dirty = true;
+            } else if (property === 'fontSize') {
+                const fontSize = Number(value);
+                if (!Number.isFinite(fontSize) || fontSize <= 0) {
+                    ctx.skipAutosave = true;
+                    return false;
+                }
+                if ((Number(textObj.fontSize) || 0) === fontSize) {
+                    ctx.skipAutosave = true;
+                    return false;
+                }
+                textObj.set({ fontSize });
+                textObj.fontSizeMm = fontSize;
+            } else if (property === 'angle') {
+                const angle = Number(value);
+                if (!Number.isFinite(angle)) {
+                    ctx.skipAutosave = true;
+                    return false;
+                }
+                if ((Number(textObj.angle) || 0) === angle) {
+                    ctx.skipAutosave = true;
+                    return false;
+                }
+                textObj.set({ angle });
+            } else {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            app.syncObjectTextState?.(textObj);
+            textObj.setCoords?.();
+            ctx.changedObjects = [textObj];
+            return true;
+        },
+        textAttach: async (ctx) => {
+            const { app } = ctx;
+            const textObj = ctx.textObj || app.getEditingTextObject?.();
+            const contour = ctx.contour || app.getSelectedContourForText?.();
+            if (!textObj?.isTextObject || !contour?.placementId || textObj.kind !== 'free') {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            app.textManager.attachTextToContour(textObj, contour, ctx.role || 'user-text');
+            app.syncObjectTextState?.(textObj);
+            textObj.setCoords?.();
+            ctx.changedObjects = [textObj];
+            return true;
+        },
+        textDetach: async (ctx) => {
+            const { app } = ctx;
+            const textObj = ctx.textObj || app.getEditingTextObject?.();
+            if (!textObj?.isTextObject || textObj.kind !== 'attached') {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            app.textManager.detachText(textObj);
+            app.syncObjectTextState?.(textObj);
+            textObj.setCoords?.();
+            ctx.changedObjects = [textObj];
+            return true;
+        },
+        primitiveDimensionUpdate: async (ctx) => {
+            const { app, dimensions } = ctx;
+            const primitive = ctx.primitive || app.getSingleSelectedPrimitive?.();
+            if (!primitive?.primitiveType) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            const prevDimensions = app.primitiveManager.getPrimitiveDimensions?.(primitive);
+            const applied = app.primitiveManager.applyDimensions?.(primitive, dimensions || {});
+            if (!applied) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            const nextDimensions = app.primitiveManager.getPrimitiveDimensions?.(primitive);
+            const changed = JSON.stringify(prevDimensions) !== JSON.stringify(nextDimensions);
+            if (!changed) {
+                ctx.skipAutosave = true;
+                return false;
+            }
+
+            primitive.setCoords?.();
+            ctx.changedObjects = [primitive];
+            return true;
         }
     };
 
