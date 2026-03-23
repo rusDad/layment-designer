@@ -329,51 +329,11 @@ class ContourApp {
     }
 
     groupSelected() {
-        const selectedObjects = this.getSelectionObjects();
-        const groupableObjects = this.getGroupSelectionObjects();
-        if (selectedObjects.length < 2 || groupableObjects.length !== selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
-            return false;
-        }
-
-        const nextGroupId = this.generateSoftGroupId();
-        groupableObjects.forEach(obj => {
-            this.objectMetaApi.patchObjectMeta(obj, { groupId: nextGroupId });
-            obj.setCoords?.();
-        });
-
-        this.restoreActiveSelection(groupableObjects, { source: 'programmatic' });
-        this.scheduleWorkspaceSave();
-        return true;
+        return this.actionExecutor?.executeAction?.('group', {}, this) || false;
     }
 
     ungroupSelected() {
-        const selectedObjects = this.getUngroupSelectionObjects();
-        if (!selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
-            return false;
-        }
-
-        const targetGroupIds = Array.from(new Set(selectedObjects
-            .map(obj => this.objectMetaApi?.getGroupId?.(obj))
-            .filter(Boolean)));
-        const changedObjects = [];
-
-        targetGroupIds.forEach(groupId => {
-            this.getSoftGroupMembers(groupId).forEach(member => {
-                this.objectMetaApi.patchObjectMeta(member, { groupId: null });
-                member.setCoords?.();
-                changedObjects.push(member);
-            });
-        });
-
-        const activeSelection = changedObjects.length > 1 ? changedObjects : selectedObjects.filter(Boolean);
-        if (activeSelection.length > 0) {
-            this.restoreActiveSelection(activeSelection, { source: 'programmatic' });
-        } else {
-            this.canvas.discardActiveObject();
-            this.canvas.requestRenderAll();
-        }
-        this.scheduleWorkspaceSave();
-        return true;
+        return this.actionExecutor?.executeAction?.('ungroup', {}, this) || false;
     }
 
     handleSoftGroupObjectMoving(target) {
@@ -2289,28 +2249,24 @@ class ContourApp {
     }
 
     applyTextValueFromInput(value) {
-        const textObj = this.getEditingTextObject();
-        if (!textObj) return;
-        textObj.set({ text: value });
-        textObj.dirty = true;
-        this.finalizeTextMutation(textObj);
+        this.actionExecutor?.executeAction?.('textPropertyUpdate', {
+            property: 'text',
+            value
+        }, this);
     }
 
     applyTextFontSizeFromInput(value) {
-        const textObj = this.getEditingTextObject();
-        const fontSize = Number(value);
-        if (!textObj || !Number.isFinite(fontSize) || fontSize <= 0) return;
-        textObj.set({ fontSize });
-        textObj.fontSizeMm = fontSize;
-        this.finalizeTextMutation(textObj);
+        this.actionExecutor?.executeAction?.('textPropertyUpdate', {
+            property: 'fontSize',
+            value
+        }, this);
     }
 
     applyTextAngleFromInput(value) {
-        const textObj = this.getEditingTextObject();
-        const angle = Number(value);
-        if (!textObj || !Number.isFinite(angle)) return;
-        textObj.set({ angle });
-        this.finalizeTextMutation(textObj);
+        this.actionExecutor?.executeAction?.('textPropertyUpdate', {
+            property: 'angle',
+            value
+        }, this);
     }
 
     addFreeTextForSelection() {
@@ -2338,18 +2294,13 @@ class ContourApp {
     }
 
     attachSelectedTextToSelectionContour() {
-        const textObj = this.getEditingTextObject();
-        const contour = this.getSelectedContourForText();
-        if (!textObj || !contour) return;
-        this.textManager.attachTextToContour(textObj, contour, 'user-text');
-        this.finalizeTextMutation(textObj);
+        this.actionExecutor?.executeAction?.('textAttach', {
+            role: 'user-text'
+        }, this);
     }
 
     detachSelectedText() {
-        const textObj = this.getEditingTextObject();
-        if (!textObj || textObj.kind !== 'attached') return;
-        this.textManager.detachText(textObj);
-        this.finalizeTextMutation(textObj);
+        this.actionExecutor?.executeAction?.('textDetach', {}, this);
     }
 
     deleteSelectedText() {
@@ -2360,7 +2311,7 @@ class ContourApp {
         this.finalizeTextMutation(null);
     }
 
-    applyPrimitiveDimensionsFromInputs() {
+    async applyPrimitiveDimensionsFromInputs() {
         if (this.isSyncingPrimitiveControls) {
             return;
         }
@@ -2380,16 +2331,22 @@ class ContourApp {
             if (!Number.isFinite(width) || !Number.isFinite(height)) {
                 return;
             }
-            applied = this.primitiveManager.applyDimensions(primitive, { width, height });
+            applied = await this.actionExecutor?.executeAction?.('primitiveDimensionUpdate', {
+                primitive,
+                dimensions: { width, height }
+            }, this);
         } else if (dimensions.type === 'circle') {
             const radius = parseInt(UIDom.inputs.primitiveRadius.value, 10);
             if (!Number.isFinite(radius)) {
                 return;
             }
-            applied = this.primitiveManager.applyDimensions(primitive, { radius });
+            applied = await this.actionExecutor?.executeAction?.('primitiveDimensionUpdate', {
+                primitive,
+                dimensions: { radius }
+            }, this);
         }
 
-        this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied });
+        this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied: Boolean(applied), shouldScheduleWorkspaceSave: false });
     }
 
     //  подписка на события для статус-бара
