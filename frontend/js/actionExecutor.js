@@ -26,8 +26,15 @@
         const result = await handler(ctx);
         const changedObjects = Array.isArray(ctx.changedObjects) ? ctx.changedObjects : [];
         if (ctx.followersHandled !== true) {
-            const followers = collectFollowers(changedObjects, ctx, app);
-            applyFollowerUpdates(followers, action, payload, ctx, app);
+            if (app?.applySharedMoveInvariants) {
+                app.applySharedMoveInvariants(changedObjects, {
+                    rememberContourLastPosition: true,
+                    syncFollowers: true
+                });
+            } else {
+                const followers = collectFollowers(changedObjects, ctx, app);
+                applyFollowerUpdates(followers, action, payload, ctx, app);
+            }
         }
 
         finalizeCanvasAction(app, {
@@ -649,8 +656,15 @@
             updated.push(obj);
         }
 
-        const followers = collectFollowers(updated, ctx, ctx?.app);
-        applyFollowerUpdates(followers, ctx?.actionName, {}, ctx, ctx?.app);
+        if (ctx?.app?.applySharedMoveInvariants) {
+            ctx.app.applySharedMoveInvariants(updated, {
+                rememberContourLastPosition: true,
+                syncFollowers: true
+            });
+        } else {
+            const followers = collectFollowers(updated, ctx, ctx?.app);
+            applyFollowerUpdates(followers, ctx?.actionName, {}, ctx, ctx?.app);
+        }
         ctx.followersHandled = true;
         ctx.changedObjects = updated;
         return updated;
@@ -715,6 +729,13 @@
 
     function finalizeCanvasAction(app, options = {}) {
         if (!app) {
+            return;
+        }
+
+        if (app.refreshCanvasMutationState) {
+            app.refreshCanvasMutationState({
+                scheduleWorkspaceSave: options.scheduleWorkspaceSave
+            });
             return;
         }
 

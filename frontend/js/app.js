@@ -43,6 +43,7 @@ class ContourApp {
         this.selectionSanitizeInProgress = false;
         this.selectionExpandInProgress = false;
         this.softGroupDragState = null;
+        this.pendingSoftGroupFinalizeObjects = null;
         this.applyingSoftGroupMove = false;
         this.viewportResizeFitTimer = null;
         this.viewportFeedbackActive = false;
@@ -383,14 +384,20 @@ class ContourApp {
     finalizeSoftGroupMove(target) {
         const dragState = this.softGroupDragState;
         if (!dragState || dragState.target !== target) {
+            const pendingObjects = Array.isArray(this.pendingSoftGroupFinalizeObjects)
+                ? this.pendingSoftGroupFinalizeObjects.filter(Boolean)
+                : [];
             this.softGroupDragState = null;
-            return;
+            this.pendingSoftGroupFinalizeObjects = null;
+            return pendingObjects;
         }
 
-        dragState.trackedObjects.forEach(item => {
-            item.obj.setCoords?.();
-        });
+        const trackedObjects = dragState.trackedObjects
+            .map(item => item?.obj)
+            .filter(Boolean);
         this.softGroupDragState = null;
+        this.pendingSoftGroupFinalizeObjects = null;
+        return trackedObjects;
     }
 
     beginSoftGroupMove(target, selectedObjects = this.resolveActionTargets(target, 'move')) {
@@ -1365,7 +1372,7 @@ class ContourApp {
 
         this.canvas.on('mouse:up', () => {
             this.stopPanning();
-            this.finalizeSoftGroupMove(this.canvas.getActiveObject());
+            this.pendingSoftGroupFinalizeObjects = this.finalizeSoftGroupMove(this.canvas.getActiveObject());
         });
 
         this.canvas.on('mouse:wheel', event => {
@@ -1413,18 +1420,7 @@ class ContourApp {
 
         this.canvas.on('object:modified', event => {
             const target = event.target;
-            this.finalizeSoftGroupMove(target);
-            const finalizedSelection = this.finalizeActiveSelectionTransform(target);
-            if (!finalizedSelection) {
-                this.syncObjectTextState(target);
-            }
-            this.canvas.requestRenderAll();
-            if (finalizedSelection || this.shouldAutosaveForObject(target)) {
-                this.scheduleWorkspaceSave();
-            }
-            this.syncPrimitiveControlsFromSelection();
-            this.syncTextControlsFromSelection();
-            this.updateStatusBar();
+            this.finalizePointerDrivenTransform(target);
         });
     }    
     bindUIButtonEvents() {
@@ -1955,6 +1951,96 @@ class ContourApp {
         obj.setCoords();
     }
 
+    getUniqueObjects(objects) {
+        const list = Array.isArray(objects) ? objects : (objects ? [objects] : []);
+        const unique = [];
+        const seen = new Set();
+
+        list.forEach(obj => {
+            if (!obj || seen.has(obj)) {
+                return;
+            }
+            seen.add(obj);
+            unique.push(obj);
+        });
+
+        return unique;
+    }
+
+    applySharedMoveInvariants(objects, {
+        rememberContourLastPosition = false,
+        syncFollowers = true
+    } = {}) {
+        const changedObjects = this.getUniqueObjects(objects);
+        if (!changedObjects.length) {
+            return [];
+        }
+
+        changedObjects.forEach(obj => {
+            this.syncObjectTextState(obj, { rememberContourLastPosition });
+        });
+
+        if (syncFollowers && this.actionExecutor?.collectFollowers && this.actionExecutor?.applyFollowerUpdates) {
+            const followerCtx = {
+                app: this,
+                actionName: 'pointer-finalize',
+                policy: this.interactionPolicy || window.InteractionPolicy || null
+            };
+            const followers = this.actionExecutor.collectFollowers(changedObjects, followerCtx, this);
+            this.actionExecutor.applyFollowerUpdates(followers, followerCtx.actionName, {}, followerCtx, this);
+        }
+
+        return changedObjects;
+    }
+
+    refreshCanvasMutationState({ scheduleWorkspaceSave = false } = {}) {
+        this.canvas.requestRenderAll();
+        this.updateButtons();
+        this.updateStatusBar();
+        this.syncPrimitiveControlsFromSelection();
+        this.syncTextControlsFromSelection();
+
+        if (scheduleWorkspaceSave) {
+            this.scheduleWorkspaceSave();
+        }
+    }
+
+    finalizePointerDrivenTransform(target) {
+        if (!target) {
+            this.refreshCanvasMutationState();
+            return false;
+        }
+
+        const softGroupObjects = this.finalizeSoftGroupMove(target);
+        if (target.type === 'activeSelection') {
+            const selectionObjects = target.getObjects().filter(Boolean);
+            if (!selectionObjects.length) {
+                this.refreshCanvasMutationState();
+                return false;
+            }
+
+            this.canvas.discardActiveObject();
+            this.applySharedMoveInvariants(
+                [...selectionObjects, ...softGroupObjects],
+                { rememberContourLastPosition: true }
+            );
+            this.restoreActiveSelection(selectionObjects, {
+                source: this.activeSelectionSource || 'programmatic'
+            });
+            this.refreshCanvasMutationState({ scheduleWorkspaceSave: true });
+            return true;
+        }
+
+        const changedObjects = this.getUniqueObjects([target, ...softGroupObjects]);
+        this.applySharedMoveInvariants(changedObjects, {
+            rememberContourLastPosition: true
+        });
+        this.refreshCanvasMutationState({
+            scheduleWorkspaceSave: changedObjects.some(obj => this.shouldAutosaveForObject(obj))
+        });
+        return changedObjects.length > 0;
+    }
+
     finalizeActiveSelectionTransform(target) {
         if (!target || target.type !== 'activeSelection') {
             return false;
@@ -1966,7 +2052,7 @@ class ContourApp {
         }
 
         this.canvas.discardActiveObject();
-        objects.forEach(obj => this.syncObjectTextState(obj, { rememberContourLastPosition: true }));
+        this.applySharedMoveInvariants(objects, { rememberContourLastPosition: true });
         this.restoreActiveSelection(objects, {
             source: this.activeSelectionSource || 'programmatic'
         });
