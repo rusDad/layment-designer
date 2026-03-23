@@ -20,6 +20,7 @@ class ContourApp {
         this.categoryLabels = {};
         this.currentCategory = null;
         this.catalogQuery = '';
+        this.catalogLoadError = null;
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
         this.isSyncingPrimitiveControls = false;
@@ -535,7 +536,27 @@ class ContourApp {
         this.canvas?.requestRenderAll();
     }
 
+
+    setBaseMaterialColor(colorKey) {
+        if (!Config.MATERIAL_COLORS[colorKey]) {
+            return false;
+        }
+
+        this.baseMaterialColor = colorKey;
+        this.applyMaterialColorToCutouts();
+        this.scheduleWorkspaceSave();
+        return true;
+    }
+
+    setLaymentThickness(value) {
+        const thickness = this.getValidLaymentThickness(value);
+        this.laymentThicknessMm = thickness;
+        this.scheduleWorkspaceSave();
+        return thickness;
+    }
+
     async loadAvailableContours() {
+        this.catalogLoadError = null;
         try {
             const resp = await fetch(Config.API.MANIFEST_URL);
             const data = await resp.json();
@@ -550,11 +571,9 @@ class ContourApp {
             this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
             this.availableCategories = this.buildCategories(this.availableArticleEntries);
             this.ensureValidCategory();
-            this.renderCatalogNav();
-            this.renderCatalogList();
         } catch (err) {
-                console.error('Ошибка загрузки manifest', err);
-                this.showOrderResultError(Config.MESSAGES.LOADING_ERROR);
+            console.error('Ошибка загрузки manifest', err);
+            this.catalogLoadError = Config.MESSAGES.LOADING_ERROR;
         }
     }
 
@@ -997,11 +1016,6 @@ class ContourApp {
     setupEventListeners() {
         this.bindGlobalPointerSafety();
         this.bindCanvasEvents();
-        this.bindUIButtonEvents();
-        this.bindInputEvents();
-        this.bindCatalogEvents();
-        this.bindStatusHintEvents();
-        this.bindCustomerModalEvents();
         this.bindKeyboardInteractionRuntime();
         this.bindKeyboardShortcuts();
         this.syncWorkspaceScaleInput();
@@ -1018,7 +1032,7 @@ class ContourApp {
     bindKeyboardShortcuts() {
         document.addEventListener('keydown', event => {
             const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
-            if (event.defaultPrevented || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
+            if (event.defaultPrevented || isModalOpen || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
                 return;
             }
 
@@ -1052,11 +1066,6 @@ class ContourApp {
                     }
                     break;
                 case 'Escape':
-                    if (!UIDom.customerModal?.overlay?.hidden) {
-                        event.preventDefault();
-                        this.closeCustomerModal();
-                        break;
-                    }
                     if (this.canvas.getActiveObject()) {
                         event.preventDefault();
                         this.canvas.discardActiveObject();
@@ -1102,191 +1111,7 @@ class ContourApp {
 
     bindCanvasEvents() {
         this.selectionPointerController?.bindCanvasEvents();
-    }    
-    bindUIButtonEvents() {
-        UIDom.buttons.delete.onclick = () => this.deleteSelected();
-        UIDom.buttons.rotate.onclick = () => this.rotateSelected();
-        UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
-        UIDom.buttons.toggleLock.onclick = () => this.toggleLockSelected();
-        if (UIDom.buttons.group) {
-            UIDom.buttons.group.onclick = () => this.groupSelected();
-        }
-        if (UIDom.buttons.ungroup) {
-            UIDom.buttons.ungroup.onclick = () => this.ungroupSelected();
-        }
-        UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
-        UIDom.buttons.loadWorkspace.onclick = async () => {
-            this.cancelAutosave();
-            const okManual = await this.loadWorkspaceFromStorage('manual');
-            if (!okManual) {
-                await this.loadWorkspaceFromStorage('autosave');
-            }
-        };
-
-        UIDom.buttons.preview3d.onclick = () => this.open3dPreview();
-        UIDom.buttons.export.onclick = () => this.openCustomerModal();
-
-        UIDom.buttons.check.onclick =
-            () => this.performWithScaleOne(() => {
-              const validation = this.contourManager.checkCollisionsAndHighlight();
-              if (validation.ok) {
-                const orderResult = UIDom.orderResult;
-                if (orderResult.container) {
-                    orderResult.container.hidden = false;
-                    orderResult.container.classList.remove('order-result-error');
-                    orderResult.container.classList.add('order-result-success');
-                    orderResult.message.textContent = Config.MESSAGES.VALID_LAYOUT;
-                    orderResult.details.hidden = true;
-                }
-                return;
-              }
-
-              this.showOrderResultError(this.formatLayoutIssuesMessage(validation.issues));
-            });
-
-
-        UIDom.buttons.addRect.addEventListener('click', () => {
-            const bbox = this.layment.getBoundingRect(true);
-            const centerX = bbox.left + (bbox.width / 2);
-            const centerY = bbox.top + (bbox.height / 2);
-            this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.buttons.addCircle.addEventListener('click', () => {
-            const bbox = this.layment.getBoundingRect(true);
-            const centerX = bbox.left + (bbox.width / 2);
-            const centerY = bbox.top + (bbox.height / 2);
-            this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.buttons.alignLeft.onclick = () => this.alignSelected('left');
-        UIDom.buttons.alignCenterX.onclick = () => this.alignSelected('center-x');
-        UIDom.buttons.alignRight.onclick = () => this.alignSelected('right');
-        UIDom.buttons.alignTop.onclick = () => this.alignSelected('top');
-        UIDom.buttons.alignCenterY.onclick = () => this.alignSelected('center-y');
-        UIDom.buttons.alignBottom.onclick = () => this.alignSelected('bottom');
-        UIDom.buttons.distributeHorizontalGaps.onclick = () => this.distributeSelected('horizontal-gaps');
-        UIDom.buttons.distributeVerticalGaps.onclick = () => this.distributeSelected('vertical-gaps');
-        UIDom.buttons.snapLeft.onclick = () => this.snapSelectedToSide('left');
-        UIDom.buttons.snapRight.onclick = () => this.snapSelectedToSide('right');
-        UIDom.buttons.snapTop.onclick = () => this.snapSelectedToSide('top');
-        UIDom.buttons.snapBottom.onclick = () => this.snapSelectedToSide('bottom');
     }
-    bindCustomerModalEvents() {
-        const modal = UIDom.customerModal;
-        if (!modal?.overlay) {
-            return;
-        }
-
-        const syncConfirmState = () => {
-            const isValid = Boolean(modal.nameInput?.value.trim()) && Boolean(modal.contactInput?.value.trim());
-            if (modal.confirmButton) {
-                modal.confirmButton.disabled = !isValid;
-            }
-            return isValid;
-        };
-
-        modal.nameInput?.addEventListener('input', () => {
-            this.clearCustomerModalFeedback();
-            syncConfirmState();
-        });
-        modal.contactInput?.addEventListener('input', () => {
-            this.clearCustomerModalFeedback();
-            syncConfirmState();
-        });
-
-        modal.cancelButton?.addEventListener('click', () => this.closeCustomerModal());
-
-        modal.overlay.addEventListener('click', event => {
-            if (event.target === modal.overlay) {
-                this.closeCustomerModal();
-            }
-        });
-
-        const onEnter = event => {
-            if (event.key !== 'Enter') {
-                return;
-            }
-            if (!syncConfirmState()) {
-                return;
-            }
-            event.preventDefault();
-            this.handleCustomerModalConfirm();
-        };
-
-        modal.nameInput?.addEventListener('keydown', onEnter);
-        modal.contactInput?.addEventListener('keydown', onEnter);
-
-        modal.confirmButton?.addEventListener('click', () => this.handleCustomerModalConfirm());
-    }
-
-    bindInputEvents() {
-        UIDom.inputs.laymentPreset.addEventListener('change', e => {
-            this.applyLaymentPreset(e.target.value);
-        });
-
-        UIDom.inputs.laymentWidth.addEventListener('change', e => {
-            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
-            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
-            e.target.value = v;
-            UIDom.inputs.laymentPreset.value = 'CUSTOM';
-            this.updateLaymentSize(v, this.layment.height);
-        });
-
-        UIDom.inputs.laymentHeight.addEventListener('change', e => {
-            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
-            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
-            e.target.value = v;
-            UIDom.inputs.laymentPreset.value = 'CUSTOM';
-            this.updateLaymentSize(this.layment.width, v);
-        });
-
-        UIDom.inputs.baseMaterialColor?.addEventListener('change', e => {
-            const selectedColor = e.target.value;
-            if (!Config.MATERIAL_COLORS[selectedColor]) {
-                e.target.value = this.baseMaterialColor;
-                return;
-            }
-
-            this.baseMaterialColor = selectedColor;
-            this.applyMaterialColorToCutouts();
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.inputs.laymentThicknessMm?.addEventListener('change', e => {
-            const thickness = this.getValidLaymentThickness(e.target.value);
-            e.target.value = String(thickness);
-            this.laymentThicknessMm = thickness;
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.inputs.workspaceScale.addEventListener('change', e => {
-            const percent = parseFloat(e.target.value);
-            const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
-            const maxPercent = Math.round(Config.WORKSPACE_SCALE.MAX * 100);
-            if (Number.isFinite(percent) && percent >= minPercent && percent <= maxPercent) {
-                this.updateWorkspaceScale(percent / 100);
-                this.syncWorkspaceScaleInput();
-            } else {
-                this.syncWorkspaceScaleInput();
-            }
-        });
-        UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
-        UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
-        UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
-
-        UIDom.texts.value?.addEventListener('input', event => this.applyTextValueFromInput(event.target.value));
-        UIDom.texts.fontSize?.addEventListener('change', event => this.applyTextFontSizeFromInput(event.target.value));
-        UIDom.texts.angle?.addEventListener('change', event => this.applyTextAngleFromInput(event.target.value));
-        UIDom.texts.addFreeBtn?.addEventListener('click', () => this.addFreeTextForSelection());
-        UIDom.texts.addAttachedBtn?.addEventListener('click', () => this.addAttachedTextForSelection());
-        UIDom.texts.attachBtn?.addEventListener('click', () => this.attachSelectedTextToSelectionContour());
-        UIDom.texts.detachBtn?.addEventListener('click', () => this.detachSelectedText());
-        UIDom.texts.deleteBtn?.addEventListener('click', () => this.deleteSelectedText());
-    }
-
 
     syncWorkspaceScaleInput() {
         if (!UIDom.inputs.workspaceScale) {
@@ -1295,44 +1120,6 @@ class ContourApp {
         UIDom.inputs.workspaceScale.value = Math.round(this.workspaceScale * 100);
     }
 
-    bindStatusHintEvents() {
-        const statusHint = UIDom.status.hint;
-        if (!statusHint) {
-            return;
-        }
-
-        document.querySelectorAll('[data-hint]').forEach(element => {
-            const showHint = () => {
-                statusHint.textContent = element.dataset.hint || '';
-            };
-            const clearHint = () => {
-                statusHint.textContent = '';
-            };
-
-            element.addEventListener('mouseenter', showHint);
-            element.addEventListener('focus', showHint);
-            element.addEventListener('mouseleave', clearHint);
-            element.addEventListener('blur', clearHint);
-        });
-    }
-
-    bindCatalogEvents() {
-        UIDom.catalog.breadcrumbAll.addEventListener('click', () => {
-            this.setCurrentCategory(null);
-        });
-
-        UIDom.catalog.categorySelect.addEventListener('change', event => {
-            const value = event.target.value;
-            this.setCurrentCategory(value || null);
-        });
-
-        UIDom.catalog.searchInput.addEventListener('input', event => {
-            this.catalogQuery = event.target.value || '';
-            this.renderCatalogList();
-        });
-    }
-
-   
     withViewportReset(callback) {
         const saved = this.canvas.viewportTransform?.slice?.() || [1, 0, 0, 1, 0, 0];
         this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -2077,14 +1864,14 @@ class ContourApp {
         this.finalizeTextMutation(null);
     }
 
-    async applyPrimitiveDimensionsFromInputs() {
+    async applyPrimitiveDimensions(payload = {}) {
         if (this.isSyncingPrimitiveControls) {
-            return;
+            return false;
         }
 
         const primitive = this.getSingleSelectedPrimitive();
         if (!primitive) {
-            return;
+            return false;
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
@@ -2092,19 +1879,19 @@ class ContourApp {
         let applied = false;
 
         if (dimensions.type === 'rect') {
-            const width = parseInt(UIDom.inputs.primitiveWidth.value, 10);
-            const height = parseInt(UIDom.inputs.primitiveHeight.value, 10);
+            const width = parseInt(payload.width, 10);
+            const height = parseInt(payload.height, 10);
             if (!Number.isFinite(width) || !Number.isFinite(height)) {
-                return;
+                return false;
             }
             applied = await this.actionExecutor?.executeAction?.('primitiveDimensionUpdate', {
                 primitive,
                 dimensions: { width, height }
             }, this);
         } else if (dimensions.type === 'circle') {
-            const radius = parseInt(UIDom.inputs.primitiveRadius.value, 10);
+            const radius = parseInt(payload.radius, 10);
             if (!Number.isFinite(radius)) {
-                return;
+                return false;
             }
             applied = await this.actionExecutor?.executeAction?.('primitiveDimensionUpdate', {
                 primitive,
@@ -2112,7 +1899,15 @@ class ContourApp {
             }, this);
         }
 
-        this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied: Boolean(applied), shouldScheduleWorkspaceSave: false });
+        return this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied: Boolean(applied), shouldScheduleWorkspaceSave: false });
+    }
+
+    async applyPrimitiveDimensionsFromInputs() {
+        return await this.applyPrimitiveDimensions({
+            width: UIDom.inputs.primitiveWidth.value,
+            height: UIDom.inputs.primitiveHeight.value,
+            radius: UIDom.inputs.primitiveRadius.value
+        });
     }
 
     //  подписка на события для статус-бара
@@ -2184,220 +1979,43 @@ class ContourApp {
         return label ? label.trim() || raw : raw;
     }
 
-    setCurrentCategory(category) {
-        this.currentCategory = category;
-        this.renderCatalogNav();
-        this.renderCatalogList();
-    }
-
     ensureValidCategory() {
         if (this.currentCategory && !this.availableCategories.includes(this.currentCategory)) {
             this.currentCategory = null;
         }
     }
 
-    renderCatalogNav() {
-        const hasCategory = !!this.currentCategory;
-        UIDom.catalog.breadcrumbSeparator.style.display = hasCategory ? 'inline' : 'none';
-        UIDom.catalog.breadcrumbCurrent.style.display = hasCategory ? 'inline' : 'none';
-        UIDom.catalog.breadcrumbCurrent.textContent = hasCategory ? this.currentCategory : '';
-
-        UIDom.catalog.categorySelect.innerHTML = '';
-        const allOption = document.createElement('option');
-        allOption.value = '';
-        allOption.textContent = 'Все категории';
-        UIDom.catalog.categorySelect.appendChild(allOption);
-
-        this.availableCategories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category;
-            UIDom.catalog.categorySelect.appendChild(option);
-        });
-
-        UIDom.catalog.categorySelect.value = this.currentCategory || '';
+    setCatalogFilters({ category = this.currentCategory, query = this.catalogQuery } = {}) {
+        this.currentCategory = category && this.availableCategories.includes(category) ? category : null;
+        this.catalogQuery = typeof query === 'string' ? query : '';
+        return this.getCatalogState();
     }
 
-    renderCatalogList() {
-        const list = UIDom.panels.catalogList;
-        list.innerHTML = '';
-
-        if (!this.availableArticleEntries.length) {
-            return;
-        }
-
-        const hasQuery = Boolean(this.catalogQuery.trim());
-
-        if (!this.currentCategory) {
-            if (!hasQuery) {
-                this.renderFolderRows(list, this.availableCategories);
-                return;
-            }
-
-            const items = this.availableArticleEntries.filter(item => this.matchesItemQuery(item));
-            this.renderItemRows(list, items, { showCategoryLabel: true });
-            return;
-        }
-
-        const items = this.availableArticleEntries
-            .filter(item => this.getCategoryLabel(item) === this.currentCategory)
-            .filter(item => this.matchesItemQuery(item));
-        this.renderItemRows(list, items);
+    getCatalogState() {
+        return {
+            currentCategory: this.currentCategory,
+            query: this.catalogQuery || '',
+            categories: [...this.availableCategories],
+            loadError: this.catalogLoadError,
+            items: this.availableArticleEntries.map(entry => ({
+                article: entry.article,
+                name: entry.name,
+                category: this.getCategoryLabel(entry),
+                variants: (entry.variants || []).map(variant => ({
+                    id: variant.id,
+                    article: variant.article,
+                    name: variant.name,
+                    poseKey: variant.poseKey || null,
+                    poseLabel: variant.poseLabel || null,
+                    assets: variant.assets || {}
+                }))
+            }))
+        };
     }
 
-    matchesItemQuery(item) {
-        const query = this.catalogQuery.trim().toLowerCase();
-        if (!query) {
-            return true;
-        }
-
-        const variants = Array.isArray(item.variants) ? item.variants : [item];
-        const fields = [
-            item.article,
-            item.name,
-            ...variants.map(variant => variant?.poseLabel),
-            ...variants.map(variant => variant?.poseKey),
-            ...variants.map(variant => variant?.name)
-        ]
-            .filter(Boolean)
-            .map(value => String(value).toLowerCase());
-        return fields.some(value => value.includes(query));
-    }
-
-    renderFolderRows(list, categories) {
-        if (!categories.length) {
-            const empty = document.createElement('div');
-            empty.className = 'catalog-row';
-            empty.textContent = 'Категории не найдены';
-            list.appendChild(empty);
-            return;
-        }
-
-        categories.forEach(category => {
-            const row = document.createElement('div');
-            row.className = 'catalog-row';
-            row.addEventListener('click', () => this.setCurrentCategory(category));
-
-            const icon = document.createElement('span');
-            icon.className = 'catalog-folder-icon';
-            icon.textContent = '📁';
-
-            const name = document.createElement('span');
-            name.className = 'catalog-folder-name';
-            name.textContent = category;
-
-            row.appendChild(icon);
-            row.appendChild(name);
-            list.appendChild(row);
-        });
-    }
-
-    renderItemRows(list, items, options = {}) {
-        const { showCategoryLabel = false } = options;
-
-        if (!items.length) {
-            const empty = document.createElement('div');
-            empty.className = 'catalog-row';
-            empty.textContent = 'Контуры не найдены';
-            list.appendChild(empty);
-            return;
-        }
-
-        items.forEach(entry => {
-            const selectedVariant = entry.variants[0];
-            const row = document.createElement('div');
-            row.className = 'catalog-row';
-
-            const previewWrapper = this.createPreviewElement(selectedVariant);
-
-            const meta = document.createElement('div');
-            meta.className = 'catalog-item-meta';
-
-            const article = document.createElement('div');
-            article.className = 'catalog-item-article';
-            article.textContent = entry.article || '';
-
-            const name = document.createElement('div');
-            name.className = 'catalog-item-name';
-            name.textContent = entry.name || selectedVariant?.name || '';
-
-            meta.appendChild(article);
-            meta.appendChild(name);
-
-            if (entry.variants.length > 1) {
-                const variantSelect = document.createElement('select');
-                variantSelect.className = 'catalog-variant-select';
-                entry.variants.forEach((variant, index) => {
-                    const option = document.createElement('option');
-                    option.value = String(index);
-                    option.textContent = this.getVariantDisplayLabel(variant);
-                    variantSelect.appendChild(option);
-                });
-                variantSelect.addEventListener('click', event => event.stopPropagation());
-                variantSelect.addEventListener('change', event => {
-                    const variant = entry.variants[Number(event.target.value)] || entry.variants[0];
-                    row.dataset.selectedVariantIndex = event.target.value;
-                    name.textContent = variant?.name || entry.name || '';
-                });
-                meta.appendChild(variantSelect);
-            }
-
-            if (showCategoryLabel) {
-                const category = this.getCategoryLabel(entry);
-                if (category) {
-                    const categoryLabel = document.createElement('div');
-                    categoryLabel.className = 'catalog-item-article';
-                    categoryLabel.textContent = category;
-                    meta.appendChild(categoryLabel);
-                }
-            }
-
-            const addButton = document.createElement('button');
-            addButton.type = 'button';
-            addButton.className = 'catalog-add-button';
-            addButton.textContent = '+';
-            addButton.addEventListener('click', event => {
-                event.stopPropagation();
-                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
-                const variant = entry.variants[variantIndex] || entry.variants[0];
-                this.addContour(variant);
-            });
-
-            row.addEventListener('click', () => {
-                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
-                const variant = entry.variants[variantIndex] || entry.variants[0];
-                this.addContour(variant);
-            });
-
-            row.appendChild(previewWrapper);
-            row.appendChild(meta);
-            row.appendChild(addButton);
-            list.appendChild(row);
-        });
-    }
-
-    createPreviewElement(item) {
-        const previewAsset = item.assets?.preview;
-        if (previewAsset) {
-            const img = document.createElement('img');
-            img.className = 'catalog-item-preview';
-            img.alt = item.name || '';
-            img.loading = 'lazy';
-            img.src = `/contours/${previewAsset}`;
-            img.onerror = () => {
-                const placeholder = this.createPreviewPlaceholder();
-                img.replaceWith(placeholder);
-            };
-            return img;
-        }
-        return this.createPreviewPlaceholder();
-    }
-
-    createPreviewPlaceholder() {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'catalog-preview-placeholder';
-        placeholder.textContent = 'Нет превью';
-        return placeholder;
+    setCurrentCategory(category) {
+        this.currentCategory = category && this.availableCategories.includes(category) ? category : null;
+        return this.currentCategory;
     }
 
     // обновление строки состояния
@@ -3191,141 +2809,38 @@ class ContourApp {
         return { width, height, thickness, colorLabel, composition };
     }
 
-    renderCustomerModalSummary() {
-        const modal = UIDom.customerModal;
-        if (!modal?.summaryMeta || !modal.summaryComposition || !modal.summaryEmpty) {
-            return;
+    async submitOrder(customer) {
+        const normalizedCustomer = {
+            name: (customer?.name || '').trim().replace(/\s+/g, ' '),
+            contact: (customer?.contact || '').trim().replace(/[^0-9A-Za-zА-Яа-яЁё+@.-]/g, '')
+        };
+
+        if (!normalizedCustomer.name || !normalizedCustomer.contact) {
+            return {
+                ok: false,
+                message: 'Заполните имя и контакт, чтобы создать заказ.'
+            };
         }
 
-        const summary = this.buildCustomerModalSummaryData();
-        modal.summaryMeta.innerHTML = `
-            <div><strong>Размер:</strong> ${summary.width} × ${summary.height} мм</div>
-            <div><strong>Толщина:</strong> ${summary.thickness} мм</div>
-            <div><strong>Цвет:</strong> ${summary.colorLabel}</div>
-        `;
-
-        modal.summaryComposition.innerHTML = '';
-        if (!summary.composition.length) {
-            modal.summaryEmpty.hidden = false;
-            return;
-        }
-
-        modal.summaryEmpty.hidden = true;
-        for (const item of summary.composition) {
-            const li = document.createElement('li');
-            const suffix = item.name ? ` — ${item.name}` : '';
-            li.textContent = `${item.article}${suffix} × ${item.count}`;
-            modal.summaryComposition.appendChild(li);
-        }
-    }
-
-    openCustomerModal() {
-        const modal = UIDom.customerModal;
-        if (!modal?.overlay) {
-            return;
-        }
-        modal.overlay.hidden = false;
-        this.clearCustomerModalFeedback();
-        this.renderCustomerModalSummary();
-        if (modal.confirmButton) {
-            modal.confirmButton.disabled = !(modal.nameInput?.value.trim() && modal.contactInput?.value.trim());
-        }
-        modal.nameInput?.focus();
-    }
-
-    closeCustomerModal() {
-        const modal = UIDom.customerModal;
-        if (!modal?.overlay) {
-            return;
-        }
-        modal.overlay.hidden = true;
-        this.clearCustomerModalFeedback();
-    }
-
-    setCustomerModalFeedback(message) {
-        const modal = UIDom.customerModal;
-        if (!modal?.feedback) {
-            return;
-        }
-        modal.feedback.hidden = false;
-        modal.feedback.textContent = message;
-    }
-
-    clearCustomerModalFeedback() {
-        const modal = UIDom.customerModal;
-        if (!modal?.feedback) {
-            return;
-        }
-        modal.feedback.hidden = true;
-        modal.feedback.textContent = '';
-    }
-
-    getSanitizedCustomerFromModal() {
-        const modal = UIDom.customerModal;
-        const name = (modal?.nameInput?.value || '').trim().replace(/\s+/g, ' ');
-        const rawContact = (modal?.contactInput?.value || '').trim();
-        const contact = rawContact.replace(/[^0-9A-Za-zА-Яа-яЁё+@.-]/g, '');
-
-        return { name, contact };
-    }
-
-    async handleCustomerModalConfirm() {
-        const customer = this.getSanitizedCustomerFromModal();
-        if (!customer.name || !customer.contact) {
-            this.setCustomerModalFeedback('Заполните имя и контакт, чтобы создать заказ.');
-            return;
-        }
-
-        this.pendingCustomer = customer;
-        this.closeCustomerModal();
-
-        await this.withExportCooldown(() => this.performWithScaleOne(() => this.exportData()));
-    }
-
-    async withExportCooldown(action) {
-        if (this.exportInProgress) {
-            return;
-        }
-
-        const exportButton = UIDom.buttons.export;
-        this.exportInProgress = true;
-        const startedAt = Date.now();
-        exportButton.disabled = true;
-        exportButton.textContent = 'Создаём заказ…';
-        this.showOrderResultLoading();
+        this.pendingCustomer = normalizedCustomer;
 
         try {
-            await action();
-        } finally {
-            const elapsed = Date.now() - startedAt;
-            const waitMs = Math.max(0, this.exportCooldownMs - elapsed);
-            if (waitMs > 0) {
-                await new Promise(resolve => setTimeout(resolve, waitMs));
+            const validation = await this.validateLayoutCommand();
+            if (!validation.ok) {
+                return {
+                    ok: false,
+                    message: validation.message
+                };
             }
-            exportButton.disabled = false;
-            exportButton.textContent = this.exportButtonDefaultText;
-            this.exportInProgress = false;
-        }
-    }
 
-    async exportData() {
+            const data = this.buildExportPayload({
+                includePreview: true,
+                includeWorkspaceSnapshot: true,
+                customer: normalizedCustomer
+            });
+            const realWidth = data.orderMeta.width;
+            const realHeight = data.orderMeta.height;
 
-        const validation = await this.validateLayoutCommand();
-        if (!validation.ok) {
-            this.showOrderResultError(validation.message);
-            return;
-        }
-
-        const data = this.buildExportPayload({
-            includePreview: true,
-            includeWorkspaceSnapshot: true
-        });
-        const realWidth = data.orderMeta.width;
-        const realHeight = data.orderMeta.height;
-
-        console.log('Заказ:', data);
-
-        try {
             const response = await fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3342,7 +2857,8 @@ class ContourApp {
             const orderNumber = result?.orderNumber || '—';
             const statusUrl = `status.html?orderId=${encodeURIComponent(orderId)}`;
 
-            this.showOrderResultSuccess({
+            return {
+                ok: true,
                 orderId,
                 orderNumber,
                 paymentUrl: statusUrl,
@@ -3350,10 +2866,13 @@ class ContourApp {
                 height: realHeight,
                 laymentThicknessMm: result?.pricePreview?.laymentThicknessMm ?? 35,
                 total: result?.pricePreview?.total ?? '—'
-            });
+            };
         } catch (err) {
             console.error(err);
-            this.showOrderResultError('Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || ''));
+            return {
+                ok: false,
+                message: 'Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || '')
+            };
         } finally {
             this.pendingCustomer = null;
         }
@@ -3405,11 +2924,3 @@ class ContourApp {
 
 window.ContourApp = ContourApp;
 window.EditorFacade?.registerEditorFactory?.((options) => new ContourApp(options));
-
-document.addEventListener('DOMContentLoaded', () => {
-    if (window.EditorFacade?.initEditor) {
-        window.EditorFacade.initEditor();
-        return;
-    }
-    new ContourApp();
-});

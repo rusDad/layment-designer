@@ -54,9 +54,33 @@
         moveSelection: (payload = {}) => getApp('moveSelectionCommand').moveSelectionCommand(payload),
         rotateSelection: () => getApp('rotateSelectionCommand').rotateSelectionCommand(),
         deleteSelection: () => getApp('deleteSelectionCommand').deleteSelectionCommand(),
+        duplicateSelection: async () => (await getApp('duplicateSelected').duplicateSelected(), queries.selection()),
+        toggleLockSelection: () => (getApp('toggleLockSelected').toggleLockSelected(), queries.selection()),
         groupSelection: () => getApp('groupSelectionCommand').groupSelectionCommand(),
         ungroupSelection: () => getApp('ungroupSelectionCommand').ungroupSelectionCommand(),
+        alignSelection: (mode) => (getApp('alignSelected').alignSelected(mode), queries.selection()),
+        distributeSelection: (mode) => (getApp('distributeSelected').distributeSelected(mode), queries.selection()),
+        snapSelection: (side) => (getApp('snapSelectedToSide').snapSelectedToSide(side), queries.selection()),
+        saveWorkspace: async (mode = 'autosave') => await getApp('saveWorkspace').saveWorkspace(mode),
+        loadWorkspaceFromStorage: async (mode = 'autosave') => await getApp('loadWorkspaceFromStorage').loadWorkspaceFromStorage(mode),
+        applyLaymentPreset: (presetName) => getApp('applyLaymentPreset').applyLaymentPreset(presetName),
+        updateLaymentSize: ({ width, height }) => getApp('updateLaymentSize').updateLaymentSize(width, height),
+        setBaseMaterialColor: (colorKey) => getApp('setBaseMaterialColor').setBaseMaterialColor(colorKey),
+        setLaymentThickness: (thicknessMm) => getApp('setLaymentThickness').setLaymentThickness(thicknessMm),
+        setWorkspaceScale: (scale) => getApp('updateWorkspaceScale').updateWorkspaceScale(scale),
+        updatePrimitiveDimensions: async (payload = {}) => await getApp('applyPrimitiveDimensions').applyPrimitiveDimensions(payload),
+        updateTextValue: (value) => getApp('applyTextValueFromInput').applyTextValueFromInput(value),
+        updateTextFontSize: (value) => getApp('applyTextFontSizeFromInput').applyTextFontSizeFromInput(value),
+        updateTextAngle: (value) => getApp('applyTextAngleFromInput').applyTextAngleFromInput(value),
+        addFreeText: (payload = {}) => getApp('addTextCommand').addTextCommand({ ...payload, kind: 'free', role: payload.role || 'user-text' }),
+        addAttachedText: (payload = {}) => getApp('addTextCommand').addTextCommand({ ...payload, kind: 'attached', role: payload.role || 'user-text' }),
+        attachSelectedText: () => getApp('attachSelectedTextToSelectionContour').attachSelectedTextToSelectionContour(),
+        detachSelectedText: () => getApp('detachSelectedText').detachSelectedText(),
+        deleteSelectedText: () => getApp('deleteSelectedText').deleteSelectedText(),
         validateLayout: async () => (await getApp('validateLayoutCommand').validateLayoutCommand()),
+        open3dPreview: () => getApp('open3dPreview').open3dPreview(),
+        submitOrder: async (customer) => await getApp('submitOrder').submitOrder(customer),
+        setCatalogFilters: (payload = {}) => getApp('setCatalogFilters').setCatalogFilters(payload),
         loadWorkspace: async (data) => {
             await getApp('loadWorkspace').loadWorkspace(data);
             return await queries.workspace({ includeEditorState: true });
@@ -68,7 +92,9 @@
         document: () => getApp('getDocumentState').getDocumentState(),
         workspace: async (options = {}) => (await getApp('getWorkspaceState').getWorkspaceState(options)),
         export: async (options = {}) => (await getApp('getExportState').getExportState(options)),
-        validation: async () => (await getApp('validateLayoutCommand').validateLayoutCommand())
+        validation: async () => (await getApp('validateLayoutCommand').validateLayoutCommand()),
+        catalog: () => getApp('getCatalogState').getCatalogState(),
+        orderSummary: () => getApp('buildCustomerModalSummaryData').buildCustomerModalSummaryData()
     };
 
     const api = {
