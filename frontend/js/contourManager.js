@@ -18,8 +18,6 @@ class ContourManager {
         this.metadataMap = new WeakMap();
         this.allowedAngles = Config.GEOMETRY.ALLOWED_ANGLES;
         this.nextPlacementSeq = 1;
-        
-        fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);   //Отдельный конфиг для группы 
     }
 
     async addContour(svgUrl, position, metadata) {

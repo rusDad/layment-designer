@@ -26,6 +26,7 @@
    - флаги Fabric (`selectable`, `evented`, `lockMovementX/Y`, `lockRotation`, ...)
      рассматриваются как **низкоуровневая проекция** semantic-state на runtime-объект;
    - флаги не являются business-source-of-truth сами по себе.
+   - проекция применяется из runtime/app setup и object-level sync-path, а не через скрытые module side effects.
 
 Итого: канон — это **metadata + policy**, а Fabric flags — исполняющий механизм.
 
@@ -131,7 +132,7 @@ Fabric lock-флаги (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, ...
 - `applyInteractionState(obj)` читает `objectMeta.isLocked`;
 - при locked-состоянии объект остаётся `selectable/evented`, чтобы не ломать selection + delete;
 - при этом low-level Fabric flags переводятся в mechanical-lock режим (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, `hasControls=false`);
-- при unlocked-состоянии эти флаги возвращаются к базовой конфигурации конкретного объекта.
+- при unlocked-состоянии эти флаги возвращаются к базовой конфигурации конкретного объекта по его semantic role (`contour` / `primitive` / `text`), без записи mechanical snapshot обратно в metadata.
 
 Итого по lock-модели: **semantic lock (policy) -> mechanical lock (Fabric flags)**.
 
@@ -186,6 +187,7 @@ Fabric может временно собрать text в `ActiveSelection` во
 - controls / rotate-handle / scale-handles всегда скрыты;
 - поздняя runtime-синхронизация не должна снова включать handles у `ActiveSelection`;
 - single-object controls продолжают жить по обычной object-level конфигурации.
+- базовая конфигурация `ActiveSelection` должна настраиваться явно в runtime/app setup, а не как скрытый side effect загрузки geometry-модуля.
 
 ---
 

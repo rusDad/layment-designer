@@ -56,6 +56,7 @@ class ContourApp {
 
     async init() {
         this.initializeCanvas();
+        this.configureFabricRuntime();
         this.initializeServices();
         this.createLayment();
         this.initializeMaterialColor();
@@ -101,6 +102,14 @@ class ContourApp {
 
         window.addEventListener('resize', resizeCanvas);
         requestAnimationFrame(resizeCanvas);
+    }
+
+    configureFabricRuntime() {
+        if (!fabric?.ActiveSelection?.prototype?.set) {
+            return;
+        }
+
+        fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);
     }
 
     getViewportSize() {
