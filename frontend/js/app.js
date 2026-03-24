@@ -1,7 +1,5 @@
 // app.js
 
-const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v2';
-const WORKSPACE_MANUAL_KEY = 'laymentDesigner.workspace.v2.manual';
 const AUTOSAVE_DEBOUNCE_MS = 5000;
 const VIEWPORT_RESIZE_FIT_DEBOUNCE_MS = 120;
 
@@ -59,7 +57,6 @@ class ContourApp {
         this.syncPrimitiveControlsFromSelection();
         this.syncTextControlsFromSelection();
         this.fitToLayment();
-        await this.loadWorkspaceFromStorage();
         this.emitEditorCallback('onReady', { document: this.getDocumentState() });
         return this;
     }
@@ -2121,7 +2118,7 @@ class ContourApp {
         this.cancelAutosave();
         this.autosaveTimer = setTimeout(() => {
             this.autosaveTimer = null;
-            this.saveWorkspace('autosave');
+            this.emitEditorCallback('onAutosaveRequested', { mode: 'autosave' });
         }, AUTOSAVE_DEBOUNCE_MS);
     }
 
@@ -2286,47 +2283,6 @@ class ContourApp {
         return await this.performWithScaleOne(() => this.buildExportPayload(options));
     }
 
-    async saveWorkspace(mode = 'autosave') {
-        const key = mode === 'manual' ? WORKSPACE_MANUAL_KEY : WORKSPACE_STORAGE_KEY;
-        try {
-            await this.performWithScaleOne(() => {
-                const payload = this.buildWorkspaceSnapshot();
-                localStorage.setItem(key, JSON.stringify(payload));
-            });
-        } catch (err) {
-            console.error('Ошибка сохранения workspace', err);
-        }
-    }
-
-    async loadWorkspaceFromStorage(mode = 'autosave') {
-        this.cancelAutosave();
-        const key = mode === 'manual' ? WORKSPACE_MANUAL_KEY : WORKSPACE_STORAGE_KEY;
-        const raw = localStorage.getItem(key);
-        if (!raw) {
-            return false;
-        }
-
-        let data;
-        try {
-            data = JSON.parse(raw);
-        } catch (err) {
-            console.error('Ошибка чтения workspace', err);
-            return false;
-        }
-
-        if (data.schemaVersion !== 3 && data.schemaVersion !== 4) {
-            console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
-            return false;
-        }
-
-        try {
-            await this.loadWorkspace(data);
-            return true;
-        } finally {
-            this.fitToLayment();
-        }
-    }
-
     async loadWorkspace(data) {
         this.cancelAutosave();
         this.isRestoringWorkspace = true;
@@ -2489,6 +2445,7 @@ class ContourApp {
         } finally {
             this.isRestoringWorkspace = false;
         }
+        this.fitToLayment();
         this.syncWorkspaceScaleInput();
     }
 

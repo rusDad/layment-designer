@@ -7,7 +7,7 @@
         return next;
     }
 
-    function createControlsShell({ editorFacade, uiDom, feedback }) {
+    function createControlsShell({ editorFacade, workspaceShell, uiDom, feedback }) {
         async function bindToolbarActions() {
             uiDom.buttons.delete.onclick = () => editorFacade.commands.deleteSelection();
             uiDom.buttons.rotate.onclick = () => editorFacade.commands.rotateSelection();
@@ -16,11 +16,18 @@
             uiDom.buttons.group && (uiDom.buttons.group.onclick = () => editorFacade.commands.groupSelection());
             uiDom.buttons.ungroup && (uiDom.buttons.ungroup.onclick = () => editorFacade.commands.ungroupSelection());
 
-            uiDom.buttons.saveWorkspace.onclick = () => editorFacade.commands.saveWorkspace('manual');
+            uiDom.buttons.saveWorkspace.onclick = async () => {
+                try {
+                    await workspaceShell.saveWorkspaceToStorage('manual');
+                } catch (error) {
+                    console.error('Ошибка сохранения workspace', error);
+                }
+            };
             uiDom.buttons.loadWorkspace.onclick = async () => {
-                const restoredManual = await editorFacade.commands.loadWorkspaceFromStorage('manual');
-                if (!restoredManual) {
-                    await editorFacade.commands.loadWorkspaceFromStorage('autosave');
+                try {
+                    await workspaceShell.restoreAutosave();
+                } catch (error) {
+                    console.error('Ошибка загрузки workspace', error);
                 }
             };
 
