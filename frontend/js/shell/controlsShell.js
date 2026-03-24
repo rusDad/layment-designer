@@ -75,6 +75,29 @@
             if (buttons.snapBottom) buttons.snapBottom.disabled = snapDisabled;
         }
 
+        function renderLaymentSettings(state = null) {
+            const settings = state || editorFacade.queries.laymentSettings?.();
+            if (!settings) {
+                return;
+            }
+
+            if (uiDom.inputs?.laymentPreset) {
+                uiDom.inputs.laymentPreset.value = settings.preset;
+            }
+            if (uiDom.inputs?.laymentWidth) {
+                uiDom.inputs.laymentWidth.value = String(settings.width);
+            }
+            if (uiDom.inputs?.laymentHeight) {
+                uiDom.inputs.laymentHeight.value = String(settings.height);
+            }
+            if (uiDom.inputs?.baseMaterialColor) {
+                uiDom.inputs.baseMaterialColor.value = settings.baseMaterialColor;
+            }
+            if (uiDom.inputs?.laymentThicknessMm) {
+                uiDom.inputs.laymentThicknessMm.value = String(settings.laymentThicknessMm);
+            }
+        }
+
         function renderPrimitiveInspector() {
             const state = editorFacade.queries.primitiveInspectorState?.() || { mode: 'empty', primitive: null, limits: {} };
             const controls = uiDom.panels?.primitiveControls;
@@ -270,31 +293,25 @@
             });
 
             uiDom.inputs.laymentWidth?.addEventListener('change', event => {
-                const doc = editorFacade.queries.document();
                 const width = clampLaymentSize(event.target.value, Config.LAYMENT_DEFAULT_WIDTH);
-                event.target.value = String(width);
-                uiDom.inputs.laymentPreset.value = 'CUSTOM';
-                editorFacade.commands.updateLaymentSize({ width, height: doc.height || Config.LAYMENT_DEFAULT_HEIGHT });
+                const settings = editorFacade.queries.laymentSettings?.();
+                const height = settings?.height || Config.LAYMENT_DEFAULT_HEIGHT;
+                editorFacade.commands.updateLaymentSize({ width, height });
             });
 
             uiDom.inputs.laymentHeight?.addEventListener('change', event => {
-                const doc = editorFacade.queries.document();
                 const height = clampLaymentSize(event.target.value, Config.LAYMENT_DEFAULT_HEIGHT);
-                event.target.value = String(height);
-                uiDom.inputs.laymentPreset.value = 'CUSTOM';
-                editorFacade.commands.updateLaymentSize({ width: doc.width || Config.LAYMENT_DEFAULT_WIDTH, height });
+                const settings = editorFacade.queries.laymentSettings?.();
+                const width = settings?.width || Config.LAYMENT_DEFAULT_WIDTH;
+                editorFacade.commands.updateLaymentSize({ width, height });
             });
 
             uiDom.inputs.baseMaterialColor?.addEventListener('change', event => {
-                const applied = editorFacade.commands.setBaseMaterialColor(event.target.value);
-                if (!applied) {
-                    event.target.value = editorFacade.queries.document().baseMaterialColor;
-                }
+                editorFacade.commands.setBaseMaterialColor(event.target.value);
             });
 
             uiDom.inputs.laymentThicknessMm?.addEventListener('change', event => {
-                const thickness = editorFacade.commands.setLaymentThickness(event.target.value);
-                event.target.value = String(thickness);
+                editorFacade.commands.setLaymentThickness(event.target.value);
             });
 
             uiDom.inputs.workspaceScale?.addEventListener('change', event => {
@@ -355,10 +372,12 @@
         function bindControlsState() {
             document.addEventListener(CONTROLS_STATE_REFRESH_EVENT, event => {
                 applyControlsState(event.detail?.controlsState);
+                renderLaymentSettings();
                 renderPrimitiveInspector();
                 renderTextInspector();
             });
             applyControlsState(editorFacade.queries.controlsState?.());
+            renderLaymentSettings();
             renderPrimitiveInspector();
             renderTextInspector();
         }
@@ -372,6 +391,7 @@
                 bindStatusBar();
             },
             applyControlsState,
+            renderLaymentSettings,
             renderPrimitiveInspector,
             renderTextInspector,
             refreshStatusBar: renderStatusBar,
