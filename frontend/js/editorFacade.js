@@ -78,7 +78,7 @@
         deleteSelectedText: () => getApp('deleteSelectedText').deleteSelectedText(),
         validateLayout: async () => (await getApp('validateLayoutCommand').validateLayoutCommand()),
         validateForOrder: async () => (await getApp('validateForOrder').validateForOrder()),
-        get3dPreviewPayload: () => getApp('build3dPreviewPayload').build3dPreviewPayload(),
+        build3dPreviewPayload: () => getApp('build3dPreviewPayload').build3dPreviewPayload(),
         buildOrderRequest: async (customer) => await getApp('buildOrderRequest').buildOrderRequest(customer),
         loadWorkspace: async (data) => {
             await getApp('loadWorkspace').loadWorkspace(data);

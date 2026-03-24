@@ -187,13 +187,13 @@
 
             try {
                 const request = await editorFacade.commands.buildOrderRequest(customer);
-                if (!request?.ok || !request.payload) {
-                    feedback.showError(request?.message || 'Не удалось подготовить заказ.');
+                if (!request?.ok || !request?.result) {
+                    feedback.showError(request?.error?.message || 'Не удалось подготовить заказ.', 'Не удалось создать заказ');
                     return;
                 }
 
-                const transportResult = await submitOrderRequest(request.payload);
-                const mappedResult = mapOrderResult({ payload: request.payload, transportResult });
+                const transportResult = await submitOrderRequest(request.result);
+                const mappedResult = mapOrderResult({ payload: request.result, transportResult });
                 feedback.showSuccess(mappedResult);
             } catch (error) {
                 console.error(error);
@@ -253,13 +253,17 @@
 
         function bind() {
             uiDom.buttons.preview3d.onclick = () => {
-                const payload = editorFacade.commands.get3dPreviewPayload();
-                if (!payload) {
+                const previewBuild = editorFacade.commands.build3dPreviewPayload();
+                if (!previewBuild?.ok || !previewBuild?.result) {
+                    feedback.showError(
+                        previewBuild?.error?.message || 'Не удалось подготовить данные для 3D предпросмотра.',
+                        '3D предпросмотр недоступен'
+                    );
                     return;
                 }
 
                 try {
-                    openViewer(payload);
+                    openViewer(previewBuild.result);
                 } catch (error) {
                     console.error(error);
                     feedback.showError(
