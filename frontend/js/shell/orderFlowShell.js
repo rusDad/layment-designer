@@ -4,6 +4,60 @@
         let exportInProgress = false;
         const exportButtonDefaultText = uiDom?.buttons?.export?.textContent || 'Создать заказ';
         const exportCooldownMs = 5000;
+        const previewPayloadMaxAgeMs = 1000 * 60 * 30;
+
+        function generatePreviewPayloadKey() {
+            const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            return `${Config.VIEWER_3D.PAYLOAD_PREFIX}${rand}`;
+        }
+
+        function cleanupOldPreviewPayloads() {
+            const prefix = Config.VIEWER_3D.PAYLOAD_PREFIX;
+            const now = Date.now();
+
+            for (let i = localStorage.length - 1; i >= 0; i -= 1) {
+                const key = localStorage.key(i);
+                if (!key || !key.startsWith(prefix)) {
+                    continue;
+                }
+
+                try {
+                    const raw = localStorage.getItem(key);
+                    if (!raw) {
+                        localStorage.removeItem(key);
+                        continue;
+                    }
+                    const payload = JSON.parse(raw);
+                    const createdAt = Number(payload?.createdAt || 0);
+                    if (!Number.isFinite(createdAt) || (now - createdAt) > previewPayloadMaxAgeMs) {
+                        localStorage.removeItem(key);
+                    }
+                } catch (_error) {
+                    localStorage.removeItem(key);
+                }
+            }
+        }
+
+        function openViewer(payload) {
+            if (!payload || typeof payload.svg !== 'string' || !payload.svg) {
+                throw new Error('Preview payload is empty');
+            }
+
+            cleanupOldPreviewPayloads();
+
+            const payloadKey = generatePreviewPayloadKey();
+            const storedPayload = {
+                ...payload,
+                createdAt: Date.now()
+            };
+            localStorage.setItem(payloadKey, JSON.stringify(storedPayload));
+
+            const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
+            viewerUrl.searchParams.set('payloadKey', payloadKey);
+            window.open(viewerUrl.toString(), '_blank', 'noopener');
+        }
 
         function renderSummary(summary) {
             if (!modal?.summaryMeta || !modal.summaryComposition || !modal.summaryEmpty) {
@@ -157,7 +211,22 @@
         }
 
         function bind() {
-            uiDom.buttons.preview3d.onclick = () => editorFacade.commands.open3dPreview();
+            uiDom.buttons.preview3d.onclick = () => {
+                const payload = editorFacade.commands.get3dPreviewPayload();
+                if (!payload) {
+                    return;
+                }
+
+                try {
+                    openViewer(payload);
+                } catch (error) {
+                    console.error(error);
+                    feedback.showError(
+                        'Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).',
+                        '3D предпросмотр недоступен'
+                    );
+                }
+            };
             uiDom.buttons.export.onclick = openModal;
             bindModalEvents();
         }
