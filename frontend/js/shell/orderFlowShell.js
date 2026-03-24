@@ -252,24 +252,20 @@
         }
 
         function bind() {
-            uiDom.buttons.preview3d.onclick = () => {
-                const previewBuild = editorFacade.commands.build3dPreviewPayload();
-                if (!previewBuild?.ok || !previewBuild?.result) {
-                    feedback.showError(
-                        previewBuild?.error?.message || 'Не удалось подготовить данные для 3D предпросмотра.',
-                        '3D предпросмотр недоступен'
-                    );
-                    return;
-                }
+            uiDom.buttons.preview3d.onclick = async () => {
+             const previewBuild = await editorFacade.commands.build3dPreviewPayload();
+             if (!previewBuild?.ok || !previewBuild?.result) {
+                  feedback.showError(
+                  previewBuild?.error?.message || 'Не удалось подготовить данные для 3D предпросмотра.','3D предпросмотр недоступен');
+                 return;
+              }   
 
-                try {
-                    openViewer(previewBuild.result);
-                } catch (error) {
-                    console.error(error);
-                    feedback.showError(
-                        'Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).',
-                        '3D предпросмотр недоступен'
-                    );
+             try {
+                 openViewer(previewBuild.result);
+             } catch (error) {
+                 console.error(error);
+                 feedback.showError(
+                     'Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).','3D предпросмотр недоступен');
                 }
             };
             uiDom.buttons.export.onclick = openModal;
