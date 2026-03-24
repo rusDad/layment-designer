@@ -78,10 +78,13 @@ class ContourManager {
     }
 
     snapToAllowedAngle(obj) {
-        const a = obj.angle % 360;
-        obj.angle = this.allowedAngles.reduce((p, c) => 
-            Math.abs(c - a) < Math.abs(p - a) ? c : p
+        const raw = Number(obj.angle) || 0;
+        const a = ((raw % 360) + 360) % 360;
+
+        obj.angle = this.allowedAngles.reduce((prev, current) =>
+            Math.abs(current - a) < Math.abs(prev - a) ? current : prev
         );
+
         obj.setCoords();
     }
 
