@@ -35,13 +35,8 @@ class ContourApp {
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
-        this.exportButtonDefaultText = UIDom.buttons.export?.textContent || 'Завершить';
-        this.exportCooldownMs = 5000;
-        this.exportInProgress = false;
-        this.lastOrderResult = null;
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
         this.laymentThicknessMm = 35;
-        this.pendingCustomer = null;
         this.selectionExpandInProgress = false;
         this.viewportResizeFitTimer = null;
         this.viewportFeedbackActive = false;
@@ -80,7 +75,6 @@ class ContourApp {
 
     destroy() {
         this.cancelAutosave();
-        this.pendingCustomer = null;
         this.resetPointerInteraction?.({ soft: true });
         this.closeCustomerModal?.();
         if (this.canvas?.dispose) {
@@ -827,7 +821,6 @@ class ContourApp {
         orderResult.paymentLink.href = '#';
         orderResult.meta.hidden = true;
         orderResult.meta.textContent = '';
-        this.lastOrderResult = null;
     }
 
     clearViewportIssueFeedback() {
@@ -2202,7 +2195,7 @@ class ContourApp {
             contours: this.buildExportContours(),
             primitives: this.buildExportPrimitives(),
             texts: this.buildExportTexts(),
-            customer: options.customer ?? this.pendingCustomer ?? null
+            customer: options.customer ?? null
         };
     }
 
@@ -2421,67 +2414,6 @@ class ContourApp {
         orderResult.paymentLink.href = '#';
         orderResult.meta.hidden = true;
         orderResult.meta.textContent = '';
-        this.lastOrderResult = null;
-    }
-
-    showOrderResultLoading(message = 'Создаём заказ. Это может занять несколько секунд.') {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info');
-        orderResult.container.classList.add('order-result-loading');
-        orderResult.title.textContent = 'Оформление заказа';
-        orderResult.message.textContent = message;
-        orderResult.details.hidden = true;
-    }
-
-    showOrderResultSuccess({ orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total }) {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-error', 'order-result-info', 'order-result-loading');
-        orderResult.container.classList.add('order-result-success');
-        orderResult.title.textContent = 'Заказ создан';
-        orderResult.message.textContent = 'Мы приняли заказ в обработку. Вы можете отслеживать статус по ссылке ниже.';
-
-        orderResult.details.hidden = false;
-        orderResult.orderNumber.textContent = orderNumber || '—';
-        orderResult.orderId.textContent = orderId;
-        orderResult.paymentLink.href = paymentUrl;
-        orderResult.statusLinkRow.hidden = false;
-        orderResult.meta.hidden = false;
-        orderResult.meta.textContent = `Размер: ${width}×${height}×${laymentThicknessMm ?? 35} мм • Стоимость: ${total} ₽`;
-        this.lastOrderResult = { orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total };
-    }
-
-    showOrderResultError(message) {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success', 'order-result-info', 'order-result-loading');
-        orderResult.container.classList.add('order-result-error');
-        orderResult.title.textContent = 'Не удалось создать заказ';
-        orderResult.message.textContent = message;
-        orderResult.details.hidden = true;
-    }
-
-    show3dPreviewError(message) {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success', 'order-result-loading');
-        orderResult.container.classList.add('order-result-error');
-        orderResult.title.textContent = '3D предпросмотр недоступен';
-        orderResult.message.textContent = message;
-        orderResult.details.hidden = true;
     }
 
     checkOutOfBoundsOnlyAndHighlight() {
@@ -2544,12 +2476,16 @@ class ContourApp {
     }
 
     build3dPreviewPayload() {
-        let previewPayload = null;
-        this.performWithScaleOne(() => {
+        return this.performWithScaleOne(() => {
             const boundsValidation = this.checkOutOfBoundsOnlyAndHighlight();
             if (!boundsValidation.ok) {
-                this.show3dPreviewError(this.formatOutOfBoundsOnlyMessage(boundsValidation.issues));
-                return;
+                return {
+                    ok: false,
+                    error: {
+                        code: 'preview_out_of_bounds',
+                        message: this.formatOutOfBoundsOnlyMessage(boundsValidation.issues)
+                    }
+                };
             }
 
             let svg;
@@ -2557,21 +2493,28 @@ class ContourApp {
                 svg = this.buildPreviewSvg();
             } catch (error) {
                 console.error(error);
-                this.show3dPreviewError('Не удалось собрать SVG для 3D предпросмотра. Попробуйте ещё раз.');
-                return;
+                return {
+                    ok: false,
+                    error: {
+                        code: 'preview_svg_build_failed',
+                        message: 'Не удалось собрать SVG для 3D предпросмотра. Попробуйте ещё раз.'
+                    }
+                };
             }
 
             const texts = this.textManager?.buildExportTexts?.() || [];
 
-            previewPayload = {
-                version: 3,
-                svg,
-                texts: Array.isArray(texts) ? texts : [],
-                baseMaterialColor: this.baseMaterialColor,
-                laymentThicknessMm: this.laymentThicknessMm
+            return {
+                ok: true,
+                result: {
+                    version: 3,
+                    svg,
+                    texts: Array.isArray(texts) ? texts : [],
+                    baseMaterialColor: this.baseMaterialColor,
+                    laymentThicknessMm: this.laymentThicknessMm
+                }
             };
         });
-        return previewPayload;
     }
 
     buildPreviewSvg() {
@@ -2650,7 +2593,10 @@ class ContourApp {
         if (!normalizedCustomer.name || !normalizedCustomer.contact) {
             return {
                 ok: false,
-                message: 'Заполните имя и контакт, чтобы создать заказ.'
+                error: {
+                    code: 'order_customer_required',
+                    message: 'Заполните имя и контакт, чтобы создать заказ.'
+                }
             };
         }
 
@@ -2659,7 +2605,10 @@ class ContourApp {
             if (!validation.ok) {
                 return {
                     ok: false,
-                    message: validation.message
+                    error: {
+                        code: 'order_validation_failed',
+                        message: validation.message
+                    }
                 };
             }
 
@@ -2671,13 +2620,16 @@ class ContourApp {
 
             return {
                 ok: true,
-                payload: data
+                result: data
             };
         } catch (err) {
             console.error(err);
             return {
                 ok: false,
-                message: 'Не получилось подготовить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || '')
+                error: {
+                    code: 'order_build_failed',
+                    message: 'Не получилось подготовить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || '')
+                }
             };
         }
     }
