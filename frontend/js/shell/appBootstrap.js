@@ -5,6 +5,7 @@
         const feedback = global.DesignerUiFeedback.create(uiDom);
         const workspaceShell = global.DesignerWorkspaceShell.create({ editorFacade });
         const statusBarRefreshEventName = global.DesignerControlsShell?.STATUS_BAR_REFRESH_EVENT || 'designer:status-bar-refresh';
+        const controlsStateRefreshEventName = global.DesignerControlsShell?.CONTROLS_STATE_REFRESH_EVENT || 'designer:controls-state-refresh';
 
         await editorFacade.initEditor({
             callbacks: {
@@ -17,6 +18,11 @@
                 },
                 onStatusBarChanged: () => {
                     document.dispatchEvent(new CustomEvent(statusBarRefreshEventName));
+                },
+                onControlsStateChanged: payload => {
+                    document.dispatchEvent(new CustomEvent(controlsStateRefreshEventName, {
+                        detail: payload || {}
+                    }));
                 }
             }
         });

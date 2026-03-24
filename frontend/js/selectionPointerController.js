@@ -462,7 +462,7 @@
             this.activeSelectionSource = active ? source : null;
             this.app?.syncSelectionVisualState?.(active);
             this.app?.syncActiveSelectionInteractionState?.(active);
-            this.app?.updateButtons?.();
+            this.app?.requestControlsStateRefresh?.();
             this.app?.requestStatusBarRefresh?.();
             this.app?.syncPrimitiveControlsFromSelection?.();
             this.app?.syncTextControlsFromSelection?.();
@@ -489,7 +489,7 @@
         handleSelectionCleared() {
             this.pendingSelectionSource = null;
             this.activeSelectionSource = null;
-            this.app?.updateButtons?.();
+            this.app?.requestControlsStateRefresh?.();
             this.app?.requestStatusBarRefresh?.();
             this.app?.syncPrimitiveControlsFromSelection?.();
             this.app?.syncTextControlsFromSelection?.();

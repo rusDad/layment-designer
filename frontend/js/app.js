@@ -48,6 +48,7 @@ class ContourApp {
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
         this.syncTextControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.fitToLayment();
         this.emitEditorCallback('onReady', { document: this.getDocumentState() });
         return this;
@@ -1022,7 +1023,7 @@ class ContourApp {
                         event.preventDefault();
                         this.canvas.discardActiveObject();
                         this.canvas.requestRenderAll();
-                        this.updateButtons();
+                        this.requestControlsStateRefresh();
                         this.requestStatusBarRefresh();
                         this.syncPrimitiveControlsFromSelection();
                         this.syncTextControlsFromSelection();
@@ -1414,7 +1415,7 @@ class ContourApp {
 
     refreshCanvasMutationState({ scheduleWorkspaceSave = false } = {}) {
         this.canvas.requestRenderAll();
-        this.updateButtons();
+        this.requestControlsStateRefresh();
         this.requestStatusBarRefresh();
         this.syncPrimitiveControlsFromSelection();
         this.syncTextControlsFromSelection();
@@ -1490,59 +1491,62 @@ class ContourApp {
         this.actionExecutor?.executeAction?.('snap', { side }, this);
     }
 
-    updateButtons() {
+    buildControlsState() {
         const selected = this.getArrangeSelectionObjects();
         const selectedCount = selected.length;
         const active = this.canvas.getActiveObject();
-        const has = !!active;
+        const hasSelection = !!active;
         const lockState = this.getSelectionLockState(active);
 
-        const deleteAllowed = has && this.resolveActionTargets(active, 'delete').length > 0;
-        const rotateAllowed = this.resolveActionTargets(active, 'rotate').length > 0;
-
-        UIDom.buttons.delete.disabled = !deleteAllowed;
-        UIDom.buttons.rotate.disabled = !rotateAllowed;
-
         const duplicateTargets = this.getDuplicateSelectionObjects();
-        UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
-        if (UIDom.buttons.toggleLock) {
-            const nextLabel = lockState.allLocked ? 'Разблокировать' : 'Заблокировать';
-            UIDom.buttons.toggleLock.disabled = lockState.lockableCount < 1;
-            UIDom.buttons.toggleLock.textContent = nextLabel;
-            UIDom.buttons.toggleLock.dataset.hint = lockState.allLocked
+        const canDelete = hasSelection && this.resolveActionTargets(active, 'delete').length > 0;
+        const canRotate = this.resolveActionTargets(active, 'rotate').length > 0;
+        const canDuplicate = duplicateTargets.length > 0;
+        const canToggleLock = lockState.lockableCount > 0;
+        const canGroup = this.hasGroupSelection(active);
+        const canUngroup = this.hasUngroupSelection(active);
+        const canAlign = selectedCount >= 2;
+        const canDistribute = selectedCount >= 3;
+        const canSnap = selectedCount >= 1;
+        const lockStateValue = selectedCount < 1
+            ? 'none'
+            : (lockState.hasLocked && lockState.hasUnlocked
+                ? 'mixed'
+                : (lockState.allLocked ? 'locked' : 'unlocked'));
+
+        return {
+            hasSelection,
+            selectedCount,
+            canDelete,
+            canRotate,
+            canDuplicate,
+            canToggleLock,
+            lockState: lockStateValue,
+            canGroup,
+            canUngroup,
+            canAlign,
+            canDistribute,
+            canSnap,
+            lockButtonLabel: lockState.allLocked ? 'Разблокировать' : 'Заблокировать',
+            lockButtonHint: lockState.allLocked
                 ? 'Снять блокировку с выделенного'
-                : 'Заблокировать выделенное от случайных изменений';
-            UIDom.buttons.toggleLock.title = nextLabel;
-            UIDom.buttons.toggleLock.setAttribute('aria-pressed', lockState.allLocked ? 'true' : 'false');
-        }
-        if (UIDom.buttons.group) {
-            UIDom.buttons.group.disabled = !this.hasGroupSelection(active);
-            UIDom.buttons.group.dataset.hint = 'Сгруппировать выделенные незаблокированные элементы';
-            UIDom.buttons.group.title = 'Сгруппировать';
-        }
-        if (UIDom.buttons.ungroup) {
-            UIDom.buttons.ungroup.disabled = !this.hasUngroupSelection(active);
-            UIDom.buttons.ungroup.dataset.hint = 'Разгруппировать выделенные элементы';
-            UIDom.buttons.ungroup.title = 'Разгруппировать';
-        }
+                : 'Заблокировать выделенное от случайных изменений',
+            lockButtonPressed: lockState.allLocked
+        };
+    }
 
-        const alignDisabled = selectedCount < 2;
-        UIDom.buttons.alignLeft.disabled = alignDisabled;
-        UIDom.buttons.alignCenterX.disabled = alignDisabled;
-        UIDom.buttons.alignRight.disabled = alignDisabled;
-        UIDom.buttons.alignTop.disabled = alignDisabled;
-        UIDom.buttons.alignCenterY.disabled = alignDisabled;
-        UIDom.buttons.alignBottom.disabled = alignDisabled;
+    getControlsState() {
+        return this.buildControlsState();
+    }
 
-        const distributeDisabled = selectedCount < 3;
-        UIDom.buttons.distributeHorizontalGaps.disabled = distributeDisabled;
-        UIDom.buttons.distributeVerticalGaps.disabled = distributeDisabled;
+    requestControlsStateRefresh() {
+        this.emitEditorCallback('onControlsStateChanged', {
+            controlsState: this.getControlsState()
+        });
+    }
 
-        const snapDisabled = selectedCount < 1;
-        UIDom.buttons.snapLeft.disabled = snapDisabled;
-        UIDom.buttons.snapRight.disabled = snapDisabled;
-        UIDom.buttons.snapTop.disabled = snapDisabled;
-        UIDom.buttons.snapBottom.disabled = snapDisabled;
+    updateButtons() {
+        this.requestControlsStateRefresh();
     }
 
 
@@ -1717,7 +1721,7 @@ class ContourApp {
             this.syncTextControlsFromSelection();
         }
         if (shouldUpdateButtons) {
-            this.updateButtons();
+            this.requestControlsStateRefresh();
         }
         if (shouldUpdateStatusBar) {
             this.requestStatusBarRefresh();
@@ -2344,7 +2348,7 @@ class ContourApp {
 
                 this.applyMaterialColorToCutouts();
                 this.canvas.requestRenderAll();
-                this.updateButtons();
+                this.requestControlsStateRefresh();
                 this.requestStatusBarRefresh();
                 this.syncPrimitiveControlsFromSelection();
                 this.syncTextControlsFromSelection();
