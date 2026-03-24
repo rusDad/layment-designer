@@ -26,7 +26,8 @@
 3. **Integration boundary (`editorFacade.js` + shell-модули)**
    - `EditorFacade.commands/queries` как high-level command/query API;
    - `shell/appBootstrap.js` как стартовая композиция;
-   - `shell/catalogShell.js`, `shell/controlsShell.js`, `shell/orderFlowShell.js` как DOM wiring поверх facade.
+   - `shell/catalogShell.js`, `shell/controlsShell.js`, `shell/orderFlowShell.js` как DOM wiring поверх facade;
+   - toolbar-state вычисляется в editor (`queries.controlsState()`), а применяется в `controlsShell.applyControlsState(...)`.
 
 ---
 
@@ -92,7 +93,8 @@ Catalog-model state живёт в `catalogShell`/`catalogState` и не явля
 Практический итог текущего этапа:
 
 - основная DOM-привязка вынесена из legacy path в shell-модули;
-- однако `app.js` остаётся крупным orchestration hub и содержит часть UI-sync обязанностей (status bar, controls sync, keyboard shortcuts, document-level listeners).
+- `app.js` больше не мутирует toolbar DOM напрямую: editor пушит `onControlsStateChanged`, shell применяет состояние кнопок;
+- однако `app.js` остаётся крупным orchestration hub и содержит часть UI-sync обязанностей (status bar, primitive controls sync, text controls sync, keyboard shortcuts, document-level listeners).
 
 ---
 
@@ -110,6 +112,7 @@ Catalog-model state живёт в `catalogShell`/`catalogState` и не явля
 Это **не** план работ, а список реальных текущих компромиссов:
 
 1. `app.js` всё ещё совмещает canvas runtime, editor orchestration и UI-sync обязанности.
+   - Вне этого PR остаются отдельные UI-sync debt зоны: status bar, primitive controls, text controls.
 2. Не все text-mutation paths унифицированы через executor:
    - `deleteSelectedText()` удаляет текст напрямую через `textManager.removeText(...)`.
 3. Часть text create paths остаётся прямой (`createFreeText/createAttachedText`) вместо единого command-handler слоя.

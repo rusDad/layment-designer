@@ -740,7 +740,7 @@
         }
 
         app.canvas?.requestRenderAll?.();
-        app.updateButtons?.();
+        app.requestControlsStateRefresh?.();
         app.updateStatusBar?.();
         app.syncPrimitiveControlsFromSelection?.();
         app.syncTextControlsFromSelection?.();

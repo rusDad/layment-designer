@@ -1,5 +1,6 @@
 (function initControlsShell(global) {
     const STATUS_BAR_REFRESH_EVENT = 'designer:status-bar-refresh';
+    const CONTROLS_STATE_REFRESH_EVENT = 'designer:controls-state-refresh';
 
     function clampLaymentSize(value, fallback) {
         let next = parseInt(value, 10) || fallback;
@@ -26,6 +27,54 @@
     }
 
     function createControlsShell({ editorFacade, workspaceShell, uiDom, feedback }) {
+        function applyControlsState(state) {
+            const controlsState = state || editorFacade.queries.controlsState?.() || {};
+            const buttons = uiDom.buttons || {};
+            const lockLabel = controlsState.lockButtonLabel || 'Заблокировать';
+            const lockHint = controlsState.lockButtonHint || 'Заблокировать выделенное от случайных изменений';
+            const lockPressed = controlsState.lockButtonPressed === true;
+
+            if (buttons.delete) buttons.delete.disabled = !controlsState.canDelete;
+            if (buttons.rotate) buttons.rotate.disabled = !controlsState.canRotate;
+            if (buttons.duplicate) buttons.duplicate.disabled = !controlsState.canDuplicate;
+            if (buttons.toggleLock) {
+                buttons.toggleLock.disabled = !controlsState.canToggleLock;
+                buttons.toggleLock.textContent = lockLabel;
+                buttons.toggleLock.dataset.hint = lockHint;
+                buttons.toggleLock.title = lockLabel;
+                buttons.toggleLock.setAttribute('aria-pressed', lockPressed ? 'true' : 'false');
+            }
+
+            if (buttons.group) {
+                buttons.group.disabled = !controlsState.canGroup;
+                buttons.group.dataset.hint = 'Сгруппировать выделенные незаблокированные элементы';
+                buttons.group.title = 'Сгруппировать';
+            }
+            if (buttons.ungroup) {
+                buttons.ungroup.disabled = !controlsState.canUngroup;
+                buttons.ungroup.dataset.hint = 'Разгруппировать выделенные элементы';
+                buttons.ungroup.title = 'Разгруппировать';
+            }
+
+            const alignDisabled = !controlsState.canAlign;
+            if (buttons.alignLeft) buttons.alignLeft.disabled = alignDisabled;
+            if (buttons.alignCenterX) buttons.alignCenterX.disabled = alignDisabled;
+            if (buttons.alignRight) buttons.alignRight.disabled = alignDisabled;
+            if (buttons.alignTop) buttons.alignTop.disabled = alignDisabled;
+            if (buttons.alignCenterY) buttons.alignCenterY.disabled = alignDisabled;
+            if (buttons.alignBottom) buttons.alignBottom.disabled = alignDisabled;
+
+            const distributeDisabled = !controlsState.canDistribute;
+            if (buttons.distributeHorizontalGaps) buttons.distributeHorizontalGaps.disabled = distributeDisabled;
+            if (buttons.distributeVerticalGaps) buttons.distributeVerticalGaps.disabled = distributeDisabled;
+
+            const snapDisabled = !controlsState.canSnap;
+            if (buttons.snapLeft) buttons.snapLeft.disabled = snapDisabled;
+            if (buttons.snapRight) buttons.snapRight.disabled = snapDisabled;
+            if (buttons.snapTop) buttons.snapTop.disabled = snapDisabled;
+            if (buttons.snapBottom) buttons.snapBottom.disabled = snapDisabled;
+        }
+
         function renderStatusBar() {
             const statusInfo = uiDom.status?.info;
             if (!statusInfo) {
@@ -204,20 +253,31 @@
             renderStatusBar();
         }
 
+        function bindControlsState() {
+            document.addEventListener(CONTROLS_STATE_REFRESH_EVENT, event => {
+                applyControlsState(event.detail?.controlsState);
+            });
+            applyControlsState(editorFacade.queries.controlsState?.());
+        }
+
         return {
             bind() {
                 bindToolbarActions();
                 bindInputActions();
                 bindStatusHints();
+                bindControlsState();
                 bindStatusBar();
             },
+            applyControlsState,
             refreshStatusBar: renderStatusBar,
-            statusBarRefreshEventName: STATUS_BAR_REFRESH_EVENT
+            statusBarRefreshEventName: STATUS_BAR_REFRESH_EVENT,
+            controlsStateRefreshEventName: CONTROLS_STATE_REFRESH_EVENT
         };
     }
 
     global.DesignerControlsShell = {
         create: createControlsShell,
-        STATUS_BAR_REFRESH_EVENT
+        STATUS_BAR_REFRESH_EVENT,
+        CONTROLS_STATE_REFRESH_EVENT
     };
 })(window);
