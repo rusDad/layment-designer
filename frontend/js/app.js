@@ -2741,7 +2741,19 @@ class ContourApp {
         return { width, height, thickness, colorLabel, composition };
     }
 
-    async submitOrder(customer) {
+    async validateForOrder() {
+        const validation = await this.validateLayoutCommand();
+        if (!validation.ok) {
+            return {
+                ok: false,
+                message: validation.message
+            };
+        }
+
+        return { ok: true };
+    }
+
+    async buildOrderRequest(customer) {
         const normalizedCustomer = {
             name: (customer?.name || '').trim().replace(/\s+/g, ' '),
             contact: (customer?.contact || '').trim().replace(/[^0-9A-Za-zА-Яа-яЁё+@.-]/g, '')
@@ -2754,10 +2766,8 @@ class ContourApp {
             };
         }
 
-        this.pendingCustomer = normalizedCustomer;
-
         try {
-            const validation = await this.validateLayoutCommand();
+            const validation = await this.validateForOrder();
             if (!validation.ok) {
                 return {
                     ok: false,
@@ -2770,43 +2780,17 @@ class ContourApp {
                 includeWorkspaceSnapshot: true,
                 customer: normalizedCustomer
             });
-            const realWidth = data.orderMeta.width;
-            const realHeight = data.orderMeta.height;
-
-            const response = await fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || 'Не удалось создать заказ.');
-            }
-
-            const result = await response.json();
-            const orderId = result?.orderId || '—';
-            const orderNumber = result?.orderNumber || '—';
-            const statusUrl = `status.html?orderId=${encodeURIComponent(orderId)}`;
 
             return {
                 ok: true,
-                orderId,
-                orderNumber,
-                paymentUrl: statusUrl,
-                width: realWidth,
-                height: realHeight,
-                laymentThicknessMm: result?.pricePreview?.laymentThicknessMm ?? 35,
-                total: result?.pricePreview?.total ?? '—'
+                payload: data
             };
         } catch (err) {
             console.error(err);
             return {
                 ok: false,
-                message: 'Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || '')
+                message: 'Не получилось подготовить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || '')
             };
-        } finally {
-            this.pendingCustomer = null;
         }
     }
 
