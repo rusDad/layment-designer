@@ -86,6 +86,8 @@
 - `EditorFacade.queries` для read-model paths.
 
 Shell-модули (`catalogShell`, `controlsShell`, `orderFlowShell`) работают через facade и не должны использовать Fabric API напрямую.
+Catalog-model state живёт в `catalogShell`/`catalogState` и не является частью `EditorFacade.queries.document`.
+Интеграционный контракт для каталога — передача готового `item` в `EditorFacade.commands.addContour(item)`.
 
 Практический итог текущего этапа:
 

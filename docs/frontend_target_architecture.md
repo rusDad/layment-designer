@@ -76,6 +76,11 @@ Shell не должен:
 
 `editorFacade` уже реализует этот паттерн и является текущей опорной boundary-точкой.
 
+Catalog boundary фиксируется отдельно:
+- catalog state (manifest, категории, query/filter) принадлежит shell-слою;
+- `editorFacade` не публикует catalog-specific query/filter API;
+- shell добавляет контур через `commands.addContour(item)` с уже резолвленным item metadata.
+
 ---
 
 ## Source-of-truth model

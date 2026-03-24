@@ -12,14 +12,6 @@ class ContourApp {
         this.safeArea = null;
         this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
         this.laymentOffset = Config.LAYMENT_OFFSET;
-        this.availableContours = [];
-        this.availableArticleEntries = [];
-        this.availableCategories = [];
-        this.categoryLabels = {};
-        this.currentCategory = null;
-        this.catalogQuery = '';
-        this.catalogLoadError = null;
-        this.manifest = {};
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
         this.isSyncingPrimitiveControls = false;
@@ -552,43 +544,6 @@ class ContourApp {
         return thickness;
     }
 
-    setCatalogManifest(itemsOrManifest, categoryLabels = this.categoryLabels || {}) {
-        if (Array.isArray(itemsOrManifest)) {
-            this.manifest = itemsOrManifest.reduce((acc, item) => {
-                if (item?.id) {
-                    acc[item.id] = item;
-                }
-                return acc;
-            }, {});
-        } else if (itemsOrManifest && typeof itemsOrManifest === 'object') {
-            this.manifest = { ...itemsOrManifest };
-        } else {
-            this.manifest = {};
-        }
-
-        this.categoryLabels = categoryLabels && typeof categoryLabels === 'object' ? categoryLabels : {};
-
-        const manifestItems = Object.values(this.manifest);
-        this.availableContours = manifestItems.filter(i => i?.enabled);
-        this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
-        this.availableCategories = this.buildCategories(this.availableArticleEntries);
-        this.ensureValidCategory();
-
-        return this.manifest;
-    }
-
-    async loadAvailableContours() {
-        this.catalogLoadError = null;
-        try {
-            const resp = await fetch(Config.API.MANIFEST_URL);
-            const data = await resp.json();
-            this.setCatalogManifest(data?.items || [], data?.categories || {});
-        } catch (err) {
-            console.error('Ошибка загрузки manifest', err);
-            this.catalogLoadError = Config.MESSAGES.LOADING_ERROR;
-        }
-    }
-
     async addContour(item) {
         const centerX = this.layment.left + this.layment.width / 2;
         const centerY = this.layment.top + this.layment.height / 2;
@@ -607,27 +562,12 @@ class ContourApp {
         this.scheduleWorkspaceSave();
     }
 
-    resolveContourItem(itemOrId) {
-        if (!itemOrId) {
-            return null;
-        }
-
-        if (typeof itemOrId === 'string') {
-            return this.manifest?.[itemOrId] || null;
-        }
-
-        if (typeof itemOrId === 'object') {
-            if (typeof itemOrId.id === 'string' && this.manifest?.[itemOrId.id]) {
-                return { ...this.manifest[itemOrId.id], ...itemOrId };
-            }
-            return itemOrId;
-        }
-
-        return null;
-    }
-
     async addContourCommand(itemOrId) {
-        const item = this.resolveContourItem(itemOrId);
+        if (typeof itemOrId === 'string') {
+            throw new Error('addContourCommand requires contour metadata object. String id is no longer supported.');
+        }
+
+        const item = itemOrId && typeof itemOrId === 'object' ? itemOrId : null;
         if (!item?.assets?.svg) {
             throw new Error('Contour metadata with assets.svg is required.');
         }
@@ -1934,100 +1874,11 @@ class ContourApp {
         this.canvas.on('object:modified', () => this.updateStatusBar());
     }
 
-    buildCategories(items) {
-        const categories = new Map();
-        items.forEach(item => {
-            const label = this.getCategoryLabel(item);
-            if (!categories.has(label)) {
-                categories.set(label, label);
-            }
-        });
-        return Array.from(categories.keys()).sort((a, b) => a.localeCompare(b, 'ru'));
-    }
-
-    buildArticleEntries(items) {
-        const entries = new Map();
-        items.forEach(item => {
-            const article = (item?.article || item?.id || "").trim();
-            if (!article) {
-                return;
-            }
-            if (!entries.has(article)) {
-                entries.set(article, {
-                    article,
-                    name: item.name || "",
-                    category: item.category || "",
-                    variants: []
-                });
-            }
-            const entry = entries.get(article);
-            entry.variants.push(item);
-            if (!entry.name && item.name) {
-                entry.name = item.name;
-            }
-        });
-
-        return Array.from(entries.values())
-            .map(entry => ({
-                ...entry,
-                variants: entry.variants.slice().sort((a, b) => ((a.poseLabel || a.poseKey || "").localeCompare(b.poseLabel || b.poseKey || "", "ru")))
-            }))
-            .sort((a, b) => `${a.article} ${a.name}`.localeCompare(`${b.article} ${b.name}`, "ru"));
-    }
-
     getVariantDisplayLabel(item) {
         if (!item) {
             return "Базовый";
         }
         return item.poseLabel || item.poseKey || "Базовый";
-    }
-
-    getCategoryLabel(item) {
-        const raw = (item.category || '').trim();
-        if (!raw) {
-            return 'Без категории';
-        }
-        const label = this.categoryLabels?.[raw]?.label;
-        return label ? label.trim() || raw : raw;
-    }
-
-    ensureValidCategory() {
-        if (this.currentCategory && !this.availableCategories.includes(this.currentCategory)) {
-            this.currentCategory = null;
-        }
-    }
-
-    setCatalogFilters({ category = this.currentCategory, query = this.catalogQuery } = {}) {
-        this.currentCategory = category && this.availableCategories.includes(category) ? category : null;
-        this.catalogQuery = typeof query === 'string' ? query : '';
-        return this.getCatalogState();
-    }
-
-    getCatalogState() {
-        return {
-            currentCategory: this.currentCategory,
-            query: this.catalogQuery || '',
-            categories: [...this.availableCategories],
-            loadError: this.catalogLoadError,
-            items: this.availableArticleEntries.map(entry => ({
-                article: entry.article,
-                name: entry.name,
-                category: this.getCategoryLabel(entry),
-                variants: (entry.variants || []).map(variant => ({
-                    id: variant.id,
-                    article: variant.article,
-                    name: variant.name,
-                    poseKey: variant.poseKey || null,
-                    poseLabel: variant.poseLabel || null,
-                    assets: variant.assets || {}
-                }))
-            }))
-        };
-    }
-
-    setCurrentCategory(category) {
-        this.currentCategory = category && this.availableCategories.includes(category) ? category : null;
-        return this.currentCategory;
     }
 
     // обновление строки состояния
@@ -2166,9 +2017,7 @@ class ContourApp {
             workspaceScale: this.workspaceScale,
             contourCount: this.contourManager?.contours?.length || 0,
             primitiveCount: this.primitiveManager?.primitives?.length || 0,
-            textCount: this.textManager?.texts?.length || 0,
-            currentCategory: this.currentCategory,
-            catalogQuery: this.catalogQuery || ''
+            textCount: this.textManager?.texts?.length || 0
         };
     }
 
@@ -2338,24 +2187,27 @@ class ContourApp {
 
             await this.batchRender(async () => {
                 for (const contour of data.contours || []) {
-                    const meta = this.manifest?.[contour.id];
-                    if (!meta) {
-                        console.warn('Контур не найден в manifest', contour.id);
+                    const contourAssetSvg = contour?.assets?.svg;
+                    if (!contourAssetSvg) {
+                        console.warn('Не удалось восстановить contour без assets.svg', contour?.id);
                         continue;
                     }
                     const metadata = {
-                        ...meta,
-                        article: contour.article || meta.article,
-                        name: contour.name || meta.name,
-                        poseKey: contour.poseKey || meta.poseKey,
-                        poseLabel: contour.poseLabel || meta.poseLabel,
-                        scaleOverride: contour.scaleOverride ?? meta.scaleOverride,
-                        depthOverrideMm: Number.isFinite(contour.depthOverrideMm)
-                            ? contour.depthOverrideMm
-                            : (Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined)
+                        id: contour.id || null,
+                        article: contour.article || '',
+                        name: contour.name || '',
+                        poseKey: contour.poseKey || null,
+                        poseLabel: contour.poseLabel || null,
+                        scaleOverride: contour.scaleOverride ?? 1,
+                        cuttingLengthMeters: Number.isFinite(contour.cuttingLengthMeters) ? contour.cuttingLengthMeters : 0,
+                        assets: {
+                            ...(contour.assets || {}),
+                            svg: contourAssetSvg
+                        },
+                        depthOverrideMm: Number.isFinite(contour.depthOverrideMm) ? contour.depthOverrideMm : undefined
                     };
                     await this.contourManager.addContour(
-                        `/contours/${metadata.assets.svg}`,
+                        `/contours/${contourAssetSvg}`,
                         { x: this.layment.left, y: this.layment.top },
                         metadata
                     );
@@ -2465,11 +2317,10 @@ class ContourApp {
     }
 
     getTotalCuttingLength() {
-        return this.contourManager.getPlacedContourIds()
-        .reduce((sum, id) => {
-            const item = this.manifest?.[id];
-            return sum + (item?.cuttingLengthMeters || 0);
-      }, 0);
+        return this.contourManager.contours.reduce((sum, contour) => {
+            const meta = this.contourManager.metadataMap.get(contour) || {};
+            return sum + (Number(meta.cuttingLengthMeters) || 0);
+        }, 0);
     }
 
 

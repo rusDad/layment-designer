@@ -28,11 +28,7 @@
     function createCatalogShell({ editorFacade, uiDom, feedback }) {
         const dom = uiDom?.catalog;
         const list = uiDom?.panels?.catalogList;
-        const catalogState = global.DesignerCatalogState.create({
-            onManifestLoaded: (manifest) => {
-                editorFacade.commands.setCatalogManifest?.(manifest);
-            }
-        });
+        const catalogState = global.DesignerCatalogState.create();
 
         function createPreviewElement(item) {
             const previewAsset = item?.assets?.preview;
