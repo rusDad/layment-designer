@@ -89,6 +89,7 @@
     const queries = {
         selection: () => getApp('getSelectionState').getSelectionState(),
         document: () => getApp('getDocumentState').getDocumentState(),
+        statusBar: () => getApp('getStatusBarState').getStatusBarState(),
         workspace: async (options = {}) => (await getApp('getWorkspaceState').getWorkspaceState(options)),
         export: async (options = {}) => (await getApp('getExportState').getExportState(options)),
         validation: async () => (await getApp('validateLayoutCommand').validateLayoutCommand()),

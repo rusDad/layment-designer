@@ -4,6 +4,7 @@
         const uiDom = global.UIDom;
         const feedback = global.DesignerUiFeedback.create(uiDom);
         const workspaceShell = global.DesignerWorkspaceShell.create({ editorFacade });
+        const statusBarRefreshEventName = global.DesignerControlsShell?.STATUS_BAR_REFRESH_EVENT || 'designer:status-bar-refresh';
 
         await editorFacade.initEditor({
             callbacks: {
@@ -13,6 +14,9 @@
                     } catch (error) {
                         console.error('Ошибка autosave workspace', error);
                     }
+                },
+                onStatusBarChanged: () => {
+                    document.dispatchEvent(new CustomEvent(statusBarRefreshEventName));
                 }
             }
         });

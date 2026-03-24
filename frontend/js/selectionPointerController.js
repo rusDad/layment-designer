@@ -463,7 +463,7 @@
             this.app?.syncSelectionVisualState?.(active);
             this.app?.syncActiveSelectionInteractionState?.(active);
             this.app?.updateButtons?.();
-            this.app?.updateStatusBar?.();
+            this.app?.requestStatusBarRefresh?.();
             this.app?.syncPrimitiveControlsFromSelection?.();
             this.app?.syncTextControlsFromSelection?.();
         }
@@ -490,7 +490,7 @@
             this.pendingSelectionSource = null;
             this.activeSelectionSource = null;
             this.app?.updateButtons?.();
-            this.app?.updateStatusBar?.();
+            this.app?.requestStatusBarRefresh?.();
             this.app?.syncPrimitiveControlsFromSelection?.();
             this.app?.syncTextControlsFromSelection?.();
         }
@@ -582,12 +582,12 @@
                     this.app?.syncObjectTextState?.(event.target);
                 }
                 canvas.requestRenderAll();
-                this.app?.updateStatusBar?.();
+                this.app?.requestStatusBarRefresh?.();
             });
 
             canvas.on('object:scaling', () => {
                 canvas.requestRenderAll();
-                this.app?.updateStatusBar?.();
+                this.app?.requestStatusBarRefresh?.();
             });
 
             canvas.on('object:rotating', event => {
@@ -595,7 +595,7 @@
                     this.app?.syncObjectTextState?.(event.target);
                 }
                 canvas.requestRenderAll();
-                this.app?.updateStatusBar?.();
+                this.app?.requestStatusBarRefresh?.();
             });
 
             canvas.on('object:modified', event => {
