@@ -107,6 +107,39 @@
             };
         }
 
+        async function submitOrderRequest(payload) {
+            const response = await fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Не удалось создать заказ.');
+            }
+
+            return response.json();
+        }
+
+        function mapOrderResult({ payload, transportResult }) {
+            const orderId = transportResult?.orderId || '—';
+            const orderNumber = transportResult?.orderNumber || '—';
+            const statusUrl = orderId !== '—'
+                ? `status.html?orderId=${encodeURIComponent(orderId)}`
+                : null;
+
+            return {
+                orderId,
+                orderNumber,
+                paymentUrl: statusUrl,
+                width: payload?.orderMeta?.width,
+                height: payload?.orderMeta?.height,
+                laymentThicknessMm: transportResult?.pricePreview?.laymentThicknessMm ?? payload?.orderMeta?.laymentThicknessMm ?? 35,
+                total: transportResult?.pricePreview?.total ?? '—'
+            };
+        }
+
         function syncConfirmState() {
             const customer = getCustomer();
             const valid = Boolean(customer.name.trim()) && Boolean(customer.contact.trim());
@@ -153,12 +186,20 @@
             feedback.showLoading();
 
             try {
-                const result = await editorFacade.commands.submitOrder(customer);
-                if (result?.ok) {
-                    feedback.showSuccess(result);
-                } else {
-                    feedback.showError(result?.message || 'Не удалось создать заказ.');
+                const request = await editorFacade.commands.buildOrderRequest(customer);
+                if (!request?.ok || !request.payload) {
+                    feedback.showError(request?.message || 'Не удалось подготовить заказ.');
+                    return;
                 }
+
+                const transportResult = await submitOrderRequest(request.payload);
+                const mappedResult = mapOrderResult({ payload: request.payload, transportResult });
+                feedback.showSuccess(mappedResult);
+            } catch (error) {
+                console.error(error);
+                feedback.showError(
+                    'Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (error?.message || '')
+                );
             } finally {
                 const elapsed = Date.now() - startedAt;
                 const waitMs = Math.max(0, exportCooldownMs - elapsed);
