@@ -78,7 +78,7 @@
         detachSelectedText: () => getApp('detachSelectedText').detachSelectedText(),
         deleteSelectedText: () => getApp('deleteSelectedText').deleteSelectedText(),
         validateLayout: async () => (await getApp('validateLayoutCommand').validateLayoutCommand()),
-        open3dPreview: () => getApp('open3dPreview').open3dPreview(),
+        get3dPreviewPayload: () => getApp('build3dPreviewPayload').build3dPreviewPayload(),
         submitOrder: async (customer) => await getApp('submitOrder').submitOrder(customer),
         setCatalogFilters: (payload = {}) => getApp('setCatalogFilters').setCatalogFilters(payload),
         loadWorkspace: async (data) => {

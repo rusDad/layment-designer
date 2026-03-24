@@ -2659,7 +2659,8 @@ class ContourApp {
         return Config.MESSAGES.OUT_OF_BOUNDS_ERROR;
     }
 
-    open3dPreview() {
+    build3dPreviewPayload() {
+        let previewPayload = null;
         this.performWithScaleOne(() => {
             const boundsValidation = this.checkOutOfBoundsOnlyAndHighlight();
             if (!boundsValidation.ok) {
@@ -2678,17 +2679,15 @@ class ContourApp {
 
             const texts = this.textManager?.buildExportTexts?.() || [];
 
-            try {
-                console.log('preview texts', texts);
-                const payloadKey = this.storePreviewSvgPayload(svg, texts);
-                const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
-                viewerUrl.searchParams.set('payloadKey', payloadKey);
-                window.open(viewerUrl.toString(), '_blank', 'noopener');
-            } catch (error) {
-                console.error(error);
-                this.show3dPreviewError('Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).');
-            }
+            previewPayload = {
+                version: 3,
+                svg,
+                texts: Array.isArray(texts) ? texts : [],
+                baseMaterialColor: this.baseMaterialColor,
+                laymentThicknessMm: this.laymentThicknessMm
+            };
         });
+        return previewPayload;
     }
 
     buildPreviewSvg() {
@@ -2708,73 +2707,6 @@ class ContourApp {
             this.canvas.requestRenderAll();
         }
     }
-
-    generatePreviewPayloadKey() {
-        const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        return `${Config.VIEWER_3D.PAYLOAD_PREFIX}${rand}`;
-    }
-
-    cleanupOldPreviewPayloads() {
-        const prefix = Config.VIEWER_3D.PAYLOAD_PREFIX;
-        const now = Date.now();
-        const maxAgeMs = 1000 * 60 * 30;
-
-        for (let i = localStorage.length - 1; i >= 0; i -= 1) {
-            const key = localStorage.key(i);
-            if (!key || !key.startsWith(prefix)) {
-                continue;
-            }
-
-            try {
-                const raw = localStorage.getItem(key);
-                if (!raw) {
-                    localStorage.removeItem(key);
-                    continue;
-                }
-                const payload = JSON.parse(raw);
-                const createdAt = Number(payload?.createdAt || 0);
-                if (!Number.isFinite(createdAt) || (now - createdAt) > maxAgeMs) {
-                    localStorage.removeItem(key);
-                }
-            } catch (_error) {
-                localStorage.removeItem(key);
-            }
-        }
-    }
-
-    storePreviewSvgPayload(svg, texts = []) {
-        if (!svg || typeof svg !== 'string') {
-            throw new Error('Preview SVG payload is empty');
-        }
-
-        let normalizedTexts = [];
-        if (Array.isArray(texts)) {
-            try {
-                normalizedTexts = JSON.parse(JSON.stringify(texts));
-            } catch (_error) {
-                normalizedTexts = [];
-            }
-        }
-
-        this.cleanupOldPreviewPayloads();
-
-        const key = this.generatePreviewPayloadKey();
-        const payload = {
-            version: 3,
-            svg,
-            texts: Array.isArray(texts) ? texts : [],
-            baseMaterialColor: this.baseMaterialColor,
-            laymentThicknessMm: this.laymentThicknessMm,
-            createdAt: Date.now()
-        };
-
-        localStorage.setItem(key, JSON.stringify(payload));
-        return key;
-    }
-
-
 
     getColorLabel(colorKey) {
         if (colorKey === 'blue') {
