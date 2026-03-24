@@ -742,8 +742,6 @@
         app.canvas?.requestRenderAll?.();
         app.requestControlsStateRefresh?.();
         app.updateStatusBar?.();
-        app.syncPrimitiveControlsFromSelection?.();
-        app.syncTextControlsFromSelection?.();
 
         if (options.scheduleWorkspaceSave) {
             app.scheduleWorkspaceSave?.();

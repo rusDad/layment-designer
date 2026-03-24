@@ -35,8 +35,6 @@ class ContourApp {
         this.laymentOffset = Config.LAYMENT_OFFSET;
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
-        this.isSyncingPrimitiveControls = false;
-        this.isSyncingTextControls = false;
         this.exportButtonDefaultText = UIDom.buttons.export?.textContent || 'Завершить';
         this.exportCooldownMs = 5000;
         this.exportInProgress = false;
@@ -67,8 +65,6 @@ class ContourApp {
         this.initializeMaterialColor();
         this.initializeLaymentThickness();
         this.setupEventListeners();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
         this.requestControlsStateRefresh();
         this.fitToLayment();
         this.emitEditorCallback('onReady', { document: this.getDocumentState() });
@@ -642,7 +638,6 @@ class ContourApp {
         if (primitive) {
             this.setActiveObjectWithSelectionSource(primitive, 'programmatic');
             this.canvas.requestRenderAll();
-            this.syncPrimitiveControlsFromSelection();
             this.scheduleWorkspaceSave();
         }
 
@@ -674,7 +669,6 @@ class ContourApp {
         if (textObject) {
             this.setActiveObjectWithSelectionSource(textObject, 'programmatic');
             this.canvas.requestRenderAll();
-            this.syncTextControlsFromSelection();
             this.scheduleWorkspaceSave();
         }
 
@@ -1070,8 +1064,6 @@ class ContourApp {
                         this.canvas.requestRenderAll();
                         this.requestControlsStateRefresh();
                         this.requestStatusBarRefresh();
-                        this.syncPrimitiveControlsFromSelection();
-                        this.syncTextControlsFromSelection();
                     }
                     break;
                 default:
@@ -1462,8 +1454,6 @@ class ContourApp {
         this.canvas.requestRenderAll();
         this.requestControlsStateRefresh();
         this.requestStatusBarRefresh();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
 
         if (scheduleWorkspaceSave) {
             this.scheduleWorkspaceSave();
@@ -1612,67 +1602,52 @@ class ContourApp {
         return active.primitiveType ? active : null;
     }
 
-    setPrimitiveControlsEnabled(enabled) {
-        const controls = UIDom.panels.primitiveControls;
-        if (!controls) {
-            return;
-        }
-        controls.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-        UIDom.inputs.primitiveWidth.disabled = !enabled;
-        UIDom.inputs.primitiveHeight.disabled = !enabled;
-        UIDom.inputs.primitiveRadius.disabled = !enabled;
-    }
-
-    syncPrimitiveControlsFromSelection() {
+    getPrimitiveInspectorState() {
         const primitive = this.getSingleSelectedPrimitive();
-        this.isSyncingPrimitiveControls = true;
-        const typeRow = UIDom.primitive.typeLabel?.parentElement;
+
+        const limits = {
+            rect: {
+                minWidth: Config.GEOMETRY.PRIMITIVES.RECT.MIN_WIDTH,
+                maxWidth: Config.GEOMETRY.PRIMITIVES.RECT.MAX_WIDTH,
+                minHeight: Config.GEOMETRY.PRIMITIVES.RECT.MIN_HEIGHT,
+                maxHeight: Config.GEOMETRY.PRIMITIVES.RECT.MAX_HEIGHT
+            },
+            circle: {
+                minRadius: Config.GEOMETRY.PRIMITIVES.CIRCLE.MIN_RADIUS,
+                maxRadius: Config.GEOMETRY.PRIMITIVES.CIRCLE.MAX_RADIUS
+            }
+        };
 
         if (!primitive) {
-            UIDom.primitive.typeLabel.textContent = '—';
-            if (typeRow) {
-                typeRow.style.display = 'none';
-            }
-            UIDom.inputs.primitiveWidth.value = '';
-            UIDom.inputs.primitiveHeight.value = '';
-            UIDom.inputs.primitiveRadius.value = '';
-            UIDom.primitive.widthRow.style.display = 'none';
-            UIDom.primitive.heightRow.style.display = 'none';
-            UIDom.primitive.radiusRow.style.display = 'none';
-            this.setPrimitiveControlsEnabled(false);
-            this.isSyncingPrimitiveControls = false;
-            return;
+            return {
+                mode: 'empty',
+                primitive: null,
+                limits
+            };
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
-        if (typeRow) {
-            typeRow.style.display = 'none';
-        }
 
         if (dimensions.type === 'rect') {
-            UIDom.inputs.primitiveWidth.value = dimensions.width;
-            UIDom.inputs.primitiveHeight.value = dimensions.height;
-            UIDom.inputs.primitiveRadius.value = '';
-            UIDom.primitive.widthRow.style.display = 'block';
-            UIDom.primitive.heightRow.style.display = 'block';
-            UIDom.primitive.radiusRow.style.display = 'none';
-            UIDom.inputs.primitiveWidth.min = Config.GEOMETRY.PRIMITIVES.RECT.MIN_WIDTH;
-            UIDom.inputs.primitiveWidth.max = Config.GEOMETRY.PRIMITIVES.RECT.MAX_WIDTH;
-            UIDom.inputs.primitiveHeight.min = Config.GEOMETRY.PRIMITIVES.RECT.MIN_HEIGHT;
-            UIDom.inputs.primitiveHeight.max = Config.GEOMETRY.PRIMITIVES.RECT.MAX_HEIGHT;
-        } else {
-            UIDom.inputs.primitiveWidth.value = '';
-            UIDom.inputs.primitiveHeight.value = '';
-            UIDom.inputs.primitiveRadius.value = dimensions.radius;
-            UIDom.primitive.widthRow.style.display = 'none';
-            UIDom.primitive.heightRow.style.display = 'none';
-            UIDom.primitive.radiusRow.style.display = 'block';
-            UIDom.inputs.primitiveRadius.min = Config.GEOMETRY.PRIMITIVES.CIRCLE.MIN_RADIUS;
-            UIDom.inputs.primitiveRadius.max = Config.GEOMETRY.PRIMITIVES.CIRCLE.MAX_RADIUS;
+            return {
+                mode: 'rect',
+                primitive: {
+                    type: 'rect',
+                    width: dimensions.width,
+                    height: dimensions.height
+                },
+                limits
+            };
         }
 
-        this.setPrimitiveControlsEnabled(true);
-        this.isSyncingPrimitiveControls = false;
+        return {
+            mode: 'circle',
+            primitive: {
+                type: 'circle',
+                radius: dimensions.radius
+            },
+            limits
+        };
     }
 
 
@@ -1692,61 +1667,60 @@ class ContourApp {
         return active.isTextObject ? active : null;
     }
 
-    setTextPanelEnabled(enabled) {
-        const panel = UIDom.texts.panel;
-        if (!panel) return;
-        panel.hidden = !enabled;
-        panel.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-    }
-
     getAttachedTextsForContour(contour) {
         if (!contour?.placementId) return [];
         return this.textManager.getAttachedTextsForContour(contour);
     }
 
-    fillTextForm(textObj) {
-        if (UIDom.texts.value) UIDom.texts.value.value = textObj?.text || '';
-        if (UIDom.texts.fontSize) UIDom.texts.fontSize.value = Number(textObj?.fontSize) || '';
-        if (UIDom.texts.angle) UIDom.texts.angle.value = textObj ? (Number(textObj?.angle) || 0) : '';
-        if (UIDom.texts.kind) UIDom.texts.kind.textContent = textObj?.kind || '—';
-        if (UIDom.texts.role) UIDom.texts.role.textContent = textObj?.role || '—';
-        if (UIDom.texts.owner) UIDom.texts.owner.textContent = Number.isFinite(textObj?.ownerPlacementId) ? String(textObj.ownerPlacementId) : '—';
-    }
-
-    syncTextControlsFromSelection() {
+    getTextInspectorState() {
         const contour = this.getSelectedContourForText();
         const selectedText = this.getSelectedTextObject();
         const ownerContour = selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null;
         const targetContour = contour || ownerContour;
-        const formText = selectedText || null;
-        const list = UIDom.texts.list;
 
         if (!selectedText && !targetContour) {
-            this.setTextPanelEnabled(false);
-            if (list) {
-                list.innerHTML = '';
-                list.disabled = true;
+            return {
+                mode: 'hidden',
+                selectedText: null,
+                targetContour: null,
+                capabilities: {
+                    canEditValue: false,
+                    canEditFontSize: false,
+                    canEditAngle: false,
+                    canAddFree: false,
+                    canAddAttached: false,
+                    canAttach: false,
+                    canDetach: false,
+                    canDelete: false
+                }
+            };
+        }
+
+        const formText = selectedText || null;
+        return {
+            mode: 'context',
+            selectedText: formText ? {
+                kind: formText.kind === 'attached' ? 'attached' : 'free',
+                text: formText.text || '',
+                fontSize: Number.isFinite(Number(formText.fontSize)) ? Number(formText.fontSize) : null,
+                angle: Number.isFinite(Number(formText.angle)) ? Number(formText.angle) : 0,
+                role: formText.role || null,
+                ownerPlacementId: Number.isFinite(formText.ownerPlacementId) ? formText.ownerPlacementId : null
+            } : null,
+            targetContour: targetContour ? {
+                placementId: Number.isFinite(targetContour.placementId) ? targetContour.placementId : null
+            } : null,
+            capabilities: {
+                canEditValue: !!formText,
+                canEditFontSize: !!formText,
+                canEditAngle: !!formText,
+                canAddFree: true,
+                canAddAttached: !!targetContour,
+                canAttach: !!(formText && formText.kind === 'free' && targetContour),
+                canDetach: !!(formText && formText.kind === 'attached'),
+                canDelete: !!formText
             }
-            this.fillTextForm(null);
-            return;
-        }
-
-        this.setTextPanelEnabled(true);
-        if (list) {
-            list.innerHTML = '';
-            list.disabled = true;
-        }
-
-        this.fillTextForm(formText);
-
-        if (UIDom.texts.value) UIDom.texts.value.disabled = !formText;
-        if (UIDom.texts.fontSize) UIDom.texts.fontSize.disabled = !formText;
-        if (UIDom.texts.angle) UIDom.texts.angle.disabled = !formText;
-        if (UIDom.texts.addFreeBtn) UIDom.texts.addFreeBtn.disabled = false;
-        if (UIDom.texts.addAttachedBtn) UIDom.texts.addAttachedBtn.disabled = !targetContour;
-        if (UIDom.texts.attachBtn) UIDom.texts.attachBtn.disabled = !(formText && formText.kind === 'free' && targetContour);
-        if (UIDom.texts.detachBtn) UIDom.texts.detachBtn.disabled = !(formText && formText.kind === 'attached');
-        if (UIDom.texts.deleteBtn) UIDom.texts.deleteBtn.disabled = !formText;
+        };
     }
 
     getEditingTextObject() {
@@ -1767,7 +1741,7 @@ class ContourApp {
         this.canvas.requestRenderAll();
 
         if (shouldSyncControls) {
-            this.syncTextControlsFromSelection();
+            this.requestControlsStateRefresh();
         }
         if (shouldUpdateButtons) {
             this.requestControlsStateRefresh();
@@ -1789,7 +1763,7 @@ class ContourApp {
             return false;
         }
 
-        this.syncPrimitiveControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.requestStatusBarRefresh();
 
         if (!applied) {
@@ -1834,7 +1808,7 @@ class ContourApp {
         const textObj = this.textManager.createFreeText({ text, left, top, role: 'user-text' });
         this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
         this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
 
@@ -1847,7 +1821,7 @@ class ContourApp {
         if (!textObj) return;
         this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
         this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
 
@@ -1870,10 +1844,6 @@ class ContourApp {
     }
 
     async applyPrimitiveDimensions(payload = {}) {
-        if (this.isSyncingPrimitiveControls) {
-            return false;
-        }
-
         const primitive = this.getSingleSelectedPrimitive();
         if (!primitive) {
             return false;
@@ -1905,14 +1875,6 @@ class ContourApp {
         }
 
         return this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied: Boolean(applied), shouldScheduleWorkspaceSave: false });
-    }
-
-    async applyPrimitiveDimensionsFromInputs() {
-        return await this.applyPrimitiveDimensions({
-            width: UIDom.inputs.primitiveWidth.value,
-            height: UIDom.inputs.primitiveHeight.value,
-            radius: UIDom.inputs.primitiveRadius.value
-        });
     }
 
     getVariantDisplayLabel(item) {
@@ -2407,8 +2369,6 @@ class ContourApp {
                 this.canvas.requestRenderAll();
                 this.requestControlsStateRefresh();
                 this.requestStatusBarRefresh();
-                this.syncPrimitiveControlsFromSelection();
-                this.syncTextControlsFromSelection();
             });
         } finally {
             this.isRestoringWorkspace = false;

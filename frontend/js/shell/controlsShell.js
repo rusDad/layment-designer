@@ -75,6 +75,105 @@
             if (buttons.snapBottom) buttons.snapBottom.disabled = snapDisabled;
         }
 
+        function renderPrimitiveInspector() {
+            const state = editorFacade.queries.primitiveInspectorState?.() || { mode: 'empty', primitive: null, limits: {} };
+            const controls = uiDom.panels?.primitiveControls;
+            const widthInput = uiDom.inputs?.primitiveWidth;
+            const heightInput = uiDom.inputs?.primitiveHeight;
+            const radiusInput = uiDom.inputs?.primitiveRadius;
+            const typeLabel = uiDom.primitive?.typeLabel;
+            const widthRow = uiDom.primitive?.widthRow;
+            const heightRow = uiDom.primitive?.heightRow;
+            const radiusRow = uiDom.primitive?.radiusRow;
+            const typeRow = typeLabel?.parentElement;
+
+            const isRect = state.mode === 'rect' && state.primitive?.type === 'rect';
+            const isCircle = state.mode === 'circle' && state.primitive?.type === 'circle';
+            const enabled = isRect || isCircle;
+
+            if (controls) {
+                controls.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+            }
+            if (typeRow) {
+                typeRow.style.display = 'none';
+            }
+            if (typeLabel) {
+                typeLabel.textContent = '—';
+            }
+
+            if (widthRow) widthRow.style.display = isRect ? 'block' : 'none';
+            if (heightRow) heightRow.style.display = isRect ? 'block' : 'none';
+            if (radiusRow) radiusRow.style.display = isCircle ? 'block' : 'none';
+
+            if (widthInput) {
+                widthInput.disabled = !isRect;
+                widthInput.value = isRect ? String(state.primitive.width) : '';
+                widthInput.min = String(state.limits?.rect?.minWidth ?? Config.GEOMETRY.PRIMITIVES.RECT.MIN_WIDTH);
+                widthInput.max = String(state.limits?.rect?.maxWidth ?? Config.GEOMETRY.PRIMITIVES.RECT.MAX_WIDTH);
+            }
+            if (heightInput) {
+                heightInput.disabled = !isRect;
+                heightInput.value = isRect ? String(state.primitive.height) : '';
+                heightInput.min = String(state.limits?.rect?.minHeight ?? Config.GEOMETRY.PRIMITIVES.RECT.MIN_HEIGHT);
+                heightInput.max = String(state.limits?.rect?.maxHeight ?? Config.GEOMETRY.PRIMITIVES.RECT.MAX_HEIGHT);
+            }
+            if (radiusInput) {
+                radiusInput.disabled = !isCircle;
+                radiusInput.value = isCircle ? String(state.primitive.radius) : '';
+                radiusInput.min = String(state.limits?.circle?.minRadius ?? Config.GEOMETRY.PRIMITIVES.CIRCLE.MIN_RADIUS);
+                radiusInput.max = String(state.limits?.circle?.maxRadius ?? Config.GEOMETRY.PRIMITIVES.CIRCLE.MAX_RADIUS);
+            }
+        }
+
+        function renderTextInspector() {
+            const state = editorFacade.queries.textInspectorState?.() || { mode: 'hidden', selectedText: null, targetContour: null, capabilities: {} };
+            const panel = uiDom.texts?.panel;
+            const list = uiDom.texts?.list;
+            const selectedText = state.selectedText || null;
+            const capabilities = state.capabilities || {};
+
+            if (panel) {
+                const visible = state.mode === 'context';
+                panel.hidden = !visible;
+                panel.setAttribute('aria-disabled', visible ? 'false' : 'true');
+            }
+
+            if (list) {
+                list.innerHTML = '';
+                list.disabled = true;
+                list.hidden = true;
+            }
+
+            if (uiDom.texts?.value) {
+                uiDom.texts.value.value = selectedText?.text || '';
+                uiDom.texts.value.disabled = capabilities.canEditValue !== true;
+            }
+            if (uiDom.texts?.fontSize) {
+                uiDom.texts.fontSize.value = selectedText?.fontSize != null ? String(selectedText.fontSize) : '';
+                uiDom.texts.fontSize.disabled = capabilities.canEditFontSize !== true;
+            }
+            if (uiDom.texts?.angle) {
+                uiDom.texts.angle.value = selectedText ? String(selectedText.angle ?? 0) : '';
+                uiDom.texts.angle.disabled = capabilities.canEditAngle !== true;
+            }
+            if (uiDom.texts?.kind) {
+                uiDom.texts.kind.textContent = selectedText?.kind || '—';
+            }
+            if (uiDom.texts?.role) {
+                uiDom.texts.role.textContent = selectedText?.role || '—';
+            }
+            if (uiDom.texts?.owner) {
+                const ownerPlacementId = selectedText?.ownerPlacementId ?? state.targetContour?.placementId;
+                uiDom.texts.owner.textContent = Number.isFinite(ownerPlacementId) ? String(ownerPlacementId) : '—';
+            }
+
+            if (uiDom.texts?.addFreeBtn) uiDom.texts.addFreeBtn.disabled = capabilities.canAddFree !== true;
+            if (uiDom.texts?.addAttachedBtn) uiDom.texts.addAttachedBtn.disabled = capabilities.canAddAttached !== true;
+            if (uiDom.texts?.attachBtn) uiDom.texts.attachBtn.disabled = capabilities.canAttach !== true;
+            if (uiDom.texts?.detachBtn) uiDom.texts.detachBtn.disabled = capabilities.canDetach !== true;
+            if (uiDom.texts?.deleteBtn) uiDom.texts.deleteBtn.disabled = capabilities.canDelete !== true;
+        }
+
         function renderStatusBar() {
             const statusInfo = uiDom.status?.info;
             if (!statusInfo) {
@@ -256,8 +355,12 @@
         function bindControlsState() {
             document.addEventListener(CONTROLS_STATE_REFRESH_EVENT, event => {
                 applyControlsState(event.detail?.controlsState);
+                renderPrimitiveInspector();
+                renderTextInspector();
             });
             applyControlsState(editorFacade.queries.controlsState?.());
+            renderPrimitiveInspector();
+            renderTextInspector();
         }
 
         return {
@@ -269,6 +372,8 @@
                 bindStatusBar();
             },
             applyControlsState,
+            renderPrimitiveInspector,
+            renderTextInspector,
             refreshStatusBar: renderStatusBar,
             statusBarRefreshEventName: STATUS_BAR_REFRESH_EVENT,
             controlsStateRefreshEventName: CONTROLS_STATE_REFRESH_EVENT
