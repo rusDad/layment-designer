@@ -28,6 +28,11 @@
     function createCatalogShell({ editorFacade, uiDom, feedback }) {
         const dom = uiDom?.catalog;
         const list = uiDom?.panels?.catalogList;
+        const catalogState = global.DesignerCatalogState.create({
+            onManifestLoaded: (manifest) => {
+                editorFacade.commands.setCatalogManifest?.(manifest);
+            }
+        });
 
         function createPreviewElement(item) {
             const previewAsset = item?.assets?.preview;
@@ -53,7 +58,7 @@
         }
 
         async function render() {
-            const state = editorFacade.queries.catalog();
+            const state = catalogState.getState();
             if (!dom || !list) {
                 return state;
             }
@@ -101,7 +106,7 @@
                     const row = document.createElement('div');
                     row.className = 'catalog-row';
                     row.addEventListener('click', async () => {
-                        editorFacade.commands.setCatalogFilters({ category, query: state.query || '' });
+                        catalogState.setCategory(category);
                         await render();
                     });
 
@@ -202,23 +207,27 @@
             }
 
             dom.breadcrumbAll?.addEventListener('click', async () => {
-                editorFacade.commands.setCatalogFilters({ category: null, query: dom.searchInput?.value || '' });
+                catalogState.setCategory(null);
                 await render();
             });
 
             dom.categorySelect?.addEventListener('change', async event => {
-                editorFacade.commands.setCatalogFilters({ category: event.target.value || null, query: dom.searchInput?.value || '' });
+                catalogState.setCategory(event.target.value || null);
                 await render();
             });
 
             dom.searchInput?.addEventListener('input', async event => {
-                const currentState = editorFacade.queries.catalog();
-                editorFacade.commands.setCatalogFilters({ category: currentState.currentCategory, query: event.target.value || '' });
+                catalogState.setQuery(event.target.value || '');
                 await render();
             });
         }
 
-        return { bind, render };
+        async function init() {
+            await catalogState.load();
+            return await render();
+        }
+
+        return { bind, render, init, load: catalogState.load };
     }
 
     global.DesignerCatalogShell = { create: createCatalogShell };

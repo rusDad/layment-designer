@@ -81,6 +81,7 @@
         get3dPreviewPayload: () => getApp('build3dPreviewPayload').build3dPreviewPayload(),
         buildOrderRequest: async (customer) => await getApp('buildOrderRequest').buildOrderRequest(customer),
         setCatalogFilters: (payload = {}) => getApp('setCatalogFilters').setCatalogFilters(payload),
+        setCatalogManifest: (manifest) => getApp('setCatalogManifest').setCatalogManifest(manifest),
         loadWorkspace: async (data) => {
             await getApp('loadWorkspace').loadWorkspace(data);
             return await queries.workspace({ includeEditorState: true });

@@ -17,10 +17,12 @@
             }
         });
 
+        const catalogShell = global.DesignerCatalogShell.create({ editorFacade, uiDom, feedback });
+        await catalogShell.init();
+
         await workspaceShell.restoreAutosave();
 
         const controlsShell = global.DesignerControlsShell.create({ editorFacade, workspaceShell, uiDom, feedback });
-        const catalogShell = global.DesignerCatalogShell.create({ editorFacade, uiDom, feedback });
         const orderFlowShell = global.DesignerOrderFlowShell.create({ editorFacade, uiDom, feedback });
 
         controlsShell.bind();
