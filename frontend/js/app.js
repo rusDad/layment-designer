@@ -685,7 +685,7 @@ class ContourApp {
         this.resizeCanvasToContent();
         this.canvas.requestRenderAll();
         this.syncWorkspaceScaleInput();
-        this.updateStatusBar();
+        this.requestStatusBarRefresh();
         this.restoreActiveSelection(saved.objects);
     }
 
@@ -915,7 +915,7 @@ class ContourApp {
         this.workspaceScale = newZoom;
         this.syncWorkspaceScaleInput();
         this.canvas.requestRenderAll();
-        this.updateStatusBar();
+        this.requestStatusBarRefresh();
     }
 
     setPanCursor(isGrabbing) {
@@ -1023,7 +1023,7 @@ class ContourApp {
                         this.canvas.discardActiveObject();
                         this.canvas.requestRenderAll();
                         this.updateButtons();
-                        this.updateStatusBar();
+                        this.requestStatusBarRefresh();
                         this.syncPrimitiveControlsFromSelection();
                         this.syncTextControlsFromSelection();
                     }
@@ -1415,7 +1415,7 @@ class ContourApp {
     refreshCanvasMutationState({ scheduleWorkspaceSave = false } = {}) {
         this.canvas.requestRenderAll();
         this.updateButtons();
-        this.updateStatusBar();
+        this.requestStatusBarRefresh();
         this.syncPrimitiveControlsFromSelection();
         this.syncTextControlsFromSelection();
 
@@ -1720,7 +1720,7 @@ class ContourApp {
             this.updateButtons();
         }
         if (shouldUpdateStatusBar) {
-            this.updateStatusBar();
+            this.requestStatusBarRefresh();
         }
         if (shouldScheduleWorkspaceSave) {
             this.scheduleWorkspaceSave();
@@ -1737,7 +1737,7 @@ class ContourApp {
         }
 
         this.syncPrimitiveControlsFromSelection();
-        this.updateStatusBar();
+        this.requestStatusBarRefresh();
 
         if (!applied) {
             return false;
@@ -1862,18 +1862,6 @@ class ContourApp {
         });
     }
 
-    //  подписка на события для статус-бара
-    setupStatusBarUpdates() {
-        this.canvas.on('selection:created', () => this.updateStatusBar());
-        this.canvas.on('selection:updated', () => this.updateStatusBar());
-        this.canvas.on('selection:cleared', () => this.updateStatusBar());
-
-        // Обновление при перемещении и вращении
-        this.canvas.on('object:moving', () => this.updateStatusBar());
-        this.canvas.on('object:rotating', () => this.updateStatusBar());
-        this.canvas.on('object:modified', () => this.updateStatusBar());
-    }
-
     getVariantDisplayLabel(item) {
         if (!item) {
             return "Базовый";
@@ -1881,30 +1869,46 @@ class ContourApp {
         return item.poseLabel || item.poseKey || "Базовый";
     }
 
-    // обновление строки состояния
-    updateStatusBar() {
-        const statusEl = UIDom.status.info;
+    getStatusBarState() {
+        const defaultMessage = 'Выберите контур или выемку';
         const active = this.canvas.getActiveObject();
-        const isOutOfBounds = this.contourManager?.isObjectOutOfLaymentBounds?.(active) === true;
-
         if (!active) {
-            statusEl.textContent = 'Выберите контур или выемку';
-            return;
+            return {
+                mode: 'empty',
+                message: defaultMessage,
+                isWarning: false
+            };
         }
 
         if (active.type === 'activeSelection') {
             const selectedObjects = active.getObjects().filter(Boolean);
             const outOfBoundsObjects = new Set(this.getOutOfBoundsWorkspaceObjects());
             if (selectedObjects.length > 0 && selectedObjects.every(obj => outOfBoundsObjects.has(obj))) {
-                statusEl.textContent = selectedObjects.length === 1
-                    ? 'Элемент вне границ ложемента — исправьте положение перед заказом'
-                    : `Выбрано ${selectedObjects.length} элементов вне границ ложемента — исправьте положение перед заказом`;
-                return;
+                return {
+                    mode: 'selection',
+                    message: selectedObjects.length === 1
+                        ? 'Элемент вне границ ложемента — исправьте положение перед заказом'
+                        : `Выбрано ${selectedObjects.length} элементов вне границ ложемента — исправьте положение перед заказом`,
+                    isWarning: true,
+                    selection: {
+                        count: selectedObjects.length,
+                        allOutOfBounds: true
+                    }
+                };
             }
 
-            statusEl.textContent = 'Выберите контур или выемку';
-            return;
+            return {
+                mode: 'selection',
+                message: defaultMessage,
+                isWarning: false,
+                selection: {
+                    count: selectedObjects.length,
+                    allOutOfBounds: false
+                }
+            };
         }
+
+        const isOutOfBounds = this.contourManager?.isObjectOutOfLaymentBounds?.(active) === true;
 
         if (active.primitiveType === 'rect' || active.primitiveType === 'circle') {
             const dimensions = this.primitiveManager.getPrimitiveDimensions(active);
@@ -1914,16 +1918,33 @@ class ContourApp {
                 const bbox = active.getBoundingRect(true);
                 const realX = (bbox.left - laymentBbox.left).toFixed(1);
                 const realY = (bbox.top - laymentBbox.top).toFixed(1);
-                const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
-                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм${warning}`;
-                return;
+                return {
+                    mode: 'primitive',
+                    isWarning: isOutOfBounds,
+                    primitive: {
+                        type: 'rect',
+                        x: realX,
+                        y: realY,
+                        width: dimensions.width,
+                        height: dimensions.height,
+                        outOfBounds: isOutOfBounds
+                    }
+                };
             }
 
             const realX = (active.left - laymentBbox.left).toFixed(1);
             const realY = (active.top - laymentBbox.top).toFixed(1);
-            const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
-            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм${warning}`;
-            return;
+            return {
+                mode: 'primitive',
+                isWarning: isOutOfBounds,
+                primitive: {
+                    type: 'circle',
+                    x: realX,
+                    y: realY,
+                    radius: dimensions.radius,
+                    outOfBounds: isOutOfBounds
+                }
+            };
         }
 
         // Находим оригинальную группу контура в массиве contourManager.contours
@@ -1932,18 +1953,37 @@ class ContourApp {
         );
 
         if (!contour) {
-            statusEl.textContent = 'Контур не найден';
-            return;
+            return {
+                mode: 'message',
+                message: 'Контур не найден',
+                isWarning: false
+            };
         }
 
-        const meta = this.contourManager.metadataMap.get(contour);
+        const meta = this.contourManager.metadataMap.get(contour) || {};
         const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
         const realX = (tl.x - this.layment.left).toFixed(1);
         const realY = (tl.y - this.layment.top).toFixed(1);
 
-        const article = meta.article || '—';
-        const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
-        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°${warning}`;
+        return {
+            mode: 'contour',
+            isWarning: isOutOfBounds,
+            contour: {
+                name: meta.name || '—',
+                article: meta.article || '—',
+                x: realX,
+                y: realY,
+                angle: contour.angle,
+                poseLabel: meta.poseLabel || null,
+                outOfBounds: isOutOfBounds
+            }
+        };
+    }
+
+    requestStatusBarRefresh() {
+        this.emitEditorCallback('onStatusBarChanged', {
+            statusBar: this.getStatusBarState()
+        });
     }
 
     deleteSelected() {
@@ -2305,7 +2345,7 @@ class ContourApp {
                 this.applyMaterialColorToCutouts();
                 this.canvas.requestRenderAll();
                 this.updateButtons();
-                this.updateStatusBar();
+                this.requestStatusBarRefresh();
                 this.syncPrimitiveControlsFromSelection();
                 this.syncTextControlsFromSelection();
             });

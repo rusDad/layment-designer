@@ -1,4 +1,6 @@
 (function initControlsShell(global) {
+    const STATUS_BAR_REFRESH_EVENT = 'designer:status-bar-refresh';
+
     function clampLaymentSize(value, fallback) {
         let next = parseInt(value, 10) || fallback;
         if (next < Config.LAYMENT_MIN_SIZE) {
@@ -7,7 +9,64 @@
         return next;
     }
 
+    function clearNode(node) {
+        while (node?.firstChild) {
+            node.removeChild(node.firstChild);
+        }
+    }
+
+    function appendStatusStrongPrefix(node, text) {
+        const strong = document.createElement('strong');
+        strong.textContent = text;
+        node.append(strong);
+    }
+
+    function appendStatusText(node, text) {
+        node.append(document.createTextNode(text));
+    }
+
     function createControlsShell({ editorFacade, workspaceShell, uiDom, feedback }) {
+        function renderStatusBar() {
+            const statusInfo = uiDom.status?.info;
+            if (!statusInfo) {
+                return;
+            }
+
+            const state = editorFacade.queries.statusBar?.();
+            clearNode(statusInfo);
+
+            if (!state || state.mode === 'empty' || state.mode === 'message' || state.mode === 'selection') {
+                statusInfo.textContent = state?.message || 'Выберите контур или выемку';
+                return;
+            }
+
+            if (state.mode === 'contour' && state.contour) {
+                appendStatusStrongPrefix(statusInfo, state.contour.name || '—');
+                appendStatusText(statusInfo, ` арт. ${state.contour.article || '—'} · X ${state.contour.x} мм · Y ${state.contour.y} мм · ${state.contour.angle}°`);
+                if (state.contour.outOfBounds) {
+                    appendStatusText(statusInfo, ' · вне границ ложемента');
+                }
+                return;
+            }
+
+            if (state.mode === 'primitive' && state.primitive) {
+                const primitive = state.primitive;
+                if (primitive.type === 'rect') {
+                    appendStatusStrongPrefix(statusInfo, 'Выемка · прямоугольная');
+                    appendStatusText(statusInfo, ` X ${primitive.x} мм · Y ${primitive.y} мм · W ${primitive.width} мм · H ${primitive.height} мм`);
+                } else {
+                    appendStatusStrongPrefix(statusInfo, 'Выемка · круглая');
+                    appendStatusText(statusInfo, ` X ${primitive.x} мм · Y ${primitive.y} мм · R ${primitive.radius} мм`);
+                }
+                if (primitive.outOfBounds) {
+                    appendStatusText(statusInfo, ' · вне границ ложемента');
+                }
+                return;
+            }
+
+            statusInfo.textContent = 'Выберите контур или выемку';
+        }
+
         async function bindToolbarActions() {
             uiDom.buttons.delete.onclick = () => editorFacade.commands.deleteSelection();
             uiDom.buttons.rotate.onclick = () => editorFacade.commands.rotateSelection();
@@ -140,14 +199,25 @@
             });
         }
 
+        function bindStatusBar() {
+            document.addEventListener(STATUS_BAR_REFRESH_EVENT, renderStatusBar);
+            renderStatusBar();
+        }
+
         return {
             bind() {
                 bindToolbarActions();
                 bindInputActions();
                 bindStatusHints();
-            }
+                bindStatusBar();
+            },
+            refreshStatusBar: renderStatusBar,
+            statusBarRefreshEventName: STATUS_BAR_REFRESH_EVENT
         };
     }
 
-    global.DesignerControlsShell = { create: createControlsShell };
+    global.DesignerControlsShell = {
+        create: createControlsShell,
+        STATUS_BAR_REFRESH_EVENT
+    };
 })(window);
