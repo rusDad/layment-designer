@@ -19,6 +19,7 @@ class ContourApp {
         this.currentCategory = null;
         this.catalogQuery = '';
         this.catalogLoadError = null;
+        this.manifest = {};
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
         this.isSyncingPrimitiveControls = false;
@@ -52,7 +53,6 @@ class ContourApp {
         this.createLayment();
         this.initializeMaterialColor();
         this.initializeLaymentThickness();
-        await this.loadAvailableContours();
         this.setupEventListeners();
         this.syncPrimitiveControlsFromSelection();
         this.syncTextControlsFromSelection();
@@ -552,22 +552,37 @@ class ContourApp {
         return thickness;
     }
 
+    setCatalogManifest(itemsOrManifest, categoryLabels = this.categoryLabels || {}) {
+        if (Array.isArray(itemsOrManifest)) {
+            this.manifest = itemsOrManifest.reduce((acc, item) => {
+                if (item?.id) {
+                    acc[item.id] = item;
+                }
+                return acc;
+            }, {});
+        } else if (itemsOrManifest && typeof itemsOrManifest === 'object') {
+            this.manifest = { ...itemsOrManifest };
+        } else {
+            this.manifest = {};
+        }
+
+        this.categoryLabels = categoryLabels && typeof categoryLabels === 'object' ? categoryLabels : {};
+
+        const manifestItems = Object.values(this.manifest);
+        this.availableContours = manifestItems.filter(i => i?.enabled);
+        this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
+        this.availableCategories = this.buildCategories(this.availableArticleEntries);
+        this.ensureValidCategory();
+
+        return this.manifest;
+    }
+
     async loadAvailableContours() {
         this.catalogLoadError = null;
         try {
             const resp = await fetch(Config.API.MANIFEST_URL);
             const data = await resp.json();
-
-            this.manifest = data.items.reduce((acc, item) => {
-                acc[item.id] = item;
-                return acc;
-            }, {});
-            this.categoryLabels = data.categories || {};
-
-            this.availableContours = data.items.filter(i => i.enabled);
-            this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
-            this.availableCategories = this.buildCategories(this.availableArticleEntries);
-            this.ensureValidCategory();
+            this.setCatalogManifest(data?.items || [], data?.categories || {});
         } catch (err) {
             console.error('Ошибка загрузки manifest', err);
             this.catalogLoadError = Config.MESSAGES.LOADING_ERROR;
