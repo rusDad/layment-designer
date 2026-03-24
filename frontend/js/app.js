@@ -801,7 +801,7 @@ class ContourApp {
     getOutOfBoundsWorkspaceObjects() {
         return this.contourManager?.getOutOfBoundsWorkspaceObjects?.() || [];
     }
-
+// TODO UIDom
     showOrderResultInfo(message, title = Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_TITLE) {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
@@ -824,7 +824,7 @@ class ContourApp {
         if (!this.viewportFeedbackActive) {
             return;
         }
-
+// TODO UIDom
         this.viewportFeedbackActive = false;
         const orderResult = UIDom.orderResult;
         if (orderResult.container?.classList.contains('order-result-info')) {
@@ -1010,7 +1010,7 @@ class ContourApp {
     bindKeyboardInteractionRuntime() {
         this.selectionPointerController?.bindKeyboardEvents();
     }
-
+// TODO UIDom
     bindKeyboardShortcuts() {
         document.addEventListener('keydown', event => {
             const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
@@ -1092,7 +1092,7 @@ class ContourApp {
     bindCanvasEvents() {
         this.selectionPointerController?.bindCanvasEvents();
     }
-
+// TODO UIDom
     syncWorkspaceScaleInput() {
         if (!UIDom.inputs.workspaceScale) {
             return;
@@ -1790,7 +1790,7 @@ class ContourApp {
             value
         }, this);
     }
-
+// TODO UIDom
     addFreeTextForSelection() {
         const text = UIDom.texts.value?.value || '';
         const left = this.layment.left + 20;
@@ -1801,7 +1801,7 @@ class ContourApp {
         this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
-
+// TODO UIDom
     addAttachedTextForSelection() {
         const selectedText = this.getSelectedTextObject();
         const contour = this.getSelectedContourForText() || (selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null);
@@ -2395,7 +2395,7 @@ class ContourApp {
 
         return lines.join('\n');
     }
-
+// TODO UIDom
     clearOrderResult() {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
