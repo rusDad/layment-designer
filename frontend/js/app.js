@@ -27,6 +27,7 @@ const VIEWPORT_RESIZE_FIT_DEBOUNCE_MS = 120;
 class ContourApp {
     constructor(options = {}) {
         this.options = options || {};
+        this.host = this.options.host || {};
         this.editorCallbacks = this.options.callbacks || {};
         this.canvas = null;
         this.layment = null;                  
@@ -44,10 +45,12 @@ class ContourApp {
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
         this.actionExecutor = window.ActionExecutor || null;
-        this.selectionPointerController = window.SelectionPointerController?.create?.(this, {
-            protectedUiSelector: '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])',
-            editableSelector: 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
-        }) || null;
+        this.selectionPointerController = window.SelectionPointerController?.create?.(
+            this,
+            this.host?.pointerGuards || {}
+        ) || null;
+        this.canvasScrollContainer = this.host?.canvasScrollContainer || null;
+        this.resizeCanvasHandler = null;
 
         this.ready = this.init();
     }
@@ -77,6 +80,10 @@ class ContourApp {
         this.cancelAutosave();
         this.resetPointerInteraction?.({ soft: true });
         this.closeCustomerModal?.();
+        if (this.resizeCanvasHandler) {
+            window.removeEventListener('resize', this.resizeCanvasHandler);
+            this.resizeCanvasHandler = null;
+        }
         if (this.canvas?.dispose) {
             this.canvas.dispose();
         }
@@ -89,13 +96,15 @@ class ContourApp {
     // =========================
 
     initializeCanvas() {
-        const container = document.querySelector('.canvas-scroll-container');
-        this.canvasScrollContainer = container;
+        const canvasElement = this.host?.canvasElement;
+        if (!(canvasElement instanceof HTMLCanvasElement)) {
+            throw new Error('ContourApp initialization failed: host.canvasElement (HTMLCanvasElement) is required.');
+        }
 
         const getCanvasSize = () => this.getViewportSize();
 
         const initialSize = getCanvasSize();
-        this.canvas = new fabric.Canvas('workspaceCanvas', {
+        this.canvas = new fabric.Canvas(canvasElement, {
             width: initialSize.width,
             height: initialSize.height,
             backgroundColor: Config.UI.CANVAS_BACKGROUND,
@@ -119,7 +128,8 @@ class ContourApp {
             }
         };
 
-        window.addEventListener('resize', resizeCanvas);
+        this.resizeCanvasHandler = resizeCanvas;
+        window.addEventListener('resize', this.resizeCanvasHandler);
         requestAnimationFrame(resizeCanvas);
     }
 
