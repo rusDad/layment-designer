@@ -1,4 +1,15 @@
 (function initAppBootstrap(global) {
+    function resolveHostBindings() {
+        return {
+            canvasElement: document.getElementById('workspaceCanvas'),
+            canvasScrollContainer: document.querySelector('.canvas-scroll-container'),
+            pointerGuards: {
+                protectedUiSelector: '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])',
+                editableSelector: 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
+            }
+        };
+    }
+
     async function bootstrapDesignerApp() {
         const editorFacade = global.EditorFacade;
         const uiDom = global.UIDom;
@@ -8,6 +19,7 @@
         const controlsStateRefreshEventName = global.DesignerControlsShell?.CONTROLS_STATE_REFRESH_EVENT || 'designer:controls-state-refresh';
 
         await editorFacade.initEditor({
+            host: resolveHostBindings(),
             callbacks: {
                 onAutosaveRequested: async ({ mode }) => {
                     try {
