@@ -1677,7 +1677,7 @@ class ContourApp {
                     canEditValue: false,
                     canEditFontSize: false,
                     canEditAngle: false,
-                    canAddFree: false,
+                    canAddFree: true,
                     canAddAttached: false,
                     canAttach: false,
                     canDetach: false,
