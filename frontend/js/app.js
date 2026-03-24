@@ -59,9 +59,9 @@ class ContourApp {
         this.initializeCanvas();
         this.configureFabricRuntime();
         this.initializeServices();
-        this.createLayment();
         this.initializeMaterialColor();
         this.initializeLaymentThickness();
+        this.createLayment();
         this.setupEventListeners();
         this.requestControlsStateRefresh();
         this.fitToLayment();
@@ -465,9 +465,8 @@ class ContourApp {
     }
 
     createLayment() {
-        const width = parseInt(UIDom.inputs.laymentWidth.value) || Config.LAYMENT_DEFAULT_WIDTH;
-        const height = parseInt(UIDom.inputs.laymentHeight.value) || Config.LAYMENT_DEFAULT_HEIGHT;
-
+        const width = Config.LAYMENT_DEFAULT_WIDTH;
+        const height = Config.LAYMENT_DEFAULT_HEIGHT;
 
         this.layment = new fabric.Rect({
             width: width,
@@ -489,14 +488,13 @@ class ContourApp {
         this.canvas.sendToBack(this.layment);
         this.canvas.layment = this.layment; // для удобства
         this.createSafeAreaRect();
-        this.syncLaymentPresetBySize(width, height);
     }
 
-    syncLaymentPresetBySize(width, height) {
+    resolveLaymentPreset(width, height) {
         const presetEntry = Object.entries(Config.LAYMENT_PRESETS || {}).find(([, size]) => {
             return size.width === width && size.height === height;
         });
-        UIDom.inputs.laymentPreset.value = presetEntry ? presetEntry[0] : 'CUSTOM';
+        return presetEntry ? presetEntry[0] : 'CUSTOM';
     }
 
     applyLaymentPreset(presetName) {
@@ -505,8 +503,6 @@ class ContourApp {
             return;
         }
 
-        UIDom.inputs.laymentWidth.value = preset.width;
-        UIDom.inputs.laymentHeight.value = preset.height;
         this.updateLaymentSize(preset.width, preset.height);
     }
 
@@ -515,17 +511,9 @@ class ContourApp {
     // =========================
 
     initializeMaterialColor() {
-        const colorInput = UIDom.inputs.baseMaterialColor;
-        if (!colorInput) {
-            this.applyMaterialColorToCutouts();
-            return;
-        }
-
         if (!Config.MATERIAL_COLORS[this.baseMaterialColor]) {
             this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
         }
-
-        colorInput.value = this.baseMaterialColor;
         this.applyMaterialColorToCutouts();
     }
 
@@ -539,10 +527,6 @@ class ContourApp {
 
     initializeLaymentThickness() {
         this.laymentThicknessMm = this.getValidLaymentThickness(this.laymentThicknessMm);
-        const thicknessInput = UIDom.inputs.laymentThicknessMm;
-        if (thicknessInput) {
-            thicknessInput.value = String(this.laymentThicknessMm);
-        }
     }
 
     getMaterialColorHex(colorKey = this.baseMaterialColor) {
@@ -575,6 +559,7 @@ class ContourApp {
 
         this.baseMaterialColor = colorKey;
         this.applyMaterialColorToCutouts();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
         return true;
     }
@@ -582,6 +567,7 @@ class ContourApp {
     setLaymentThickness(value) {
         const thickness = this.getValidLaymentThickness(value);
         this.laymentThicknessMm = thickness;
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
         return thickness;
     }
@@ -714,6 +700,7 @@ class ContourApp {
             this.fitViewportAfterLaymentResize();
         }
         this.canvas.requestRenderAll();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
 
@@ -2083,6 +2070,18 @@ class ContourApp {
         };
     }
 
+    getLaymentSettingsState() {
+        const width = Math.round(this.layment?.width || Config.LAYMENT_DEFAULT_WIDTH);
+        const height = Math.round(this.layment?.height || Config.LAYMENT_DEFAULT_HEIGHT);
+        return {
+            width,
+            height,
+            preset: this.resolveLaymentPreset(width, height),
+            baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm
+        };
+    }
+
     async getWorkspaceState(options = {}) {
         return await this.performWithScaleOne(() => this.buildWorkspaceSnapshot(options));
     }
@@ -2233,19 +2232,9 @@ class ContourApp {
             this.baseMaterialColor = Config.MATERIAL_COLORS[data.baseMaterialColor]
                 ? data.baseMaterialColor
                 : Config.DEFAULT_MATERIAL_COLOR;
-            if (UIDom.inputs.baseMaterialColor) {
-                UIDom.inputs.baseMaterialColor.value = this.baseMaterialColor;
-            }
             this.applyMaterialColorToCutouts();
 
             this.laymentThicknessMm = this.getValidLaymentThickness(data.laymentThicknessMm);
-            if (UIDom.inputs.laymentThicknessMm) {
-                UIDom.inputs.laymentThicknessMm.value = String(this.laymentThicknessMm);
-            }
-
-            UIDom.inputs.laymentWidth.value = width;
-            UIDom.inputs.laymentHeight.value = height;
-            this.syncLaymentPresetBySize(width, height);
             this.updateLaymentSize(width, height);
             this.layment.set({ left: offset, top: offset });
             this.layment.setCoords();
