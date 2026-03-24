@@ -376,6 +376,10 @@ class ContourManager {
                 name: meta.name,
                 poseKey: meta.poseKey,
                 poseLabel: meta.poseLabel,
+                cuttingLengthMeters: Number.isFinite(meta.cuttingLengthMeters) ? meta.cuttingLengthMeters : 0,
+                assets: {
+                    ...(meta.assets || {})
+                },
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
