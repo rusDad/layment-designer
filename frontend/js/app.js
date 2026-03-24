@@ -1,8 +1,29 @@
 // app.js
 
+// Sections overview:
+// - Constants
+// - ContourApp lifecycle / bootstrap
+// - Canvas / Fabric runtime / viewport
+// - Services / managers initialization
+// - Selection / soft groups / pointer bridge
+// - Layment / safe area / workspace geometry
+// - Material color / thickness
+// - Contours / primitives / texts commands
+// - UI sync / controls / status / modal-related app methods
+// - Workspace snapshot / save / restore
+// - Export / preview / order flow
+// - Low-level helpers
+// - Global export / bootstrap at file end
+
+// =========================
+// Constants
+// =========================
 const AUTOSAVE_DEBOUNCE_MS = 5000;
 const VIEWPORT_RESIZE_FIT_DEBOUNCE_MS = 120;
 
+// =========================
+// ContourApp: lifecycle / bootstrap
+// =========================
 class ContourApp {
     constructor(options = {}) {
         this.options = options || {};
@@ -72,6 +93,10 @@ class ContourApp {
         this.canvas = null;
         this.emitEditorCallback('onDestroy', { destroyed: true });
     }
+
+    // =========================
+    // Canvas / Fabric runtime / viewport
+    // =========================
 
     initializeCanvas() {
         const container = document.querySelector('.canvas-scroll-container');
@@ -177,11 +202,19 @@ class ContourApp {
         this.canvas.calcOffset();
     }
 
+    // =========================
+    // Services / managers initialization
+    // =========================
+
     initializeServices() {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
         this.textManager = new TextManager(this.canvas, this, this.contourManager);
     }
+
+    // =========================
+    // Selection / soft groups / pointer bridge
+    // =========================
 
     resolveActionTargets(activeObject, actionName = null) {
         if (this.interactionPolicy?.resolveActionTargets) {
@@ -380,6 +413,10 @@ class ContourApp {
         this.selectionPointerController?.handleSelectionChanged();
     }
 
+    // =========================
+    // Layment / safe area / workspace geometry
+    // =========================
+
     createSafeAreaRect() {
         if (!this.layment) {
             return;
@@ -473,6 +510,10 @@ class ContourApp {
         this.updateLaymentSize(preset.width, preset.height);
     }
 
+    // =========================
+    // Material color / thickness
+    // =========================
+
     initializeMaterialColor() {
         const colorInput = UIDom.inputs.baseMaterialColor;
         if (!colorInput) {
@@ -544,6 +585,10 @@ class ContourApp {
         this.scheduleWorkspaceSave();
         return thickness;
     }
+
+    // =========================
+    // Contours / primitives / texts commands
+    // =========================
 
     async addContour(item) {
         const centerX = this.layment.left + this.layment.width / 2;
@@ -1491,6 +1536,10 @@ class ContourApp {
         this.actionExecutor?.executeAction?.('snap', { side }, this);
     }
 
+    // =========================
+    // UI sync / controls / status / modal-related app methods
+    // =========================
+
     buildControlsState() {
         const selected = this.getArrangeSelectionObjects();
         const selectedCount = selected.length;
@@ -2007,6 +2056,10 @@ class ContourApp {
         this.actionExecutor?.executeAction?.('toggleLock', {}, this);
     }
 
+    // =========================
+    // Workspace snapshot / save / restore
+    // =========================
+
     shouldAutosaveForObject(obj) {
         if (!obj || this.isRestoringWorkspace) {
             return false;
@@ -2141,6 +2194,10 @@ class ContourApp {
             height: Math.round(rect.height)
         };
     }
+
+    // =========================
+    // Export / preview / order flow
+    // =========================
 
     async validateLayoutCommand() {
         return await this.performWithScaleOne(() => {
@@ -2575,6 +2632,10 @@ class ContourApp {
         }
     }
 
+    // =========================
+    // Low-level helpers
+    // =========================
+
     getColorLabel(colorKey) {
         if (colorKey === 'blue') {
             return 'синий';
@@ -2705,5 +2766,8 @@ class ContourApp {
     }
 }
 
+// =========================
+// Global export / bootstrap at file end
+// =========================
 window.ContourApp = ContourApp;
 window.EditorFacade?.registerEditorFactory?.((options) => new ContourApp(options));
