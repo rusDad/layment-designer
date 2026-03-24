@@ -464,8 +464,6 @@
             this.app?.syncActiveSelectionInteractionState?.(active);
             this.app?.requestControlsStateRefresh?.();
             this.app?.requestStatusBarRefresh?.();
-            this.app?.syncPrimitiveControlsFromSelection?.();
-            this.app?.syncTextControlsFromSelection?.();
         }
 
         handleSelectionChanged() {
@@ -491,8 +489,6 @@
             this.activeSelectionSource = null;
             this.app?.requestControlsStateRefresh?.();
             this.app?.requestStatusBarRefresh?.();
-            this.app?.syncPrimitiveControlsFromSelection?.();
-            this.app?.syncTextControlsFromSelection?.();
         }
 
         bindCanvasEvents() {

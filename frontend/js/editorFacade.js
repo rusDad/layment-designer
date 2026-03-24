@@ -90,6 +90,8 @@
         selection: () => getApp('getSelectionState').getSelectionState(),
         document: () => getApp('getDocumentState').getDocumentState(),
         controlsState: () => getApp('getControlsState').getControlsState(),
+        primitiveInspectorState: () => getApp('getPrimitiveInspectorState').getPrimitiveInspectorState(),
+        textInspectorState: () => getApp('getTextInspectorState').getTextInspectorState(),
         statusBar: () => getApp('getStatusBarState').getStatusBarState(),
         workspace: async (options = {}) => (await getApp('getWorkspaceState').getWorkspaceState(options)),
         export: async (options = {}) => (await getApp('getExportState').getExportState(options)),
