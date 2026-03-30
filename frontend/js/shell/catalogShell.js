@@ -29,6 +29,7 @@
         const dom = uiDom?.catalog;
         const list = uiDom?.panels?.catalogList;
         const catalogState = global.DesignerCatalogState.create();
+        const pendingAddKeys = new Set();
 
         function createPreviewElement(item) {
             const previewAsset = item?.assets?.preview;
@@ -171,13 +172,44 @@
                     meta.appendChild(categoryLabel);
                 }
 
-                const addVariant = async () => {
+                const setPendingUiState = (isPending) => {
+                    row.classList.toggle('is-pending', isPending);
+                    addButton.disabled = isPending;
+                    addButton.setAttribute('aria-busy', isPending ? 'true' : 'false');
+                };
+
+                const getSelectedVariant = () => {
                     const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
-                    const variant = entry.variants?.[variantIndex] || entry.variants?.[0];
+                    return entry.variants?.[variantIndex] || entry.variants?.[0];
+                };
+
+                const getPendingKey = (variant) => {
+                    return [
+                        variant?.id || entry.id || '',
+                        variant?.poseKey || '',
+                        variant?.assets?.svg || ''
+                    ].join('::');
+                };
+
+                const addVariant = async () => {
+                    const variant = getSelectedVariant();
                     if (!variant) {
                         return;
                     }
-                    await editorFacade.commands.addContour(variant);
+
+                    const pendingKey = getPendingKey(variant);
+                    if (pendingAddKeys.has(pendingKey)) {
+                        return;
+                    }
+
+                    pendingAddKeys.add(pendingKey);
+                    setPendingUiState(true);
+                    try {
+                        await editorFacade.commands.addContour(variant);
+                    } finally {
+                        pendingAddKeys.delete(pendingKey);
+                        setPendingUiState(false);
+                    }
                 };
 
                 const addButton = document.createElement('button');

@@ -75,6 +75,7 @@ class ContourManager {
             this.canvas.setActiveObject(group);
         }
         this.canvas.renderAll();
+        return group;
     }
 
     snapToAllowedAngle(obj) {
