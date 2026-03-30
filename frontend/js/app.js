@@ -41,6 +41,8 @@ class ContourApp {
         this.selectionExpandInProgress = false;
         this.viewportResizeFitTimer = null;
         this.viewportFeedbackActive = false;
+        this.batchRenderDepth = 0;
+        this.batchRenderOriginalRenderAll = null;
 
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
@@ -161,15 +163,24 @@ class ContourApp {
             return await callback();
         }
 
-        const originalRenderAll = this.canvas.renderAll;
-        this.canvas._objectsDirty = true;
-        this.canvas.renderAll = () => {};
+        this.batchRenderDepth += 1;
+        if (this.batchRenderDepth === 1) {
+            this.batchRenderOriginalRenderAll = this.canvas.renderAll;
+            this.canvas._objectsDirty = true;
+            this.canvas.renderAll = () => {};
+        }
 
         try {
             return await callback();
         } finally {
-            this.canvas.renderAll = originalRenderAll;
-            this.canvas.requestRenderAll();
+            this.batchRenderDepth = Math.max(0, this.batchRenderDepth - 1);
+            if (this.batchRenderDepth === 0) {
+                if (this.batchRenderOriginalRenderAll) {
+                    this.canvas.renderAll = this.batchRenderOriginalRenderAll;
+                }
+                this.batchRenderOriginalRenderAll = null;
+                this.canvas.requestRenderAll();
+            }
         }
     }
 
@@ -581,13 +592,12 @@ class ContourApp {
         const centerY = this.layment.top + this.layment.height / 2;
 
         await this.batchRender(async () => {
-            await this.contourManager.addContour(
+            const contourObj = await this.contourManager.addContour(
                 `/contours/${item.assets.svg}`,
                 { x: centerX, y: centerY },
                 item
             );
 
-            const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
             this.textManager.ensureDefaultTextForContour(contourObj, item.defaultLabel);
         });
 
@@ -2261,12 +2271,11 @@ class ContourApp {
                         },
                         depthOverrideMm: Number.isFinite(contour.depthOverrideMm) ? contour.depthOverrideMm : undefined
                     };
-                    await this.contourManager.addContour(
+                    const added = await this.contourManager.addContour(
                         `/contours/${contourAssetSvg}`,
                         { x: this.layment.left, y: this.layment.top },
                         metadata
                     );
-                    const added = this.contourManager.contours[this.contourManager.contours.length - 1];
                     added.placementId = contour.placementId;
                     this.objectMetaApi?.patchObjectMeta?.(added, {
                         placementId: contour.placementId,
