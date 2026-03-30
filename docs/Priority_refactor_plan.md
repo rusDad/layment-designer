@@ -22,22 +22,22 @@
 **Замечания:**
 - Хорошо, что базовые инварианты и API пути централизованы.
 - Есть следы legacy (`CONVERSION.SCALE_FACTOR` с TODO), которые архитектурно опасны именно из-за инварианта `1 px == 1 mm`.
-- `FABRIC_CONFIG.GROUP` живёт здесь, но дальше глобально применяется к `fabric.ActiveSelection.prototype`, то есть это уже не только config, а runtime policy hook.
+- `FABRIC_CONFIG.GROUP` живёт здесь и должен применяться только из явного runtime/app setup, а не как скрытый module side effect.
 
 ### `frontend/js/objectMeta.js`
 **Текущая ответственность:** унифицированный metadata layer и проекция semantic-state на Fabric flags.
 
 **Замечания:**
 - Это один из лучших модулей по форме: маленький, сфокусированный, понятный API (`init/patch/copy/apply`).
-- Но граница ответственности размыта: модуль не только хранит метаданные, но и кэширует low-level Fabric flags обратно в metadata (`lockMovement*`, `lockRotation`, `hasControls`, `hasBorders`).
-- В текущем виде metadata — не чистый semantic source of truth, а hybrid snapshot semantic + mechanical state.
+- Но граница ответственности размывалась: модуль не только хранил метаданные, но и кэшировал low-level Fabric flags обратно в metadata (`lockMovement*`, `lockRotation`, `hasControls`, `hasBorders`).
+- Целевая и уже поддерживаемая граница: metadata должна оставаться semantic source of truth, а mechanical state вычисляться как runtime projection по object role.
 
 ### `frontend/js/interactionPolicy.js`
 **Текущая ответственность:** centralized rules для select/move/rotate/delete/duplicate/lock/group/arrange target resolution.
 
 **Замечания:**
 - По форме модуль тоже удачный: policy действительно собрана в одном месте.
-- Но policy пока не полностью semantic: часть решений читает mechanical Fabric flags (`obj.selectable`, `obj.lockMovementX/Y`).
+- Целевая граница: policy должна принимать решения из metadata + object semantics, а не читать Fabric mechanical flags как primary source.
 - Из-за этого policy не полностью изолирована от runtime projection и может давать разные ответы в зависимости от того, кто и когда успел поменять Fabric flags.
 
 ### `frontend/js/actionExecutor.js`
@@ -245,7 +245,7 @@
 - Это также показывает, что модуль сам не доверяет публичному API metadata.
 
 **Где именно:**
-- `const currentMeta = textObj.__objectMeta ...` внутри `applyTextSemanticMeta()`.
+- Исторически это было `const currentMeta = textObj.__objectMeta ...` внутри `applyTextSemanticMeta()`, но целевой вариант — чтение только через публичный metadata API.
 
 **Severity:** medium.
 
@@ -256,7 +256,7 @@
 - Усложняется reasoning про restore/copy/duplicate.
 
 **Где именно:**
-- В `applyInteractionState()` lazily записываются `lockMovementX`, `lockMovementY`, `lockRotation`, `lockScalingX/Y`, `hasControls`, `hasBorders`.
+- Исторически проблема была в том, что `applyInteractionState()` lazily записывал `lockMovementX`, `lockMovementY`, `lockRotation`, `lockScalingX/Y`, `hasControls`, `hasBorders` обратно в metadata; целевая модель — projection-only.
 
 **Severity:** medium.
 
@@ -267,7 +267,7 @@
 - Любой другой код, работающий с `ActiveSelection`, уже получает этот патч implicitly.
 
 **Где именно:**
-- `fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);`
+- Исторически патч делался прямо в `ContourManager`; целевая модель — явная настройка runtime/app setup для `ActiveSelection`.
 
 **Severity:** medium.
 

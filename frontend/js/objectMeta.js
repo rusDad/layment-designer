@@ -61,6 +61,39 @@
         return Number.isFinite(placementId) ? placementId : null;
     }
 
+    function getObjectRole(obj, meta) {
+        if (typeof meta?.objectRole === 'string' && meta.objectRole.trim()) {
+            return meta.objectRole;
+        }
+        if (obj?.isTextObject) {
+            return 'text';
+        }
+        if (obj?.primitiveType) {
+            return 'primitive';
+        }
+        return 'generic';
+    }
+
+    function getBaseMechanicalState(obj, meta) {
+        const objectRole = getObjectRole(obj, meta);
+        const isTextObject = objectRole === 'text' || !!obj?.isTextObject;
+        const isPrimitive = objectRole === 'primitive' || !!obj?.primitiveType;
+        const isContour = objectRole === 'contour' || (!isTextObject && !isPrimitive);
+        const isAttachedText = isTextObject && obj?.kind === 'attached';
+
+        return {
+            selectable: true,
+            evented: true,
+            lockMovementX: false,
+            lockMovementY: false,
+            lockRotation: isTextObject ? isAttachedText : !!isPrimitive,
+            lockScalingX: isTextObject || isContour,
+            lockScalingY: isTextObject || isContour,
+            hasControls: !isTextObject,
+            hasBorders: true
+        };
+    }
+
     function initObjectMeta(obj, patch = {}) {
         const meta = ensureMeta(obj);
         if (!meta) {
@@ -113,38 +146,13 @@
         }
 
         const meta = ensureMeta(obj) || {};
-        if (typeof meta.lockMovementX !== 'boolean') {
-            meta.lockMovementX = !!obj.lockMovementX;
-        }
-        if (typeof meta.lockMovementY !== 'boolean') {
-            meta.lockMovementY = !!obj.lockMovementY;
-        }
-        if (typeof meta.lockRotation !== 'boolean') {
-            meta.lockRotation = !!obj.lockRotation;
-        }
-        if (typeof meta.lockScalingX !== 'boolean') {
-            meta.lockScalingX = !!obj.lockScalingX;
-        }
-        if (typeof meta.lockScalingY !== 'boolean') {
-            meta.lockScalingY = !!obj.lockScalingY;
-        }
-        if (typeof meta.hasControls !== 'boolean') {
-            meta.hasControls = typeof obj.hasControls === 'boolean' ? obj.hasControls : !obj.isTextObject;
-        }
-        if (typeof meta.hasBorders !== 'boolean') {
-            meta.hasBorders = typeof obj.hasBorders === 'boolean' ? obj.hasBorders : true;
-        }
         meta.placementId = normalizePlacementIdFromObject(obj, meta);
         const selectionMode = normalizeSelectionMode(meta.selectionMode);
         meta.selectionMode = selectionMode;
         const isLockedBySemanticFlag = meta.isLocked === true || selectionMode === 'readonly';
-        const canSelect = selectionMode !== 'noSelect' && meta.selectable !== false;
-        const allowEvents = meta.evented !== false;
-        const baseHasControls = meta.hasControls;
-        const baseHasBorders = meta.hasBorders;
-        const baseLockRotation = meta.lockRotation;
-        const baseLockScalingX = meta.lockScalingX;
-        const baseLockScalingY = meta.lockScalingY;
+        const baseState = getBaseMechanicalState(obj, meta);
+        const canSelect = selectionMode !== 'noSelect';
+        const allowEvents = selectionMode !== 'noSelect';
 
         if (isLockedBySemanticFlag || meta.locked === true || meta.interactive === false) {
             obj.selectable = canSelect;
@@ -155,28 +163,19 @@
             obj.lockScalingX = true;
             obj.lockScalingY = true;
             obj.hasControls = false;
-            obj.hasBorders = baseHasBorders;
+            obj.hasBorders = baseState.hasBorders;
             return obj;
         }
 
         obj.selectable = canSelect;
         obj.evented = allowEvents;
-
-        if (typeof meta.lockMovementX === 'boolean') {
-            obj.lockMovementX = meta.lockMovementX;
-        } else {
-            obj.lockMovementX = false;
-        }
-        if (typeof meta.lockMovementY === 'boolean') {
-            obj.lockMovementY = meta.lockMovementY;
-        } else {
-            obj.lockMovementY = false;
-        }
-        obj.lockRotation = baseLockRotation;
-        obj.lockScalingX = baseLockScalingX;
-        obj.lockScalingY = baseLockScalingY;
-        obj.hasControls = baseHasControls;
-        obj.hasBorders = baseHasBorders;
+        obj.lockMovementX = baseState.lockMovementX;
+        obj.lockMovementY = baseState.lockMovementY;
+        obj.lockRotation = baseState.lockRotation;
+        obj.lockScalingX = baseState.lockScalingX;
+        obj.lockScalingY = baseState.lockScalingY;
+        obj.hasControls = baseState.hasControls;
+        obj.hasBorders = baseState.hasBorders;
         if (selectionMode === 'noSelect') {
             obj.selectable = false;
             obj.evented = false;

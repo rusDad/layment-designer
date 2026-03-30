@@ -1,260 +1,129 @@
-# Frontend interaction layer (editor state, policy, executor)
+# Frontend interaction layer (current runtime state)
 
-## Цель
+## Цель документа
 
-Зафиксировать текущую архитектурную границу interaction-слоя в frontend, чтобы инкрементально переносить действия в единый executor без изменения публичных контрактов export/workspace.
-
----
-
-## 1) Source of truth для editor-interaction state
-
-### 1.1 Канонический источник (metadata + policy)
-
-`Source of truth` для interaction-state объекта в редакторе — это связка:
-
-1. **Object metadata (semantic state)**
-   - доменные/семантические поля объекта (`kind`, `boundToId`, `groupId`, `placementId`, lock intent и т.д.);
-   - хранятся и обновляются через metadata-слой (`objectMeta` API), а не через ad-hoc поля UI.
-
-2. **InteractionPolicy (rules/policy layer)**
-   - policy отвечает на вопросы «можно ли» (`canSelect/canMove/canDelete/canRotate/...`);
-   - policy определяет выбор целей для команд (`resolveActionTargets(...)`);
-   - policy фиксирует семантические ограничения follow-связей (`shouldFollowOwnerMove(...)`);
-   - policy различает explicit click selection и marquee/box selection через `selectionMode`.
-
-3. **Fabric object flags (mechanical projection)**
-   - флаги Fabric (`selectable`, `evented`, `lockMovementX/Y`, `lockRotation`, ...)
-     рассматриваются как **низкоуровневая проекция** semantic-state на runtime-объект;
-   - флаги не являются business-source-of-truth сами по себе.
-
-Итого: канон — это **metadata + policy**, а Fabric flags — исполняющий механизм.
-
-### 1.2 Runtime source of truth для текстов
-
-Для текстовой подсистемы сохраняется действующий инвариант:
-
-- **`textManager.texts[]` остаётся runtime source of truth для текстов**;
-- обход canvas как первичный источник текста не используется.
+Зафиксировать **фактическое** состояние interaction-слоя во frontend после выделения policy/executor/pointer/shell модулей.
+Документ не описывает новый план рефакторинга: только то, как работает текущий runtime, где остались компромиссы и что считать архитектурным долгом.
 
 ---
 
-## 2) Роль executor
+## 1) Текущая модульная граница
 
-`ActionExecutor` — единая точка исполнения canvas-команд с детерминированной пост-обработкой:
+На текущем этапе runtime разбит на следующие роли:
 
-- создаёт единый `ctx` (app/canvas/policy/actionName);
-- выполняет обработчик действия (`delete`, `rotate`, `duplicate`, ...);
-- собирает изменённые объекты (`changedObjects`);
-- применяет follower-updates (например, все attached-text follower-объекты за owner-контуром);
-- централизованно делает финализацию (`render + autosave` через общий finalize-path).
+1. **Canvas/Fabric runtime (`app.js` + `selectionPointerController.js`)**
+   - жизненный цикл canvas;
+   - low-level pointer/pan/zoom;
+   - selection/marquee sanitization;
+   - интеграция Fabric events с UI-sync и autosave.
 
-### Действия, которые обязаны идти через executor
+2. **Editor semantics (`objectMeta.js`, `interactionPolicy.js`, `actionExecutor.js`, `textManager.js`)**
+   - semantic metadata объектов;
+   - eligibility rules (`canMove/canRotate/...`);
+   - unified execution path для batch-действий;
+   - text lifecycle (free/attached/default), follower-sync, export/workspace snapshots.
 
-Все действия, которые:
-
-- массово изменяют canvas-сущности;
-- затрагивают связанный lifecycle (owner/follower);
-- требуют единообразной финализации (`setCoords`, render, autosave);
-- могут менять несколько типов сущностей (contour/primitive/text)
-
-должны выполняться через `ActionExecutor.executeAction(...)`.
-
-Практически это минимум для команд уровня toolbar/hotkeys/programmatic transforms: `delete`, `move` (включая keyboard nudging), `rotate`, `duplicate`, `align`, `distribute`, `snap` и любые будущие batch-действия редактора.
-
-Для soft-group foundation на текущем шаге group semantics интегрируются в policy/executor прежде всего для `move`-семантики:
-
-- `canJoinGroup(...)` централизованно определяет, можно ли включать объект в soft-group;
-- `resolveActionTargets(..., 'move')` расширяет target-list до всех objects с тем же `groupId`, но оставляет только `canMove(...)`-совместимые targets;
-- drag-sync на canvas events использует тот же policy-resolved список, а не отдельный ad-hoc путь в обход interaction layer.
+3. **Integration boundary (`editorFacade.js` + shell-модули)**
+   - `EditorFacade.commands/queries` как high-level command/query API;
+   - `shell/appBootstrap.js` как стартовая композиция;
+   - `shell/catalogShell.js`, `shell/controlsShell.js`, `shell/orderFlowShell.js` как DOM wiring поверх facade;
+   - toolbar-state вычисляется в editor (`queries.controlsState()`), а применяется в `controlsShell.applyControlsState(...)`.
 
 ---
 
-## 3) Grouping: только UI/editor feature
+## 2) Source of truth правила
 
-`Grouping` трактуется как инструмент взаимодействия в editor UI:
+### 2.1 Semantic vs mechanical state
 
-- нужен для удобства выделения/перемещения/выравнивания в рамках сессии редактирования;
-- source of truth для membership — `objectMeta.groupId` у плоских canvas-объектов;
-- `fabric.ActiveSelection` допустим только как временный visual helper, но не как постоянная модель данных;
-- **не является частью бизнес-сущности export**;
-- export DTO остаётся плоским: backend получает контуры/примитивы/тексты без `groupId`.
+- Канонический semantic source-of-truth для interaction объектов: `ObjectMeta` + `InteractionPolicy`.
+- Fabric flags (`selectable`, `lockMovementX`, `hasControls`, ...) — только mechanical projection semantic-state.
+- Прямая правка Fabric flags из shell слоёв не допускается; projection централизуется через `applyInteractionState()`.
 
-Следствие:
+### 2.2 Text runtime source of truth
 
-- любые `groupId`/временные group-структуры в frontend — технические runtime-детали редактора;
-- autosave/manual workspace snapshot может хранить membership только как editor-state (`editorState.groupId`);
-- `orderMeta.workspaceSnapshot`, уходящий в export flow, не должен включать editor-only grouping metadata.
+- Канонический runtime-источник для текста: `textManager.texts[]`.
+- Canvas traversal не используется как первичный источник semantic text state.
 
 ---
 
-## 4) Lock-модель (явно)
+## 3) Unified execution paths (что уже централизовано)
 
-### 4.1 Lock как semantic rule в policy
+Через `ActionExecutor.executeAction(...)` в текущем runtime идут:
 
-Lock в целевой модели — это прежде всего semantic rule:
+- `delete`;
+- `move` (включая keyboard nudging);
+- `rotate`;
+- `duplicate`;
+- `group` / `ungroup`;
+- `toggleLock`;
+- arrange family: `align` / `distribute` / `snap`;
+- text actions: `textPropertyUpdate`, `textAttach`, `textDetach`;
+- `primitiveDimensionUpdate`.
 
-- policy решает, разрешено ли действие над объектом;
-- lock-интенция хранится в metadata/state и проверяется на уровне policy-функций.
-- канонический semantic source of truth — `objectMeta.isLocked`.
-
-Правило semantic lock в текущем frontend:
-
-- `canMove = false`;
-- `canRotate = false`;
-- `canParticipateInAlign = false`;
-- `canParticipateInSnap = false`;
-- `canParticipateInDistribute = false`;
-- `canJoinGroup = false` и `groupMove` для mixed-selection не должен сдвигать locked-объекты;
-- `canDelete = true`;
-- `canSelect = true`.
-
-Дополнительное упрощающее правило для текущего PR:
-
-- grouping запрещён, если selection содержит semantic-locked объект;
-- native pointer drag для `ActiveSelection` разрешается только если **каждый** member selection проходит `canMove(...)`;
-- mixed selection (`locked + unlocked`) сохраняется визуально, но drag всей группы блокируется целиком — это проще и надёжнее, чем пытаться тащить только subset внутри Fabric transform;
-- если объект уже состоит в soft-group и затем получает lock, group-aware move-path двигает только members, проходящих `canMove(...)`.
-
-### 4.2 Fabric flags как low-level механизм
-
-Дополнительный инвариант text subsystem в interaction-layer: один owner-контур может иметь несколько attached-text follower-объектов, поэтому executor и policy не должны предполагать связь 1:1 между contour и text.
-
-
-Fabric lock-флаги (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, ...) — технический слой:
-
-- применяются для физического ограничения интеракций в canvas;
-- синхронизируются из semantic state;
-- не должны становиться единственным источником правды о правилах объекта.
-
-Практическое правило синхронизации:
-
-- `applyInteractionState(obj)` читает `objectMeta.isLocked`;
-- при locked-состоянии объект остаётся `selectable/evented`, чтобы не ломать selection + delete;
-- при этом low-level Fabric flags переводятся в mechanical-lock режим (`lockMovementX/Y`, `lockRotation`, `lockScalingX/Y`, `hasControls=false`);
-- при unlocked-состоянии эти флаги возвращаются к базовой конфигурации конкретного объекта.
-
-Итого по lock-модели: **semantic lock (policy) -> mechanical lock (Fabric flags)**.
+Канонический паттерн: `policy.resolveActionTargets(...) -> executor handler -> centralized finalize (render + autosave + follower sync)`.
 
 ---
 
-## 5) Selection policy: explicit click vs marquee
+## 4) Pointer/selection boundary (текущее состояние)
 
-### 5.1 `selectionMode`
+`selectionPointerController` является boundary-слоем между pointer-runtime и editor semantics:
 
-`objectMeta.selectionMode` описывает не только факт selectable/non-selectable, но и **источник допустимого выбора**:
+- определяет selection source (`click` / `marquee` / `programmatic`);
+- выполняет sanitize для marquee-selection через `canBoxSelect`;
+- запрещает text (`selectionMode='clickOnly'`) оставаться в marquee multi-selection;
+- обслуживает panning safety (outside-canvas mousedown, protected UI targets, blur/visibility reset);
+- реализует soft-group drag sync для policy-resolved move targets.
 
-- `normal` — объект можно выбирать и explicit click, и box/marquee selection;
-- `clickOnly` — объект можно выбирать explicit click, но он не должен оставаться внутри `ActiveSelection`, если попал туда рамкой.
-
-Практическое правило:
-
-- `interactionPolicy.canSelect(...)` отвечает за явный выбор объекта (включая click selection);
-- `interactionPolicy.canBoxSelect(...)` отвечает именно за участие объекта в marquee/box selection.
-
-### 5.2 Правило для text objects
-
-Текстовые объекты в редакторе используют `selectionMode='clickOnly'`.
-
-На текущем шаге soft-group foundation дополнительно фиксируется ограничение:
-
-- `text` не участвует в `Group/Ungroup` как groupable target;
-- это осознанное временное правило до отдельной итерации с явной text-group semantics.
-
-Следствия:
-
-- free/attached text **по-прежнему selectable** и не переводятся в `selectable=false`;
-- текст можно выбрать явным кликом;
-- text controls / правая текстовая панель продолжают работать через обычный single-object selection path;
-- текст не должен случайно участвовать в group/marquee selection вместе с contour/primitive объектами.
-
-### 5.3 Sanitize после marquee selection
-
-Fabric может временно собрать text в `ActiveSelection` во время box selection, поэтому policy добивается нужной семантики через post-selection sanitize:
-
-- после `selection:created` / `selection:updated` editor определяет источник выбора (`click`, `marquee`, `restoreActiveSelection`, `programmatic`);
-- если источник — `marquee`, текущий `ActiveSelection` фильтруется через `interactionPolicy.canBoxSelect(...)`;
-- text с `selectionMode='clickOnly'` удаляется из `ActiveSelection`;
-- explicit click selection и `restoreActiveSelection`/programmatic selection не проходят через этот sanitize-path.
-
-### 5.4 Presentation rule для `ActiveSelection`
-
-`ActiveSelection` в interaction-layer трактуется как временная selection-обёртка, а не как полноценный transform-widget.
-
-Поэтому для multi-selection каноническое визуальное правило такое:
-
-- показывается только bbox/border выделения;
-- controls / rotate-handle / scale-handles всегда скрыты;
-- поздняя runtime-синхронизация не должна снова включать handles у `ActiveSelection`;
-- single-object controls продолжают жить по обычной object-level конфигурации.
+Важно: selection semantics больше не распределены по случайным DOM handlers; pointer lifecycle собран в одном модуле.
 
 ---
 
-## 6) Инкрементальный checklist по executor
+## 5) Shell boundary и command/query контракт
 
-Ниже чеклист для PR-итераций: что уже переведено и что пока оставлено осознанно.
+Текущая внешняя граница frontend редактора:
 
-### 6.1 Уже на executor
+- `EditorFacade.registerEditorFactory/initEditor/destroyEditor`;
+- `EditorFacade.commands` для mutation paths;
+- `EditorFacade.queries` для read-model paths.
 
-- [x] `delete` (с учётом разных типов объектов и очистки всех связанных attached-text).
-- [x] `move` (keyboard nudging и другие programmatic translate-paths через policy-resolved target list + executor).
-- [x] `rotate` (целевое действие через policy-resolved target + единая финализация).
-- [x] `duplicate` (batch-дублирование с переносом metadata и follower-логики).
-- [x] `arrange`-семейство: `align`, `distribute`, `snap` (через policy-resolved target list и executor).
+Shell-модули (`catalogShell`, `controlsShell`, `orderFlowShell`) работают через facade и не должны использовать Fabric API напрямую.
+Catalog-model state живёт в `catalogShell`/`catalogState` и не является частью `EditorFacade.queries.document`.
+Интеграционный контракт для каталога — передача готового `item` в `EditorFacade.commands.addContour(item)`.
 
-### 6.2 Намеренно пока НЕ переведено
+Практический итог текущего этапа:
 
-- [ ] Точечные текстовые команды формы/редактирования (например, edit/delete из text UI) вне batch executor.
-- [ ] Локальные операции выбора/ungroup для служебных editor-потоков.
+- основная DOM-привязка вынесена из legacy path в shell-модули;
+- `app.js` больше не мутирует toolbar DOM напрямую: editor пушит `onControlsStateChanged`, shell применяет состояние кнопок;
+- однако `app.js` остаётся крупным orchestration hub и содержит часть UI-sync обязанностей (status bar, primitive controls sync, text controls sync, keyboard shortcuts, document-level listeners).
 
-### 6.3 Критерий готовности очередного шага
+---
 
-Перед переносом новой команды в executor:
+## 6) Workspace / export boundary
 
-- [x] действие проходит через `resolveActionTargets(...)` policy-слой;
-- [x] обработчик не ломает инвариант `textManager.texts[]` как runtime source of truth;
-- [x] follower-updates/lock-ограничения учтены централизованно;
-- [x] финализация не дублируется вне executor.
+- Все проверки/снимки/экспорт строятся через `performWithScaleOne()`.
+- `workspaceSnapshot` строится как отдельный state (`buildWorkspaceSnapshot`) и включается в `orderMeta.workspaceSnapshot`.
+- Export и workspace разделены: editor-only данные (например, `editorState.groupId`) сохраняются только в workspace snapshot и не попадают в export DTO.
+- Текущий workspace `schemaVersion` = **4**, при загрузке поддерживаются `3` и `4`.
 
+---
 
-## 7) Arrange operations: policy -> executor
+## 7) Актуальные известные ограничения / риски
 
-Arrange-операции (`align`, `distribute`, `snap`) теперь идут только через `ActionExecutor.executeAction(...)`.
+Это **не** план работ, а список реальных текущих компромиссов:
 
-Канонический поток для arrange:
+1. `app.js` всё ещё совмещает canvas runtime, editor orchestration и UI-sync обязанности.
+   - Вне этого PR остаются отдельные UI-sync debt зоны: status bar, primitive controls, text controls.
+2. Не все text-mutation paths унифицированы через executor:
+   - `deleteSelectedText()` удаляет текст напрямую через `textManager.removeText(...)`.
+3. Часть text create paths остаётся прямой (`createFreeText/createAttachedText`) вместо единого command-handler слоя.
+4. `ContourApp` остаётся единой точкой сборки большого числа зависимостей; явного разделения на отдельные runtime adapters пока нет.
 
-1. UI в `app.js` только инициирует команду executor'у;
-2. `interactionPolicy.resolveActionTargets(...)` является **единственной точкой**, которая решает, какие объекты участвуют в arrange;
-3. executor при необходимости временно разбирает `activeSelection`, выполняет геометрию и затем восстанавливает selection;
-4. attached-text объекты не участвуют в arrange как primary target, но все follower-тексты owner'а обновляются после перемещения owner-объекта через централизованный follower-update path.
+---
 
-Ограничения policy для arrange:
+## 8) Что считать regression для следующих PR
 
-- `text` не участвует в `align/snap/distribute` как primary target;
-- `safeArea` и `layment` не участвуют;
-- semantic-locked объекты исключаются ещё на policy-слое, даже если полноценный lock UI ещё не введён.
-- duplicate переносит `objectMeta`, включая `isLocked`, потому что lock трактуется как часть semantic-state объекта, а не как временный UI-флаг.
-
-## 8) Canvas events: low-level sync, не policy layer
-
-Fabric canvas events (`object:moving`, `object:rotating`, `object:modified`) сохраняются как low-level hooks для:
-
-- синхронизации attached/free text состояния;
-- обновления status/UI sync;
-- autosave на завершении жеста (`object:modified`).
-
-Но эти события **не должны** принимать semantic-решения о допустимости пользовательской команды.
-Любые keyboard/programmatic move/rotate действия сначала проходят через `interactionPolicy.resolveActionTargets(...)`, затем через `ActionExecutor.executeAction(...)`, и только после этого canvas events обслуживают low-level sync/render lifecycle.
-
-Уточнение по boundary после фикса multi-selection regressions:
-
-- policy решает, можно ли вообще допустить native group drag (`canGroupMoveSelection(...)`);
-- Fabric отвечает только за low-level preview/selection bbox во время pointer-жеста;
-- после завершения multi-object transform editor обязан вернуть selection в каноническое состояние и отдельно синхронизировать attached-text followers уже по финальным координатам owners;
-- follower-sync нельзя делать по member'ам `ActiveSelection` во время промежуточного transform-контекста, иначе text anchor может считаться из нестабильной геометрии.
-
-Пост-инварианты после `group drag` / batch `rotate`:
-
-- attached text каждого contour-owner остаётся привязан к своему owner и не улетает в `0,0` / top-left;
-- синхронизируются только attached followers затронутых owner-объектов;
-- selection/bbox и sidebar state остаются валидными после восстановления selection;
-- pointer drag и executor-driven actions опираются на одну semantic policy: locked/non-movable объект не становится фактическим participant transform только из-за особенностей Fabric selection runtime.
+1. Возврат DOM/Fabric direct mutations в shell-модули.
+2. Добавление новых bypass-path мимо `interactionPolicy`/`actionExecutor` для batch-действий.
+3. Дублирование eligibility-правил одновременно в policy и UI handlers.
+4. Протекание editor-only state (grouping/selection helpers) в export payload.
+5. Нарушение инвариантов `1 px == 1 mm`, `performWithScaleOne()`, и contour export через `obj.aCoords.tl`.

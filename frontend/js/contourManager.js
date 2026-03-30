@@ -18,8 +18,6 @@ class ContourManager {
         this.metadataMap = new WeakMap();
         this.allowedAngles = Config.GEOMETRY.ALLOWED_ANGLES;
         this.nextPlacementSeq = 1;
-        
-        fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);   //Отдельный конфиг для группы 
     }
 
     async addContour(svgUrl, position, metadata) {
@@ -77,13 +75,17 @@ class ContourManager {
             this.canvas.setActiveObject(group);
         }
         this.canvas.renderAll();
+        return group;
     }
 
     snapToAllowedAngle(obj) {
-        const a = obj.angle % 360;
-        obj.angle = this.allowedAngles.reduce((p, c) => 
-            Math.abs(c - a) < Math.abs(p - a) ? c : p
+        const raw = Number(obj.angle) || 0;
+        const a = ((raw % 360) + 360) % 360;
+
+        obj.angle = this.allowedAngles.reduce((prev, current) =>
+            Math.abs(current - a) < Math.abs(prev - a) ? current : prev
         );
+
         obj.setCoords();
     }
 
@@ -378,6 +380,10 @@ class ContourManager {
                 name: meta.name,
                 poseKey: meta.poseKey,
                 poseLabel: meta.poseLabel,
+                cuttingLengthMeters: Number.isFinite(meta.cuttingLengthMeters) ? meta.cuttingLengthMeters : 0,
+                assets: {
+                    ...(meta.assets || {})
+                },
                 x: Math.round((tl.x - layment.left)/layment.scaleX),
                 y: Math.round((tl.y - layment.top)/layment.scaleY),
                 angle: this.normalizeExportAngle(obj.angle),
@@ -420,10 +426,10 @@ class ContourManager {
                 radius: obj.primitiveType === 'circle' 
                     ? Math.round(obj.radius * scaleX) 
                     : undefined,
-                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined,
-                isLocked: this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true
+                pocketDepthMm: Number.isFinite(obj.pocketDepthMm) ? obj.pocketDepthMm : undefined
             };
             if (includeEditorState) {
+                snapshot.isLocked = this.app?.interactionPolicy?.isSemanticallyLocked?.(obj) === true;
                 snapshot.editorState = { groupId };
             }
             return snapshot;

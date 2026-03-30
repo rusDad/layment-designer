@@ -1,81 +1,112 @@
 // app.js
 
-const WORKSPACE_STORAGE_KEY = 'laymentDesigner.workspace.v2';
-const WORKSPACE_MANUAL_KEY = 'laymentDesigner.workspace.v2.manual';
+// Sections overview:
+// - Constants
+// - ContourApp lifecycle / bootstrap
+// - Canvas / Fabric runtime / viewport
+// - Services / managers initialization
+// - Selection / soft groups / pointer bridge
+// - Layment / safe area / workspace geometry
+// - Material color / thickness
+// - Contours / primitives / texts commands
+// - UI sync / controls / status / modal-related app methods
+// - Workspace snapshot / save / restore
+// - Export / preview / order flow
+// - Low-level helpers
+// - Global export / bootstrap at file end
+
+// =========================
+// Constants
+// =========================
 const AUTOSAVE_DEBOUNCE_MS = 5000;
 const VIEWPORT_RESIZE_FIT_DEBOUNCE_MS = 120;
 
+// =========================
+// ContourApp: lifecycle / bootstrap
+// =========================
 class ContourApp {
-    constructor() {
+    constructor(options = {}) {
+        this.options = options || {};
+        this.host = this.options.host || {};
+        this.editorCallbacks = this.options.callbacks || {};
         this.canvas = null;
         this.layment = null;                  
         this.safeArea = null;
         this.workspaceScale = Config.WORKSPACE_SCALE.DEFAULT;
         this.laymentOffset = Config.LAYMENT_OFFSET;
-        this.availableContours = [];
-        this.availableArticleEntries = [];
-        this.availableCategories = [];
-        this.categoryLabels = {};
-        this.currentCategory = null;
-        this.catalogQuery = '';
         this.autosaveTimer = null;
         this.isRestoringWorkspace = false;
-        this.isSyncingPrimitiveControls = false;
-        this.isSyncingTextControls = false;
-        this.exportButtonDefaultText = UIDom.buttons.export?.textContent || 'Завершить';
-        this.exportCooldownMs = 5000;
-        this.exportInProgress = false;
-        this.lastOrderResult = null;
         this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
         this.laymentThicknessMm = 35;
-        this.pendingCustomer = null;
-        this.isPanning = false;
-        this.panStart = null;
-        this.isSpacePressed = false;
-        this.primaryPointerDown = false;
-        this.primaryDownStartedOutsideCanvas = false;
-        this.pointerDownStartedInProtectedUi = false;
-        this.suppressCanvasUntilMouseUp = false;
-        this.pendingPointerResetRenderRaf = null;
-        this.pointerFocusDebug = window.localStorage?.getItem('laymentDesigner.debugPointerFocus') === '1';
-        this.pendingSelectionSource = null;
-        this.activeSelectionSource = null;
-        this.selectionSanitizeInProgress = false;
         this.selectionExpandInProgress = false;
-        this.softGroupDragState = null;
-        this.applyingSoftGroupMove = false;
         this.viewportResizeFitTimer = null;
         this.viewportFeedbackActive = false;
+        this.batchRenderDepth = 0;
+        this.batchRenderOriginalRenderAll = null;
 
         this.objectMetaApi = window.ObjectMeta || null;
         this.interactionPolicy = window.InteractionPolicy || null;
         this.actionExecutor = window.ActionExecutor || null;
+        this.selectionPointerController = window.SelectionPointerController?.create?.(
+            this,
+            this.host?.pointerGuards || {}
+        ) || null;
+        this.canvasScrollContainer = this.host?.canvasScrollContainer || null;
+        this.resizeCanvasHandler = null;
 
-        this.init();
+        this.ready = this.init();
     }
 
     async init() {
         this.initializeCanvas();
+        this.configureFabricRuntime();
         this.initializeServices();
-        this.createLayment();
         this.initializeMaterialColor();
         this.initializeLaymentThickness();
-        await this.loadAvailableContours();
+        this.createLayment();
         this.setupEventListeners();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.fitToLayment();
-        await this.loadWorkspaceFromStorage();
+        this.emitEditorCallback('onReady', { document: this.getDocumentState() });
+        return this;
     }
 
+    emitEditorCallback(name, payload) {
+        const callback = this.editorCallbacks?.[name];
+        if (typeof callback === 'function') {
+            callback(payload, this);
+        }
+    }
+
+    destroy() {
+        this.cancelAutosave();
+        this.resetPointerInteraction?.({ soft: true });
+        this.closeCustomerModal?.();
+        if (this.resizeCanvasHandler) {
+            window.removeEventListener('resize', this.resizeCanvasHandler);
+            this.resizeCanvasHandler = null;
+        }
+        if (this.canvas?.dispose) {
+            this.canvas.dispose();
+        }
+        this.canvas = null;
+        this.emitEditorCallback('onDestroy', { destroyed: true });
+    }
+
+    // =========================
+    // Canvas / Fabric runtime / viewport
+    // =========================
+
     initializeCanvas() {
-        const container = document.querySelector('.canvas-scroll-container');
-        this.canvasScrollContainer = container;
+        const canvasElement = this.host?.canvasElement;
+        if (!(canvasElement instanceof HTMLCanvasElement)) {
+            throw new Error('ContourApp initialization failed: host.canvasElement (HTMLCanvasElement) is required.');
+        }
 
         const getCanvasSize = () => this.getViewportSize();
 
         const initialSize = getCanvasSize();
-        this.canvas = new fabric.Canvas('workspaceCanvas', {
+        this.canvas = new fabric.Canvas(canvasElement, {
             width: initialSize.width,
             height: initialSize.height,
             backgroundColor: Config.UI.CANVAS_BACKGROUND,
@@ -99,8 +130,17 @@ class ContourApp {
             }
         };
 
-        window.addEventListener('resize', resizeCanvas);
+        this.resizeCanvasHandler = resizeCanvas;
+        window.addEventListener('resize', this.resizeCanvasHandler);
         requestAnimationFrame(resizeCanvas);
+    }
+
+    configureFabricRuntime() {
+        if (!fabric?.ActiveSelection?.prototype?.set) {
+            return;
+        }
+
+        fabric.ActiveSelection.prototype.set(Config.FABRIC_CONFIG.GROUP);
     }
 
     getViewportSize() {
@@ -123,15 +163,24 @@ class ContourApp {
             return await callback();
         }
 
-        const originalRenderAll = this.canvas.renderAll;
-        this.canvas._objectsDirty = true;
-        this.canvas.renderAll = () => {};
+        this.batchRenderDepth += 1;
+        if (this.batchRenderDepth === 1) {
+            this.batchRenderOriginalRenderAll = this.canvas.renderAll;
+            this.canvas._objectsDirty = true;
+            this.canvas.renderAll = () => {};
+        }
 
         try {
             return await callback();
         } finally {
-            this.canvas.renderAll = originalRenderAll;
-            this.canvas.requestRenderAll();
+            this.batchRenderDepth = Math.max(0, this.batchRenderDepth - 1);
+            if (this.batchRenderDepth === 0) {
+                if (this.batchRenderOriginalRenderAll) {
+                    this.canvas.renderAll = this.batchRenderOriginalRenderAll;
+                }
+                this.batchRenderOriginalRenderAll = null;
+                this.canvas.requestRenderAll();
+            }
         }
     }
 
@@ -164,11 +213,19 @@ class ContourApp {
         this.canvas.calcOffset();
     }
 
+    // =========================
+    // Services / managers initialization
+    // =========================
+
     initializeServices() {
         this.contourManager = new ContourManager(this.canvas, this);  // Pass this (app) to ContourManager
         this.primitiveManager = new PrimitiveManager(this.canvas, this);  // Новый менеджер для примитивов
         this.textManager = new TextManager(this.canvas, this, this.contourManager);
     }
+
+    // =========================
+    // Selection / soft groups / pointer bridge
+    // =========================
 
     resolveActionTargets(activeObject, actionName = null) {
         if (this.interactionPolicy?.resolveActionTargets) {
@@ -320,254 +377,56 @@ class ContourApp {
     }
 
     groupSelected() {
-        const selectedObjects = this.getSelectionObjects();
-        const groupableObjects = this.getGroupSelectionObjects();
-        if (selectedObjects.length < 2 || groupableObjects.length !== selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
-            return false;
-        }
-
-        const nextGroupId = this.generateSoftGroupId();
-        groupableObjects.forEach(obj => {
-            this.objectMetaApi.patchObjectMeta(obj, { groupId: nextGroupId });
-            obj.setCoords?.();
-        });
-
-        this.restoreActiveSelection(groupableObjects, { source: 'programmatic' });
-        this.scheduleWorkspaceSave();
-        return true;
+        return this.actionExecutor?.executeAction?.('group', {}, this) || false;
     }
 
     ungroupSelected() {
-        const selectedObjects = this.getUngroupSelectionObjects();
-        if (!selectedObjects.length || !this.objectMetaApi?.patchObjectMeta) {
-            return false;
-        }
-
-        const targetGroupIds = Array.from(new Set(selectedObjects
-            .map(obj => this.objectMetaApi?.getGroupId?.(obj))
-            .filter(Boolean)));
-        const changedObjects = [];
-
-        targetGroupIds.forEach(groupId => {
-            this.getSoftGroupMembers(groupId).forEach(member => {
-                this.objectMetaApi.patchObjectMeta(member, { groupId: null });
-                member.setCoords?.();
-                changedObjects.push(member);
-            });
-        });
-
-        const activeSelection = changedObjects.length > 1 ? changedObjects : selectedObjects.filter(Boolean);
-        if (activeSelection.length > 0) {
-            this.restoreActiveSelection(activeSelection, { source: 'programmatic' });
-        } else {
-            this.canvas.discardActiveObject();
-            this.canvas.requestRenderAll();
-        }
-        this.scheduleWorkspaceSave();
-        return true;
+        return this.actionExecutor?.executeAction?.('ungroup', {}, this) || false;
     }
 
     handleSoftGroupObjectMoving(target) {
-        if (!target || this.applyingSoftGroupMove) {
-            return;
-        }
-
-        const selectedObjects = this.resolveActionTargets(target, 'move');
-        if (!selectedObjects.length) {
-            this.softGroupDragState = null;
-            return;
-        }
-
-        let dragState = this.softGroupDragState;
-        if (!dragState || dragState.target !== target) {
-            this.beginSoftGroupMove(target, selectedObjects);
-            dragState = this.softGroupDragState;
-        }
-        if (!dragState || dragState.target !== target) {
-            return;
-        }
-
-        const currentAnchor = {
-            left: Number(target.left) || 0,
-            top: Number(target.top) || 0
-        };
-        const deltaX = currentAnchor.left - dragState.anchorLeft;
-        const deltaY = currentAnchor.top - dragState.anchorTop;
-        if (!deltaX && !deltaY) {
-            return;
-        }
-
-        this.applyingSoftGroupMove = true;
-        try {
-            dragState.trackedObjects.forEach(item => {
-                item.obj.set({
-                    left: item.left + deltaX,
-                    top: item.top + deltaY
-                });
-                this.syncObjectTextState(item.obj);
-            });
-        } finally {
-            this.applyingSoftGroupMove = false;
-        }
+        this.selectionPointerController?.handleSoftGroupObjectMoving(target);
     }
 
     finalizeSoftGroupMove(target) {
-        const dragState = this.softGroupDragState;
-        if (!dragState || dragState.target !== target) {
-            this.softGroupDragState = null;
-            return;
-        }
-
-        dragState.trackedObjects.forEach(item => {
-            item.obj.setCoords?.();
-        });
-        this.softGroupDragState = null;
+        return this.selectionPointerController?.finalizeSoftGroupMove(target) || [];
     }
 
     beginSoftGroupMove(target, selectedObjects = this.resolveActionTargets(target, 'move')) {
-        if (!target) {
-            this.softGroupDragState = null;
-            return null;
-        }
-
-        const moveTargets = Array.isArray(selectedObjects) ? selectedObjects.filter(Boolean) : [];
-        if (!moveTargets.length) {
-            this.softGroupDragState = null;
-            return null;
-        }
-
-        const activeSelectionMembers = target.type === 'activeSelection'
-            ? new Set(target.getObjects().filter(Boolean))
-            : null;
-        const trackedObjects = moveTargets
-            .filter(obj => {
-                if (obj === target) {
-                    return false;
-                }
-                if (activeSelectionMembers?.has(obj)) {
-                    return false;
-                }
-                return true;
-            })
-            .map(obj => ({
-                obj,
-                left: Number(obj.left) || 0,
-                top: Number(obj.top) || 0
-            }));
-
-        this.softGroupDragState = {
-            target,
-            anchorLeft: Number(target.left) || 0,
-            anchorTop: Number(target.top) || 0,
-            trackedObjects
-        };
-        return this.softGroupDragState;
+        return this.selectionPointerController?.beginSoftGroupMove(target, selectedObjects) || null;
     }
 
     markNextSelectionSource(source) {
-        this.pendingSelectionSource = typeof source === 'string' && source ? source : null;
+        this.selectionPointerController?.markNextSelectionSource(source);
     }
 
     consumeSelectionSource(activeObject, fallback = null) {
-        const pendingSource = this.pendingSelectionSource;
-        this.pendingSelectionSource = null;
-        if (typeof pendingSource === 'string' && pendingSource) {
-            return pendingSource;
-        }
-        if (!activeObject) {
-            return null;
-        }
-        if (typeof fallback === 'string' && fallback) {
-            return fallback;
-        }
-        return activeObject.type === 'activeSelection' ? 'programmatic' : 'click';
+        return this.selectionPointerController?.consumeSelectionSource(activeObject, fallback) || null;
     }
 
     detectSelectionSourceFromPointerEvent(event) {
-        const nativeEvent = event?.e;
-        if (nativeEvent?.button !== 0) {
-            return null;
-        }
-        if (event?.target) {
-            return 'click';
-        }
-        if (this.canvas?.selection === false || this.canvas?.skipTargetFind === true) {
-            return null;
-        }
-        return 'marquee';
+        return this.selectionPointerController?.detectSelectionSourceFromPointerEvent(event) || null;
     }
 
     setActiveObjectWithSelectionSource(obj, source = 'programmatic') {
-        if (!obj) {
-            return;
-        }
-        this.markNextSelectionSource(source);
-        this.canvas.setActiveObject(obj);
+        this.selectionPointerController?.setActiveObjectWithSelectionSource(obj, source);
     }
 
     sanitizeActiveSelectionIfNeeded(active, source) {
-        if (!active || active.type !== 'activeSelection' || source !== 'marquee') {
-            return false;
-        }
-
-        const selectedObjects = active.getObjects().filter(Boolean);
-        const allowedObjects = selectedObjects.filter(obj => {
-            if (this.interactionPolicy?.canBoxSelect) {
-                return this.interactionPolicy.canBoxSelect(this, obj);
-            }
-            return this.interactionPolicy?.canSelect?.(this, obj) !== false;
-        });
-
-        if (allowedObjects.length === selectedObjects.length) {
-            return false;
-        }
-
-        this.selectionSanitizeInProgress = true;
-        try {
-            this.canvas.discardActiveObject();
-
-            if (allowedObjects.length === 1) {
-                this.setActiveObjectWithSelectionSource(allowedObjects[0], 'marquee');
-            } else if (allowedObjects.length > 1) {
-                this.restoreActiveSelection(allowedObjects, { source: 'marquee' });
-            } else {
-                this.activeSelectionSource = null;
-                this.canvas.requestRenderAll();
-            }
-        } finally {
-            this.selectionSanitizeInProgress = false;
-        }
-
-        return true;
+        return this.selectionPointerController?.sanitizeActiveSelectionIfNeeded(active, source) || false;
     }
 
     finalizeSelectionChange(active = this.canvas.getActiveObject(), source = null) {
-        this.activeSelectionSource = active ? source : null;
-        this.syncSelectionVisualState(active);
-        this.syncActiveSelectionInteractionState(active);
-        this.updateButtons();
-        this.updateStatusBar();
-        this.syncPrimitiveControlsFromSelection();
-        this.syncTextControlsFromSelection();
+        this.selectionPointerController?.finalizeSelectionChange(active, source);
     }
 
     handleSelectionChanged(_eventName) {
-        const active = this.canvas.getActiveObject();
-        const fallbackSource = active?.type === 'activeSelection'
-            ? (this.activeSelectionSource || 'programmatic')
-            : (this.activeSelectionSource || 'click');
-        const source = this.consumeSelectionSource(active, fallbackSource);
-
-        if (!this.selectionSanitizeInProgress && this.sanitizeActiveSelectionIfNeeded(active, source)) {
-            return;
-        }
-
-        if (!this.selectionExpandInProgress && this.expandActiveSelectionWithSoftGroupsIfNeeded(this.canvas.getActiveObject(), source)) {
-            return;
-        }
-
-        this.finalizeSelectionChange(this.canvas.getActiveObject(), source);
+        this.selectionPointerController?.handleSelectionChanged();
     }
+
+    // =========================
+    // Layment / safe area / workspace geometry
+    // =========================
 
     createSafeAreaRect() {
         if (!this.layment) {
@@ -617,9 +476,8 @@ class ContourApp {
     }
 
     createLayment() {
-        const width = parseInt(UIDom.inputs.laymentWidth.value) || Config.LAYMENT_DEFAULT_WIDTH;
-        const height = parseInt(UIDom.inputs.laymentHeight.value) || Config.LAYMENT_DEFAULT_HEIGHT;
-
+        const width = Config.LAYMENT_DEFAULT_WIDTH;
+        const height = Config.LAYMENT_DEFAULT_HEIGHT;
 
         this.layment = new fabric.Rect({
             width: width,
@@ -641,14 +499,13 @@ class ContourApp {
         this.canvas.sendToBack(this.layment);
         this.canvas.layment = this.layment; // для удобства
         this.createSafeAreaRect();
-        this.syncLaymentPresetBySize(width, height);
     }
 
-    syncLaymentPresetBySize(width, height) {
+    resolveLaymentPreset(width, height) {
         const presetEntry = Object.entries(Config.LAYMENT_PRESETS || {}).find(([, size]) => {
             return size.width === width && size.height === height;
         });
-        UIDom.inputs.laymentPreset.value = presetEntry ? presetEntry[0] : 'CUSTOM';
+        return presetEntry ? presetEntry[0] : 'CUSTOM';
     }
 
     applyLaymentPreset(presetName) {
@@ -657,23 +514,17 @@ class ContourApp {
             return;
         }
 
-        UIDom.inputs.laymentWidth.value = preset.width;
-        UIDom.inputs.laymentHeight.value = preset.height;
         this.updateLaymentSize(preset.width, preset.height);
     }
 
-    initializeMaterialColor() {
-        const colorInput = UIDom.inputs.baseMaterialColor;
-        if (!colorInput) {
-            this.applyMaterialColorToCutouts();
-            return;
-        }
+    // =========================
+    // Material color / thickness
+    // =========================
 
+    initializeMaterialColor() {
         if (!Config.MATERIAL_COLORS[this.baseMaterialColor]) {
             this.baseMaterialColor = Config.DEFAULT_MATERIAL_COLOR;
         }
-
-        colorInput.value = this.baseMaterialColor;
         this.applyMaterialColorToCutouts();
     }
 
@@ -687,10 +538,6 @@ class ContourApp {
 
     initializeLaymentThickness() {
         this.laymentThicknessMm = this.getValidLaymentThickness(this.laymentThicknessMm);
-        const thicknessInput = UIDom.inputs.laymentThicknessMm;
-        if (thicknessInput) {
-            thicknessInput.value = String(this.laymentThicknessMm);
-        }
     }
 
     getMaterialColorHex(colorKey = this.baseMaterialColor) {
@@ -715,45 +562,144 @@ class ContourApp {
         this.canvas?.requestRenderAll();
     }
 
-    async loadAvailableContours() {
-        try {
-            const resp = await fetch(Config.API.MANIFEST_URL);
-            const data = await resp.json();
 
-            this.manifest = data.items.reduce((acc, item) => {
-                acc[item.id] = item;
-                return acc;
-            }, {});
-            this.categoryLabels = data.categories || {};
-
-            this.availableContours = data.items.filter(i => i.enabled);
-            this.availableArticleEntries = this.buildArticleEntries(this.availableContours);
-            this.availableCategories = this.buildCategories(this.availableArticleEntries);
-            this.ensureValidCategory();
-            this.renderCatalogNav();
-            this.renderCatalogList();
-        } catch (err) {
-                console.error('Ошибка загрузки manifest', err);
-                this.showOrderResultError(Config.MESSAGES.LOADING_ERROR);
+    setBaseMaterialColor(colorKey) {
+        if (!Config.MATERIAL_COLORS[colorKey]) {
+            return false;
         }
+
+        this.baseMaterialColor = colorKey;
+        this.applyMaterialColorToCutouts();
+        this.requestControlsStateRefresh();
+        this.scheduleWorkspaceSave();
+        return true;
     }
+
+    setLaymentThickness(value) {
+        const thickness = this.getValidLaymentThickness(value);
+        this.laymentThicknessMm = thickness;
+        this.requestControlsStateRefresh();
+        this.scheduleWorkspaceSave();
+        return thickness;
+    }
+
+    // =========================
+    // Contours / primitives / texts commands
+    // =========================
 
     async addContour(item) {
         const centerX = this.layment.left + this.layment.width / 2;
         const centerY = this.layment.top + this.layment.height / 2;
 
         await this.batchRender(async () => {
-            await this.contourManager.addContour(
+            const contourObj = await this.contourManager.addContour(
                 `/contours/${item.assets.svg}`,
                 { x: centerX, y: centerY },
                 item
             );
 
-            const contourObj = this.contourManager.contours[this.contourManager.contours.length - 1];
             this.textManager.ensureDefaultTextForContour(contourObj, item.defaultLabel);
         });
 
         this.scheduleWorkspaceSave();
+    }
+
+    async addContourCommand(itemOrId) {
+        if (typeof itemOrId === 'string') {
+            throw new Error('addContourCommand requires contour metadata object. String id is no longer supported.');
+        }
+
+        const item = itemOrId && typeof itemOrId === 'object' ? itemOrId : null;
+        if (!item?.assets?.svg) {
+            throw new Error('Contour metadata with assets.svg is required.');
+        }
+
+        await this.addContour(item);
+        return this.getSelectionState();
+    }
+
+    addPrimitiveCommand(payload = {}) {
+        const type = payload.type === 'circle' ? 'circle' : 'rect';
+        const defaultCenterX = this.layment.left + this.layment.width / 2;
+        const defaultCenterY = this.layment.top + this.layment.height / 2;
+        const x = Number.isFinite(payload.x) ? payload.x : defaultCenterX;
+        const y = Number.isFinite(payload.y) ? payload.y : defaultCenterY;
+
+        let primitive = null;
+        if (type === 'circle') {
+            const radius = Number.isFinite(payload.radius) ? payload.radius : 25;
+            primitive = this.primitiveManager.addPrimitive('circle', { x, y }, { radius }, { pocketDepthMm: payload.pocketDepthMm });
+        } else {
+            const width = Number.isFinite(payload.width) ? payload.width : 50;
+            const height = Number.isFinite(payload.height) ? payload.height : 50;
+            primitive = this.primitiveManager.addPrimitive('rect', { x, y }, { width, height }, { pocketDepthMm: payload.pocketDepthMm });
+        }
+
+        if (primitive) {
+            this.setActiveObjectWithSelectionSource(primitive, 'programmatic');
+            this.canvas.requestRenderAll();
+            this.scheduleWorkspaceSave();
+        }
+
+        return primitive ? this.getSelectionState() : null;
+    }
+
+    addTextCommand(payload = {}) {
+        const kind = payload.kind === 'attached' ? 'attached' : 'free';
+        const text = typeof payload.text === 'string' ? payload.text : '';
+        const fontSizeMm = Number.isFinite(payload.fontSizeMm) ? payload.fontSizeMm : undefined;
+        const role = typeof payload.role === 'string' && payload.role.trim() ? payload.role.trim() : 'user-text';
+
+        let textObject = null;
+        if (kind === 'attached') {
+            const ownerPlacementId = Number.isFinite(payload.ownerPlacementId) ? payload.ownerPlacementId : null;
+            const contour = ownerPlacementId != null
+                ? this.textManager.getContourByPlacementId(ownerPlacementId)
+                : this.getSelectedContourForText();
+            if (!contour) {
+                throw new Error('Attached text requires ownerPlacementId or a selected contour.');
+            }
+            textObject = this.textManager.createAttachedText(contour, { text, role, fontSizeMm });
+        } else {
+            const left = Number.isFinite(payload.x) ? payload.x : this.layment.left + 20;
+            const top = Number.isFinite(payload.y) ? payload.y : this.layment.top + 20;
+            textObject = this.textManager.createFreeText({ text, role, fontSizeMm, left, top });
+        }
+
+        if (textObject) {
+            this.setActiveObjectWithSelectionSource(textObject, 'programmatic');
+            this.canvas.requestRenderAll();
+            this.scheduleWorkspaceSave();
+        }
+
+        return textObject ? this.getSelectionState() : null;
+    }
+
+    moveSelectionCommand(payload = {}) {
+        const deltaX = Number(payload.deltaX ?? payload.dx) || 0;
+        const deltaY = Number(payload.deltaY ?? payload.dy) || 0;
+        const moved = this.moveSelectedBy(deltaX, deltaY);
+        return { moved, selection: this.getSelectionState() };
+    }
+
+    rotateSelectionCommand() {
+        this.rotateSelected();
+        return this.getSelectionState();
+    }
+
+    deleteSelectionCommand() {
+        this.deleteSelected();
+        return this.getSelectionState();
+    }
+
+    groupSelectionCommand() {
+        this.groupSelected();
+        return this.getSelectionState();
+    }
+
+    ungroupSelectionCommand() {
+        this.ungroupSelected();
+        return this.getSelectionState();
     }
 
     updateLaymentSize(width, height) {
@@ -764,6 +710,7 @@ class ContourApp {
             this.fitViewportAfterLaymentResize();
         }
         this.canvas.requestRenderAll();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
 
@@ -779,7 +726,7 @@ class ContourApp {
         this.resizeCanvasToContent();
         this.canvas.requestRenderAll();
         this.syncWorkspaceScaleInput();
-        this.updateStatusBar();
+        this.requestStatusBarRefresh();
         this.restoreActiveSelection(saved.objects);
     }
 
@@ -864,7 +811,7 @@ class ContourApp {
     getOutOfBoundsWorkspaceObjects() {
         return this.contourManager?.getOutOfBoundsWorkspaceObjects?.() || [];
     }
-
+// TODO UIDom
     showOrderResultInfo(message, title = Config.MESSAGES.VIEWPORT_OUT_OF_BOUNDS_TITLE) {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
@@ -881,14 +828,13 @@ class ContourApp {
         orderResult.paymentLink.href = '#';
         orderResult.meta.hidden = true;
         orderResult.meta.textContent = '';
-        this.lastOrderResult = null;
     }
 
     clearViewportIssueFeedback() {
         if (!this.viewportFeedbackActive) {
             return;
         }
-
+// TODO UIDom
         this.viewportFeedbackActive = false;
         const orderResult = UIDom.orderResult;
         if (orderResult.container?.classList.contains('order-result-info')) {
@@ -965,15 +911,11 @@ class ContourApp {
     }
 
     isSpacePanModifier(mouseEvent) {
-        return Boolean(mouseEvent?.spaceKey || this.isSpacePressed);
+        return this.selectionPointerController?.isSpacePanModifier(mouseEvent) || false;
     }
 
     canStartPanning(mouseEvent) {
-        if (!mouseEvent) {
-            return false;
-        }
-
-       return mouseEvent.button === 1 || (mouseEvent.button === 0 && this.isSpacePanModifier(mouseEvent));
+        return this.selectionPointerController?.canStartPanning(mouseEvent) || false;
     }
 
     zoomViewportByPointer(mouseEvent) {
@@ -1013,7 +955,7 @@ class ContourApp {
         this.workspaceScale = newZoom;
         this.syncWorkspaceScaleInput();
         this.canvas.requestRenderAll();
-        this.updateStatusBar();
+        this.requestStatusBarRefresh();
     }
 
     setPanCursor(isGrabbing) {
@@ -1024,240 +966,65 @@ class ContourApp {
     }
 
     stopPanning() {
-        if (!this.isPanning || !this.canvas) {
-            return;
-        }
-
-        this.isPanning = false;
-        this.panStart = null;
-        this.canvas.selection = true;
-        this.canvas.skipTargetFind = false;
-        this.setPanCursor(false);
+        this.selectionPointerController?.stopPanning();
     }
 
     isInsideCanvas(target) {
-        if (!this.canvas?.wrapperEl || !(target instanceof Node)) {
-            return false;
-        }
-
-        return this.canvas.wrapperEl.contains(target);
+        return this.selectionPointerController?.isInsideCanvas(target) || false;
     }
 
     isProtectedUiTarget(target) {
-        if (!(target instanceof Node)) {
-            return false;
-        }
-
-        const element = target instanceof Element ? target : target.parentElement;
-        if (!element) {
-            return false;
-        }
-
-        return !!element.closest(
-            '#customerModalOverlay, #customerModalDialog, .customer-modal-overlay, .customer-modal-dialog, input, textarea, select, button, label, a, [contenteditable]:not([contenteditable="false"])'
-        );
+        return this.selectionPointerController?.isProtectedUiTarget(target) || false;
     }
 
     clearBrowserSelection() {
-        const selection = window.getSelection?.();
-        if (selection && selection.rangeCount > 0) {
-            selection.removeAllRanges();
-        }
+        this.selectionPointerController?.clearBrowserSelection();
     }
 
     isEditableElement(element) {
-        if (!(element instanceof Element)) {
-            return false;
-        }
-
-        return !!element.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+        return this.selectionPointerController?.isEditableElement(element) || false;
     }
 
     isEditableTarget(target) {
-        if (!(target instanceof Node)) {
-            return false;
-        }
-
-        const element = target instanceof Element ? target : target.parentElement;
-        return this.isEditableElement(element);
+        return this.selectionPointerController?.isEditableTarget(target) || false;
     }
 
     logPointerFocus(eventName, target) {
-        if (!this.pointerFocusDebug) {
-            return;
-        }
-
-        const active = document.activeElement;
-        console.debug('[pointer-focus-debug]', eventName, {
-            targetTag: target instanceof Element ? target.tagName : target?.nodeName,
-            activeTag: active?.tagName,
-            activeId: active?.id || null,
-            activeClass: active?.className || null
-        });
+        this.selectionPointerController?.logPointerFocus(eventName, target);
     }
 
     schedulePointerResetRender() {
-        if (!this.canvas) {
-            return;
-        }
-
-        if (this.pendingPointerResetRenderRaf !== null) {
-            cancelAnimationFrame(this.pendingPointerResetRenderRaf);
-            this.pendingPointerResetRenderRaf = null;
-        }
-
-        this.pendingPointerResetRenderRaf = requestAnimationFrame(() => {
-            this.pendingPointerResetRenderRaf = null;
-            if (this.isEditableElement(document.activeElement)) {
-                return;
-            }
-            this.canvas.requestRenderAll();
-        });
+        this.selectionPointerController?.schedulePointerResetRender();
     }
 
     finishActiveTextEditing() {
-        if (!this.canvas) {
-            return;
-        }
-
-        const activeObject = this.canvas.getActiveObject();
-        if (!activeObject || activeObject.type !== 'i-text' || !activeObject.isEditing) {
-            return;
-        }
-
-        activeObject.exitEditing();
-        activeObject.hiddenTextarea?.blur?.();
+        this.selectionPointerController?.finishActiveTextEditing();
     }
 
     resetPointerInteraction({ soft = false } = {}) {
-        if (!this.canvas) {
-            return;
-        }
-
-        this.stopPanning();
-        this.isPanning = false;
-        this.panStart = null;
-        this.primaryPointerDown = false;
-        this.primaryDownStartedOutsideCanvas = false;
-        this.pointerDownStartedInProtectedUi = false;
-        this.suppressCanvasUntilMouseUp = false;
-        this.canvas.selection = true;
-        this.canvas.skipTargetFind = false;
-        this.setPanCursor(false);
-        //this.clearBrowserSelection();
-
-        if (soft) {
-            if (this.pendingPointerResetRenderRaf !== null) {
-                cancelAnimationFrame(this.pendingPointerResetRenderRaf);
-                this.pendingPointerResetRenderRaf = null;
-            }
-            return;
-        }
-
-        this.schedulePointerResetRender();
+        this.selectionPointerController?.resetPointerInteraction({ soft });
     }
 
     setupEventListeners() {
         this.bindGlobalPointerSafety();
         this.bindCanvasEvents();
-        this.bindUIButtonEvents();
-        this.bindInputEvents();
-        this.bindCatalogEvents();
-        this.bindStatusHintEvents();
-        this.bindCustomerModalEvents();
+        this.bindKeyboardInteractionRuntime();
         this.bindKeyboardShortcuts();
         this.syncWorkspaceScaleInput();
     }
 
     bindGlobalPointerSafety() {
-        document.addEventListener('mousedown', event => {
-            if (event.button !== 0) {
-                return;
-            }
-
-            this.logPointerFocus('mousedown', event.target);
-
-            const startedInsideCanvas = this.isInsideCanvas(event.target);
-            const startedInProtectedUi = !startedInsideCanvas && this.isProtectedUiTarget(event.target);
-
-            this.primaryPointerDown = true;
-            this.primaryDownStartedOutsideCanvas = !startedInsideCanvas;
-            this.pointerDownStartedInProtectedUi = startedInProtectedUi;
-            // External drag safety should apply only to truly external sources.
-            // Legitimate UI controls (forms/modals/catalog inputs) must keep focus
-            // and should not arm canvas suppression.
-            this.suppressCanvasUntilMouseUp = this.primaryDownStartedOutsideCanvas && !this.pointerDownStartedInProtectedUi;
-
-            if (this.suppressCanvasUntilMouseUp && !this.pointerDownStartedInProtectedUi) {
-                this.stopPanning();
-                this.canvas.discardActiveObject();
-                this.canvas.requestRenderAll();
-            }
-        }, true);
-
-        window.addEventListener('mouseup', event => {
-            if (event.button !== 0) {
-                return;
-            }
-
-            this.logPointerFocus('mouseup', event.target);
-
-            const endedOnEditableUi = this.isEditableTarget(event.target);
-            if (!this.isInsideCanvas(event.target)) {
-                this.finishActiveTextEditing();
-            }
-
-            if (endedOnEditableUi) {
-                this.resetPointerInteraction({ soft: true });
-                return;
-            }
-
-            this.resetPointerInteraction();
-        }, true);
-
-        window.addEventListener('blur', () => {
-            this.resetPointerInteraction();
-        });
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                this.resetPointerInteraction();
-            }
-        });
-
-        this.canvas.wrapperEl.addEventListener('mouseenter', event => {
-            if (!this.primaryPointerDown || !this.suppressCanvasUntilMouseUp) {
-                return;
-            }
-
-            this.stopPanning();
-            this.canvas.discardActiveObject();
-            this.clearBrowserSelection();
-
-            event.preventDefault();
-            event.stopPropagation();
-            this.canvas.requestRenderAll();
-        });
+        this.selectionPointerController?.bindGlobalPointerSafety();
     }
 
+    bindKeyboardInteractionRuntime() {
+        this.selectionPointerController?.bindKeyboardEvents();
+    }
+// TODO UIDom
     bindKeyboardShortcuts() {
         document.addEventListener('keydown', event => {
-            if (event.code !== 'Space') {
-                return;
-            }
-            this.isSpacePressed = true;
-        });
-
-        document.addEventListener('keyup', event => {
-            if (event.code !== 'Space') {
-                return;
-            }
-            this.isSpacePressed = false;
-        });
-
-        document.addEventListener('keydown', event => {
             const isModalOpen = !UIDom.customerModal?.overlay?.hidden;
-            if (event.defaultPrevented || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
+            if (event.defaultPrevented || isModalOpen || (this.shouldIgnoreKeyboardShortcut(event) && !(isModalOpen && event.key === 'Escape'))) {
                 return;
             }
 
@@ -1291,19 +1058,12 @@ class ContourApp {
                     }
                     break;
                 case 'Escape':
-                    if (!UIDom.customerModal?.overlay?.hidden) {
-                        event.preventDefault();
-                        this.closeCustomerModal();
-                        break;
-                    }
                     if (this.canvas.getActiveObject()) {
                         event.preventDefault();
                         this.canvas.discardActiveObject();
                         this.canvas.requestRenderAll();
-                        this.updateButtons();
-                        this.updateStatusBar();
-                        this.syncPrimitiveControlsFromSelection();
-                        this.syncTextControlsFromSelection();
+                        this.requestControlsStateRefresh();
+                        this.requestStatusBarRefresh();
                     }
                     break;
                 default:
@@ -1340,309 +1100,9 @@ class ContourApp {
     }
 
     bindCanvasEvents() {
-        this.setPanCursor(false);
-
-        this.canvas.on('mouse:down', event => {
-            const nativeEvent = event.e;
-
-            if (this.suppressCanvasUntilMouseUp && nativeEvent?.button === 0) {
-                nativeEvent.preventDefault();
-                nativeEvent.stopPropagation();
-                this.stopPanning();
-                this.canvas.discardActiveObject();
-                this.canvas.requestRenderAll();
-                return;
-            }
-
-            if (!this.canStartPanning(nativeEvent)) {
-                this.beginSoftGroupMove(event.target);
-                this.markNextSelectionSource(this.detectSelectionSourceFromPointerEvent(event));
-                return;
-            }
-
-            nativeEvent.preventDefault();
-            nativeEvent.stopPropagation();
-
-            this.isPanning = true;
-            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
-            this.canvas.selection = false;
-            this.canvas.skipTargetFind = true;
-            this.setPanCursor(true);
-        });
-
-        this.canvas.on('mouse:move', event => {
-            const nativeEvent = event.e;
-
-            if (this.suppressCanvasUntilMouseUp && this.primaryPointerDown) {
-                nativeEvent?.preventDefault?.();
-                this.stopPanning();
-                return;
-            }
-
-            if (!this.isPanning) {
-                return;
-            }
-
-            const dx = nativeEvent.clientX - this.panStart.x;
-            const dy = nativeEvent.clientY - this.panStart.y;
-            const vpt = this.canvas.viewportTransform;
-
-            vpt[4] += dx;
-            vpt[5] += dy;
-
-            this.panStart = { x: nativeEvent.clientX, y: nativeEvent.clientY };
-            this.canvas.requestRenderAll();
-        });
-
-        this.canvas.on('mouse:up', () => {
-            this.stopPanning();
-            this.finalizeSoftGroupMove(this.canvas.getActiveObject());
-        });
-
-        this.canvas.on('mouse:wheel', event => {
-            this.zoomViewportByPointer(event.e);
-        });
-
-        this.canvas.on('selection:created', event => {
-            this.handleSelectionChanged('selection:created', event);
-        });
-
-        this.canvas.on('selection:updated', event => {
-            this.handleSelectionChanged('selection:updated', event);
-        });
-
-        this.canvas.on('selection:cleared', () => {
-            this.pendingSelectionSource = null;
-            this.activeSelectionSource = null;
-            this.updateButtons();
-            this.updateStatusBar();
-            this.syncPrimitiveControlsFromSelection();
-            this.syncTextControlsFromSelection();
-        });
-
-        this.canvas.on('object:moving', event => {
-            this.handleSoftGroupObjectMoving(event.target);
-            if (event.target?.type !== 'activeSelection') {
-                this.syncObjectTextState(event.target);
-            }
-            this.canvas.requestRenderAll();
-            this.updateStatusBar();
-        });
-
-        this.canvas.on('object:scaling', () => {
-            this.canvas.requestRenderAll();
-            this.updateStatusBar();
-        });
-
-        this.canvas.on('object:rotating', event => {
-            if (event.target?.type !== 'activeSelection') {
-                this.syncObjectTextState(event.target);
-            }
-            this.canvas.requestRenderAll();
-            this.updateStatusBar();
-        });
-
-        this.canvas.on('object:modified', event => {
-            const target = event.target;
-            this.finalizeSoftGroupMove(target);
-            const finalizedSelection = this.finalizeActiveSelectionTransform(target);
-            if (!finalizedSelection) {
-                this.syncObjectTextState(target);
-            }
-            this.canvas.requestRenderAll();
-            if (finalizedSelection || this.shouldAutosaveForObject(target)) {
-                this.scheduleWorkspaceSave();
-            }
-            this.syncPrimitiveControlsFromSelection();
-            this.syncTextControlsFromSelection();
-            this.updateStatusBar();
-        });
-    }    
-    bindUIButtonEvents() {
-        UIDom.buttons.delete.onclick = () => this.deleteSelected();
-        UIDom.buttons.rotate.onclick = () => this.rotateSelected();
-        UIDom.buttons.duplicate.onclick = () => this.duplicateSelected();
-        UIDom.buttons.toggleLock.onclick = () => this.toggleLockSelected();
-        if (UIDom.buttons.group) {
-            UIDom.buttons.group.onclick = () => this.groupSelected();
-        }
-        if (UIDom.buttons.ungroup) {
-            UIDom.buttons.ungroup.onclick = () => this.ungroupSelected();
-        }
-        UIDom.buttons.saveWorkspace.onclick = () => this.saveWorkspace('manual');
-        UIDom.buttons.loadWorkspace.onclick = async () => {
-            this.cancelAutosave();
-            const okManual = await this.loadWorkspaceFromStorage('manual');
-            if (!okManual) {
-                await this.loadWorkspaceFromStorage('autosave');
-            }
-        };
-
-        UIDom.buttons.preview3d.onclick = () => this.open3dPreview();
-        UIDom.buttons.export.onclick = () => this.openCustomerModal();
-
-        UIDom.buttons.check.onclick =
-            () => this.performWithScaleOne(() => {
-              const validation = this.contourManager.checkCollisionsAndHighlight();
-              if (validation.ok) {
-                const orderResult = UIDom.orderResult;
-                if (orderResult.container) {
-                    orderResult.container.hidden = false;
-                    orderResult.container.classList.remove('order-result-error');
-                    orderResult.container.classList.add('order-result-success');
-                    orderResult.message.textContent = Config.MESSAGES.VALID_LAYOUT;
-                    orderResult.details.hidden = true;
-                }
-                return;
-              }
-
-              this.showOrderResultError(this.formatLayoutIssuesMessage(validation.issues));
-            });
-
-
-        UIDom.buttons.addRect.addEventListener('click', () => {
-            const bbox = this.layment.getBoundingRect(true);
-            const centerX = bbox.left + (bbox.width / 2);
-            const centerY = bbox.top + (bbox.height / 2);
-            this.primitiveManager.addPrimitive('rect', { x: centerX, y: centerY }, { width: 50, height: 50 });
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.buttons.addCircle.addEventListener('click', () => {
-            const bbox = this.layment.getBoundingRect(true);
-            const centerX = bbox.left + (bbox.width / 2);
-            const centerY = bbox.top + (bbox.height / 2);
-            this.primitiveManager.addPrimitive('circle', { x: centerX, y: centerY }, { radius: 25 });
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.buttons.alignLeft.onclick = () => this.alignSelected('left');
-        UIDom.buttons.alignCenterX.onclick = () => this.alignSelected('center-x');
-        UIDom.buttons.alignRight.onclick = () => this.alignSelected('right');
-        UIDom.buttons.alignTop.onclick = () => this.alignSelected('top');
-        UIDom.buttons.alignCenterY.onclick = () => this.alignSelected('center-y');
-        UIDom.buttons.alignBottom.onclick = () => this.alignSelected('bottom');
-        UIDom.buttons.distributeHorizontalGaps.onclick = () => this.distributeSelected('horizontal-gaps');
-        UIDom.buttons.distributeVerticalGaps.onclick = () => this.distributeSelected('vertical-gaps');
-        UIDom.buttons.snapLeft.onclick = () => this.snapSelectedToSide('left');
-        UIDom.buttons.snapRight.onclick = () => this.snapSelectedToSide('right');
-        UIDom.buttons.snapTop.onclick = () => this.snapSelectedToSide('top');
-        UIDom.buttons.snapBottom.onclick = () => this.snapSelectedToSide('bottom');
+        this.selectionPointerController?.bindCanvasEvents();
     }
-    bindCustomerModalEvents() {
-        const modal = UIDom.customerModal;
-        if (!modal?.overlay) {
-            return;
-        }
-
-        const syncConfirmState = () => {
-            const isValid = Boolean(modal.nameInput?.value.trim()) && Boolean(modal.contactInput?.value.trim());
-            if (modal.confirmButton) {
-                modal.confirmButton.disabled = !isValid;
-            }
-            return isValid;
-        };
-
-        modal.nameInput?.addEventListener('input', () => {
-            this.clearCustomerModalFeedback();
-            syncConfirmState();
-        });
-        modal.contactInput?.addEventListener('input', () => {
-            this.clearCustomerModalFeedback();
-            syncConfirmState();
-        });
-
-        modal.cancelButton?.addEventListener('click', () => this.closeCustomerModal());
-
-        modal.overlay.addEventListener('click', event => {
-            if (event.target === modal.overlay) {
-                this.closeCustomerModal();
-            }
-        });
-
-        const onEnter = event => {
-            if (event.key !== 'Enter') {
-                return;
-            }
-            if (!syncConfirmState()) {
-                return;
-            }
-            event.preventDefault();
-            this.handleCustomerModalConfirm();
-        };
-
-        modal.nameInput?.addEventListener('keydown', onEnter);
-        modal.contactInput?.addEventListener('keydown', onEnter);
-
-        modal.confirmButton?.addEventListener('click', () => this.handleCustomerModalConfirm());
-    }
-
-    bindInputEvents() {
-        UIDom.inputs.laymentPreset.addEventListener('change', e => {
-            this.applyLaymentPreset(e.target.value);
-        });
-
-        UIDom.inputs.laymentWidth.addEventListener('change', e => {
-            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_WIDTH;
-            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
-            e.target.value = v;
-            UIDom.inputs.laymentPreset.value = 'CUSTOM';
-            this.updateLaymentSize(v, this.layment.height);
-        });
-
-        UIDom.inputs.laymentHeight.addEventListener('change', e => {
-            let v = parseInt(e.target.value) || Config.LAYMENT_DEFAULT_HEIGHT;
-            if (v < Config.LAYMENT_MIN_SIZE) v = Config.LAYMENT_MIN_SIZE;
-            e.target.value = v;
-            UIDom.inputs.laymentPreset.value = 'CUSTOM';
-            this.updateLaymentSize(this.layment.width, v);
-        });
-
-        UIDom.inputs.baseMaterialColor?.addEventListener('change', e => {
-            const selectedColor = e.target.value;
-            if (!Config.MATERIAL_COLORS[selectedColor]) {
-                e.target.value = this.baseMaterialColor;
-                return;
-            }
-
-            this.baseMaterialColor = selectedColor;
-            this.applyMaterialColorToCutouts();
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.inputs.laymentThicknessMm?.addEventListener('change', e => {
-            const thickness = this.getValidLaymentThickness(e.target.value);
-            e.target.value = String(thickness);
-            this.laymentThicknessMm = thickness;
-            this.scheduleWorkspaceSave();
-        });
-
-        UIDom.inputs.workspaceScale.addEventListener('change', e => {
-            const percent = parseFloat(e.target.value);
-            const minPercent = Math.round(Config.WORKSPACE_SCALE.MIN * 100);
-            const maxPercent = Math.round(Config.WORKSPACE_SCALE.MAX * 100);
-            if (Number.isFinite(percent) && percent >= minPercent && percent <= maxPercent) {
-                this.updateWorkspaceScale(percent / 100);
-                this.syncWorkspaceScaleInput();
-            } else {
-                this.syncWorkspaceScaleInput();
-            }
-        });
-        UIDom.inputs.primitiveWidth.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
-        UIDom.inputs.primitiveHeight.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
-        UIDom.inputs.primitiveRadius.addEventListener('change', () => this.applyPrimitiveDimensionsFromInputs());
-
-        UIDom.texts.value?.addEventListener('input', event => this.applyTextValueFromInput(event.target.value));
-        UIDom.texts.fontSize?.addEventListener('change', event => this.applyTextFontSizeFromInput(event.target.value));
-        UIDom.texts.angle?.addEventListener('change', event => this.applyTextAngleFromInput(event.target.value));
-        UIDom.texts.addFreeBtn?.addEventListener('click', () => this.addFreeTextForSelection());
-        UIDom.texts.addAttachedBtn?.addEventListener('click', () => this.addAttachedTextForSelection());
-        UIDom.texts.attachBtn?.addEventListener('click', () => this.attachSelectedTextToSelectionContour());
-        UIDom.texts.detachBtn?.addEventListener('click', () => this.detachSelectedText());
-        UIDom.texts.deleteBtn?.addEventListener('click', () => this.deleteSelectedText());
-    }
-
-
+// TODO UIDom
     syncWorkspaceScaleInput() {
         if (!UIDom.inputs.workspaceScale) {
             return;
@@ -1650,44 +1110,6 @@ class ContourApp {
         UIDom.inputs.workspaceScale.value = Math.round(this.workspaceScale * 100);
     }
 
-    bindStatusHintEvents() {
-        const statusHint = UIDom.status.hint;
-        if (!statusHint) {
-            return;
-        }
-
-        document.querySelectorAll('[data-hint]').forEach(element => {
-            const showHint = () => {
-                statusHint.textContent = element.dataset.hint || '';
-            };
-            const clearHint = () => {
-                statusHint.textContent = '';
-            };
-
-            element.addEventListener('mouseenter', showHint);
-            element.addEventListener('focus', showHint);
-            element.addEventListener('mouseleave', clearHint);
-            element.addEventListener('blur', clearHint);
-        });
-    }
-
-    bindCatalogEvents() {
-        UIDom.catalog.breadcrumbAll.addEventListener('click', () => {
-            this.setCurrentCategory(null);
-        });
-
-        UIDom.catalog.categorySelect.addEventListener('change', event => {
-            const value = event.target.value;
-            this.setCurrentCategory(value || null);
-        });
-
-        UIDom.catalog.searchInput.addEventListener('input', event => {
-            this.catalogQuery = event.target.value || '';
-            this.renderCatalogList();
-        });
-    }
-
-   
     withViewportReset(callback) {
         const saved = this.canvas.viewportTransform?.slice?.() || [1, 0, 0, 1, 0, 0];
         this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
@@ -1986,6 +1408,94 @@ class ContourApp {
         obj.setCoords();
     }
 
+    getUniqueObjects(objects) {
+        const list = Array.isArray(objects) ? objects : (objects ? [objects] : []);
+        const unique = [];
+        const seen = new Set();
+
+        list.forEach(obj => {
+            if (!obj || seen.has(obj)) {
+                return;
+            }
+            seen.add(obj);
+            unique.push(obj);
+        });
+
+        return unique;
+    }
+
+    applySharedMoveInvariants(objects, {
+        rememberContourLastPosition = false,
+        syncFollowers = true
+    } = {}) {
+        const changedObjects = this.getUniqueObjects(objects);
+        if (!changedObjects.length) {
+            return [];
+        }
+
+        changedObjects.forEach(obj => {
+            this.syncObjectTextState(obj, { rememberContourLastPosition });
+        });
+
+        if (syncFollowers && this.actionExecutor?.collectFollowers && this.actionExecutor?.applyFollowerUpdates) {
+            const followerCtx = {
+                app: this,
+                actionName: 'pointer-finalize',
+                policy: this.interactionPolicy || window.InteractionPolicy || null
+            };
+            const followers = this.actionExecutor.collectFollowers(changedObjects, followerCtx, this);
+            this.actionExecutor.applyFollowerUpdates(followers, followerCtx.actionName, {}, followerCtx, this);
+        }
+
+        return changedObjects;
+    }
+
+    refreshCanvasMutationState({ scheduleWorkspaceSave = false } = {}) {
+        this.canvas.requestRenderAll();
+        this.requestControlsStateRefresh();
+        this.requestStatusBarRefresh();
+
+        if (scheduleWorkspaceSave) {
+            this.scheduleWorkspaceSave();
+        }
+    }
+
+    finalizePointerDrivenTransform(target) {
+        if (!target) {
+            this.refreshCanvasMutationState();
+            return false;
+        }
+
+        const softGroupObjects = this.finalizeSoftGroupMove(target);
+        if (target.type === 'activeSelection') {
+            const selectionObjects = target.getObjects().filter(Boolean);
+            if (!selectionObjects.length) {
+                this.refreshCanvasMutationState();
+                return false;
+            }
+
+            this.canvas.discardActiveObject();
+            this.applySharedMoveInvariants(
+                [...selectionObjects, ...softGroupObjects],
+                { rememberContourLastPosition: true }
+            );
+            this.restoreActiveSelection(selectionObjects, {
+                source: this.selectionPointerController?.getActiveSelectionSource?.() || 'programmatic'
+            });
+            this.refreshCanvasMutationState({ scheduleWorkspaceSave: true });
+            return true;
+        }
+
+        const changedObjects = this.getUniqueObjects([target, ...softGroupObjects]);
+        this.applySharedMoveInvariants(changedObjects, {
+            rememberContourLastPosition: true
+        });
+        this.refreshCanvasMutationState({
+            scheduleWorkspaceSave: changedObjects.some(obj => this.shouldAutosaveForObject(obj))
+        });
+        return changedObjects.length > 0;
+    }
+
     finalizeActiveSelectionTransform(target) {
         if (!target || target.type !== 'activeSelection') {
             return false;
@@ -1997,9 +1507,9 @@ class ContourApp {
         }
 
         this.canvas.discardActiveObject();
-        objects.forEach(obj => this.syncObjectTextState(obj, { rememberContourLastPosition: true }));
+        this.applySharedMoveInvariants(objects, { rememberContourLastPosition: true });
         this.restoreActiveSelection(objects, {
-            source: this.activeSelectionSource || 'programmatic'
+            source: this.selectionPointerController?.getActiveSelectionSource?.() || 'programmatic'
         });
         return true;
     }
@@ -2016,59 +1526,66 @@ class ContourApp {
         this.actionExecutor?.executeAction?.('snap', { side }, this);
     }
 
-    updateButtons() {
+    // =========================
+    // UI sync / controls / status / modal-related app methods
+    // =========================
+
+    buildControlsState() {
         const selected = this.getArrangeSelectionObjects();
         const selectedCount = selected.length;
         const active = this.canvas.getActiveObject();
-        const has = !!active;
+        const hasSelection = !!active;
         const lockState = this.getSelectionLockState(active);
 
-        const deleteAllowed = has && this.resolveActionTargets(active, 'delete').length > 0;
-        const rotateAllowed = this.resolveActionTargets(active, 'rotate').length > 0;
-
-        UIDom.buttons.delete.disabled = !deleteAllowed;
-        UIDom.buttons.rotate.disabled = !rotateAllowed;
-
         const duplicateTargets = this.getDuplicateSelectionObjects();
-        UIDom.buttons.duplicate.disabled = duplicateTargets.length < 1;
-        if (UIDom.buttons.toggleLock) {
-            const nextLabel = lockState.allLocked ? 'Разблокировать' : 'Заблокировать';
-            UIDom.buttons.toggleLock.disabled = lockState.lockableCount < 1;
-            UIDom.buttons.toggleLock.textContent = nextLabel;
-            UIDom.buttons.toggleLock.dataset.hint = lockState.allLocked
+        const canDelete = hasSelection && this.resolveActionTargets(active, 'delete').length > 0;
+        const canRotate = this.resolveActionTargets(active, 'rotate').length > 0;
+        const canDuplicate = duplicateTargets.length > 0;
+        const canToggleLock = lockState.lockableCount > 0;
+        const canGroup = this.hasGroupSelection(active);
+        const canUngroup = this.hasUngroupSelection(active);
+        const canAlign = selectedCount >= 2;
+        const canDistribute = selectedCount >= 3;
+        const canSnap = selectedCount >= 1;
+        const lockStateValue = selectedCount < 1
+            ? 'none'
+            : (lockState.hasLocked && lockState.hasUnlocked
+                ? 'mixed'
+                : (lockState.allLocked ? 'locked' : 'unlocked'));
+
+        return {
+            hasSelection,
+            selectedCount,
+            canDelete,
+            canRotate,
+            canDuplicate,
+            canToggleLock,
+            lockState: lockStateValue,
+            canGroup,
+            canUngroup,
+            canAlign,
+            canDistribute,
+            canSnap,
+            lockButtonLabel: lockState.allLocked ? 'Разблокировать' : 'Заблокировать',
+            lockButtonHint: lockState.allLocked
                 ? 'Снять блокировку с выделенного'
-                : 'Заблокировать выделенное от случайных изменений';
-            UIDom.buttons.toggleLock.title = nextLabel;
-            UIDom.buttons.toggleLock.setAttribute('aria-pressed', lockState.allLocked ? 'true' : 'false');
-        }
-        if (UIDom.buttons.group) {
-            UIDom.buttons.group.disabled = !this.hasGroupSelection(active);
-            UIDom.buttons.group.dataset.hint = 'Сгруппировать выделенные незаблокированные элементы';
-            UIDom.buttons.group.title = 'Сгруппировать';
-        }
-        if (UIDom.buttons.ungroup) {
-            UIDom.buttons.ungroup.disabled = !this.hasUngroupSelection(active);
-            UIDom.buttons.ungroup.dataset.hint = 'Разгруппировать выделенные элементы';
-            UIDom.buttons.ungroup.title = 'Разгруппировать';
-        }
+                : 'Заблокировать выделенное от случайных изменений',
+            lockButtonPressed: lockState.allLocked
+        };
+    }
 
-        const alignDisabled = selectedCount < 2;
-        UIDom.buttons.alignLeft.disabled = alignDisabled;
-        UIDom.buttons.alignCenterX.disabled = alignDisabled;
-        UIDom.buttons.alignRight.disabled = alignDisabled;
-        UIDom.buttons.alignTop.disabled = alignDisabled;
-        UIDom.buttons.alignCenterY.disabled = alignDisabled;
-        UIDom.buttons.alignBottom.disabled = alignDisabled;
+    getControlsState() {
+        return this.buildControlsState();
+    }
 
-        const distributeDisabled = selectedCount < 3;
-        UIDom.buttons.distributeHorizontalGaps.disabled = distributeDisabled;
-        UIDom.buttons.distributeVerticalGaps.disabled = distributeDisabled;
+    requestControlsStateRefresh() {
+        this.emitEditorCallback('onControlsStateChanged', {
+            controlsState: this.getControlsState()
+        });
+    }
 
-        const snapDisabled = selectedCount < 1;
-        UIDom.buttons.snapLeft.disabled = snapDisabled;
-        UIDom.buttons.snapRight.disabled = snapDisabled;
-        UIDom.buttons.snapTop.disabled = snapDisabled;
-        UIDom.buttons.snapBottom.disabled = snapDisabled;
+    updateButtons() {
+        this.requestControlsStateRefresh();
     }
 
 
@@ -2085,67 +1602,52 @@ class ContourApp {
         return active.primitiveType ? active : null;
     }
 
-    setPrimitiveControlsEnabled(enabled) {
-        const controls = UIDom.panels.primitiveControls;
-        if (!controls) {
-            return;
-        }
-        controls.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-        UIDom.inputs.primitiveWidth.disabled = !enabled;
-        UIDom.inputs.primitiveHeight.disabled = !enabled;
-        UIDom.inputs.primitiveRadius.disabled = !enabled;
-    }
-
-    syncPrimitiveControlsFromSelection() {
+    getPrimitiveInspectorState() {
         const primitive = this.getSingleSelectedPrimitive();
-        this.isSyncingPrimitiveControls = true;
-        const typeRow = UIDom.primitive.typeLabel?.parentElement;
+
+        const limits = {
+            rect: {
+                minWidth: Config.GEOMETRY.PRIMITIVES.RECT.MIN_WIDTH,
+                maxWidth: Config.GEOMETRY.PRIMITIVES.RECT.MAX_WIDTH,
+                minHeight: Config.GEOMETRY.PRIMITIVES.RECT.MIN_HEIGHT,
+                maxHeight: Config.GEOMETRY.PRIMITIVES.RECT.MAX_HEIGHT
+            },
+            circle: {
+                minRadius: Config.GEOMETRY.PRIMITIVES.CIRCLE.MIN_RADIUS,
+                maxRadius: Config.GEOMETRY.PRIMITIVES.CIRCLE.MAX_RADIUS
+            }
+        };
 
         if (!primitive) {
-            UIDom.primitive.typeLabel.textContent = '—';
-            if (typeRow) {
-                typeRow.style.display = 'none';
-            }
-            UIDom.inputs.primitiveWidth.value = '';
-            UIDom.inputs.primitiveHeight.value = '';
-            UIDom.inputs.primitiveRadius.value = '';
-            UIDom.primitive.widthRow.style.display = 'none';
-            UIDom.primitive.heightRow.style.display = 'none';
-            UIDom.primitive.radiusRow.style.display = 'none';
-            this.setPrimitiveControlsEnabled(false);
-            this.isSyncingPrimitiveControls = false;
-            return;
+            return {
+                mode: 'empty',
+                primitive: null,
+                limits
+            };
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
-        if (typeRow) {
-            typeRow.style.display = 'none';
-        }
 
         if (dimensions.type === 'rect') {
-            UIDom.inputs.primitiveWidth.value = dimensions.width;
-            UIDom.inputs.primitiveHeight.value = dimensions.height;
-            UIDom.inputs.primitiveRadius.value = '';
-            UIDom.primitive.widthRow.style.display = 'block';
-            UIDom.primitive.heightRow.style.display = 'block';
-            UIDom.primitive.radiusRow.style.display = 'none';
-            UIDom.inputs.primitiveWidth.min = Config.GEOMETRY.PRIMITIVES.RECT.MIN_WIDTH;
-            UIDom.inputs.primitiveWidth.max = Config.GEOMETRY.PRIMITIVES.RECT.MAX_WIDTH;
-            UIDom.inputs.primitiveHeight.min = Config.GEOMETRY.PRIMITIVES.RECT.MIN_HEIGHT;
-            UIDom.inputs.primitiveHeight.max = Config.GEOMETRY.PRIMITIVES.RECT.MAX_HEIGHT;
-        } else {
-            UIDom.inputs.primitiveWidth.value = '';
-            UIDom.inputs.primitiveHeight.value = '';
-            UIDom.inputs.primitiveRadius.value = dimensions.radius;
-            UIDom.primitive.widthRow.style.display = 'none';
-            UIDom.primitive.heightRow.style.display = 'none';
-            UIDom.primitive.radiusRow.style.display = 'block';
-            UIDom.inputs.primitiveRadius.min = Config.GEOMETRY.PRIMITIVES.CIRCLE.MIN_RADIUS;
-            UIDom.inputs.primitiveRadius.max = Config.GEOMETRY.PRIMITIVES.CIRCLE.MAX_RADIUS;
+            return {
+                mode: 'rect',
+                primitive: {
+                    type: 'rect',
+                    width: dimensions.width,
+                    height: dimensions.height
+                },
+                limits
+            };
         }
 
-        this.setPrimitiveControlsEnabled(true);
-        this.isSyncingPrimitiveControls = false;
+        return {
+            mode: 'circle',
+            primitive: {
+                type: 'circle',
+                radius: dimensions.radius
+            },
+            limits
+        };
     }
 
 
@@ -2165,101 +1667,140 @@ class ContourApp {
         return active.isTextObject ? active : null;
     }
 
-    setTextPanelEnabled(enabled) {
-        const panel = UIDom.texts.panel;
-        if (!panel) return;
-        panel.hidden = !enabled;
-        panel.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-    }
-
     getAttachedTextsForContour(contour) {
         if (!contour?.placementId) return [];
         return this.textManager.getAttachedTextsForContour(contour);
     }
 
-    fillTextForm(textObj) {
-        if (UIDom.texts.value) UIDom.texts.value.value = textObj?.text || '';
-        if (UIDom.texts.fontSize) UIDom.texts.fontSize.value = Number(textObj?.fontSize) || '';
-        if (UIDom.texts.angle) UIDom.texts.angle.value = textObj ? (Number(textObj?.angle) || 0) : '';
-        if (UIDom.texts.kind) UIDom.texts.kind.textContent = textObj?.kind || '—';
-        if (UIDom.texts.role) UIDom.texts.role.textContent = textObj?.role || '—';
-        if (UIDom.texts.owner) UIDom.texts.owner.textContent = Number.isFinite(textObj?.ownerPlacementId) ? String(textObj.ownerPlacementId) : '—';
-    }
-
-    syncTextControlsFromSelection() {
+    getTextInspectorState() {
         const contour = this.getSelectedContourForText();
         const selectedText = this.getSelectedTextObject();
         const ownerContour = selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null;
         const targetContour = contour || ownerContour;
-        const formText = selectedText || null;
-        const list = UIDom.texts.list;
 
         if (!selectedText && !targetContour) {
-            this.setTextPanelEnabled(false);
-            if (list) {
-                list.innerHTML = '';
-                list.disabled = true;
+            return {
+                mode: 'hidden',
+                selectedText: null,
+                targetContour: null,
+                capabilities: {
+                    canEditValue: false,
+                    canEditFontSize: false,
+                    canEditAngle: false,
+                    canAddFree: true,
+                    canAddAttached: false,
+                    canAttach: false,
+                    canDetach: false,
+                    canDelete: false
+                }
+            };
+        }
+
+        const formText = selectedText || null;
+        return {
+            mode: 'context',
+            selectedText: formText ? {
+                kind: formText.kind === 'attached' ? 'attached' : 'free',
+                text: formText.text || '',
+                fontSize: Number.isFinite(Number(formText.fontSize)) ? Number(formText.fontSize) : null,
+                angle: Number.isFinite(Number(formText.angle)) ? Number(formText.angle) : 0,
+                role: formText.role || null,
+                ownerPlacementId: Number.isFinite(formText.ownerPlacementId) ? formText.ownerPlacementId : null
+            } : null,
+            targetContour: targetContour ? {
+                placementId: Number.isFinite(targetContour.placementId) ? targetContour.placementId : null
+            } : null,
+            capabilities: {
+                canEditValue: !!formText,
+                canEditFontSize: !!formText,
+                canEditAngle: !!formText,
+                canAddFree: true,
+                canAddAttached: !!targetContour,
+                canAttach: !!(formText && formText.kind === 'free' && targetContour),
+                canDetach: !!(formText && formText.kind === 'attached'),
+                canDelete: !!formText
             }
-            this.fillTextForm(null);
-            return;
-        }
-
-        this.setTextPanelEnabled(true);
-        if (list) {
-            list.innerHTML = '';
-            list.disabled = true;
-        }
-
-        this.fillTextForm(formText);
-
-        if (UIDom.texts.value) UIDom.texts.value.disabled = !formText;
-        if (UIDom.texts.fontSize) UIDom.texts.fontSize.disabled = !formText;
-        if (UIDom.texts.angle) UIDom.texts.angle.disabled = !formText;
-        if (UIDom.texts.addFreeBtn) UIDom.texts.addFreeBtn.disabled = false;
-        if (UIDom.texts.addAttachedBtn) UIDom.texts.addAttachedBtn.disabled = !targetContour;
-        if (UIDom.texts.attachBtn) UIDom.texts.attachBtn.disabled = !(formText && formText.kind === 'free' && targetContour);
-        if (UIDom.texts.detachBtn) UIDom.texts.detachBtn.disabled = !(formText && formText.kind === 'attached');
-        if (UIDom.texts.deleteBtn) UIDom.texts.deleteBtn.disabled = !formText;
+        };
     }
 
     getEditingTextObject() {
         return this.getSelectedTextObject();
     }
 
-    applyTextValueFromInput(value) {
-        const textObj = this.getEditingTextObject();
-        if (!textObj) return;
-        textObj.set({ text: value });
-        textObj.dirty = true;
-        textObj.setCoords();
+    finalizeTextMutation(textObj, {
+        shouldNormalize = true,
+        shouldSyncControls = true,
+        shouldUpdateButtons = false,
+        shouldUpdateStatusBar = false,
+        shouldScheduleWorkspaceSave = true
+    } = {}) {
+        if (shouldNormalize && textObj?.isTextObject) {
+            this.syncObjectTextState(textObj);
+        }
+
         this.canvas.requestRenderAll();
-        this.scheduleWorkspaceSave();
+
+        if (shouldSyncControls) {
+            this.requestControlsStateRefresh();
+        }
+        if (shouldUpdateButtons) {
+            this.requestControlsStateRefresh();
+        }
+        if (shouldUpdateStatusBar) {
+            this.requestStatusBarRefresh();
+        }
+        if (shouldScheduleWorkspaceSave) {
+            this.scheduleWorkspaceSave();
+        }
+    }
+
+    finalizePrimitivePropertyMutation(primitive, {
+        prevDimensions = null,
+        applied = false,
+        shouldScheduleWorkspaceSave = true
+    } = {}) {
+        if (!primitive) {
+            return false;
+        }
+
+        this.requestControlsStateRefresh();
+        this.requestStatusBarRefresh();
+
+        if (!applied) {
+            return false;
+        }
+
+        const nextDimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
+        const changed = JSON.stringify(prevDimensions) !== JSON.stringify(nextDimensions);
+
+        if (changed && shouldScheduleWorkspaceSave) {
+            this.scheduleWorkspaceSave();
+        }
+
+        return changed;
+    }
+
+    applyTextValueFromInput(value) {
+        this.actionExecutor?.executeAction?.('textPropertyUpdate', {
+            property: 'text',
+            value
+        }, this);
     }
 
     applyTextFontSizeFromInput(value) {
-        const textObj = this.getEditingTextObject();
-        const fontSize = Number(value);
-        if (!textObj || !Number.isFinite(fontSize) || fontSize <= 0) return;
-        textObj.set({ fontSize });
-        textObj.fontSizeMm = fontSize;
-        textObj.setCoords();
-        this.canvas.requestRenderAll();
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('textPropertyUpdate', {
+            property: 'fontSize',
+            value
+        }, this);
     }
 
     applyTextAngleFromInput(value) {
-        const textObj = this.getEditingTextObject();
-        const angle = Number(value);
-        if (!textObj || !Number.isFinite(angle)) return;
-        textObj.set({ angle });
-        if (textObj.kind === 'attached') {
-            this.textManager.updateAttachedTextAnchorFromAbsolute(textObj);
-        }
-        textObj.setCoords();
-        this.canvas.requestRenderAll();
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('textPropertyUpdate', {
+            property: 'angle',
+            value
+        }, this);
     }
-
+// TODO UIDom
     addFreeTextForSelection() {
         const text = UIDom.texts.value?.value || '';
         const left = this.layment.left + 20;
@@ -2267,10 +1808,10 @@ class ContourApp {
         const textObj = this.textManager.createFreeText({ text, left, top, role: 'user-text' });
         this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
         this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
-
+// TODO UIDom
     addAttachedTextForSelection() {
         const selectedText = this.getSelectedTextObject();
         const contour = this.getSelectedContourForText() || (selectedText?.kind === 'attached' ? this.textManager.getContourByPlacementId(selectedText.ownerPlacementId) : null);
@@ -2280,27 +1821,18 @@ class ContourApp {
         if (!textObj) return;
         this.setActiveObjectWithSelectionSource(textObj, 'programmatic');
         this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
+        this.requestControlsStateRefresh();
         this.scheduleWorkspaceSave();
     }
 
     attachSelectedTextToSelectionContour() {
-        const textObj = this.getEditingTextObject();
-        const contour = this.getSelectedContourForText();
-        if (!textObj || !contour) return;
-        this.textManager.attachTextToContour(textObj, contour, 'user-text');
-        this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('textAttach', {
+            role: 'user-text'
+        }, this);
     }
 
     detachSelectedText() {
-        const textObj = this.getEditingTextObject();
-        if (!textObj || textObj.kind !== 'attached') return;
-        this.textManager.detachText(textObj);
-        this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        this.actionExecutor?.executeAction?.('textDetach', {}, this);
     }
 
     deleteSelectedText() {
@@ -2308,19 +1840,13 @@ class ContourApp {
         if (!selectedText) return;
         this.textManager.removeText(selectedText);
         this.canvas.discardActiveObject();
-        this.canvas.requestRenderAll();
-        this.syncTextControlsFromSelection();
-        this.scheduleWorkspaceSave();
+        this.finalizeTextMutation(null);
     }
 
-    applyPrimitiveDimensionsFromInputs() {
-        if (this.isSyncingPrimitiveControls) {
-            return;
-        }
-
+    async applyPrimitiveDimensions(payload = {}) {
         const primitive = this.getSingleSelectedPrimitive();
         if (!primitive) {
-            return;
+            return false;
         }
 
         const dimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
@@ -2328,83 +1854,27 @@ class ContourApp {
         let applied = false;
 
         if (dimensions.type === 'rect') {
-            const width = parseInt(UIDom.inputs.primitiveWidth.value, 10);
-            const height = parseInt(UIDom.inputs.primitiveHeight.value, 10);
+            const width = parseInt(payload.width, 10);
+            const height = parseInt(payload.height, 10);
             if (!Number.isFinite(width) || !Number.isFinite(height)) {
-                return;
+                return false;
             }
-            applied = this.primitiveManager.applyDimensions(primitive, { width, height });
+            applied = await this.actionExecutor?.executeAction?.('primitiveDimensionUpdate', {
+                primitive,
+                dimensions: { width, height }
+            }, this);
         } else if (dimensions.type === 'circle') {
-            const radius = parseInt(UIDom.inputs.primitiveRadius.value, 10);
+            const radius = parseInt(payload.radius, 10);
             if (!Number.isFinite(radius)) {
-                return;
+                return false;
             }
-            applied = this.primitiveManager.applyDimensions(primitive, { radius });
+            applied = await this.actionExecutor?.executeAction?.('primitiveDimensionUpdate', {
+                primitive,
+                dimensions: { radius }
+            }, this);
         }
 
-        this.syncPrimitiveControlsFromSelection();
-        this.updateStatusBar();
-
-        if (applied) {
-            const nextDimensions = this.primitiveManager.getPrimitiveDimensions(primitive);
-            const changed = JSON.stringify(prevDimensions) !== JSON.stringify(nextDimensions);
-            if (changed) {
-                this.scheduleWorkspaceSave();
-            }
-        }
-    }
-
-    //  подписка на события для статус-бара
-    setupStatusBarUpdates() {
-        this.canvas.on('selection:created', () => this.updateStatusBar());
-        this.canvas.on('selection:updated', () => this.updateStatusBar());
-        this.canvas.on('selection:cleared', () => this.updateStatusBar());
-
-        // Обновление при перемещении и вращении
-        this.canvas.on('object:moving', () => this.updateStatusBar());
-        this.canvas.on('object:rotating', () => this.updateStatusBar());
-        this.canvas.on('object:modified', () => this.updateStatusBar());
-    }
-
-    buildCategories(items) {
-        const categories = new Map();
-        items.forEach(item => {
-            const label = this.getCategoryLabel(item);
-            if (!categories.has(label)) {
-                categories.set(label, label);
-            }
-        });
-        return Array.from(categories.keys()).sort((a, b) => a.localeCompare(b, 'ru'));
-    }
-
-    buildArticleEntries(items) {
-        const entries = new Map();
-        items.forEach(item => {
-            const article = (item?.article || item?.id || "").trim();
-            if (!article) {
-                return;
-            }
-            if (!entries.has(article)) {
-                entries.set(article, {
-                    article,
-                    name: item.name || "",
-                    category: item.category || "",
-                    variants: []
-                });
-            }
-            const entry = entries.get(article);
-            entry.variants.push(item);
-            if (!entry.name && item.name) {
-                entry.name = item.name;
-            }
-        });
-
-        return Array.from(entries.values())
-            .map(entry => ({
-                ...entry,
-                variants: entry.variants.slice().sort((a, b) => ((a.poseLabel || a.poseKey || "").localeCompare(b.poseLabel || b.poseKey || "", "ru")))
-            }))
-            .sort((a, b) => `${a.article} ${a.name}`.localeCompare(`${b.article} ${b.name}`, "ru"));
+        return this.finalizePrimitivePropertyMutation(primitive, { prevDimensions, applied: Boolean(applied), shouldScheduleWorkspaceSave: false });
     }
 
     getVariantDisplayLabel(item) {
@@ -2414,255 +1884,46 @@ class ContourApp {
         return item.poseLabel || item.poseKey || "Базовый";
     }
 
-    getCategoryLabel(item) {
-        const raw = (item.category || '').trim();
-        if (!raw) {
-            return 'Без категории';
-        }
-        const label = this.categoryLabels?.[raw]?.label;
-        return label ? label.trim() || raw : raw;
-    }
-
-    setCurrentCategory(category) {
-        this.currentCategory = category;
-        this.renderCatalogNav();
-        this.renderCatalogList();
-    }
-
-    ensureValidCategory() {
-        if (this.currentCategory && !this.availableCategories.includes(this.currentCategory)) {
-            this.currentCategory = null;
-        }
-    }
-
-    renderCatalogNav() {
-        const hasCategory = !!this.currentCategory;
-        UIDom.catalog.breadcrumbSeparator.style.display = hasCategory ? 'inline' : 'none';
-        UIDom.catalog.breadcrumbCurrent.style.display = hasCategory ? 'inline' : 'none';
-        UIDom.catalog.breadcrumbCurrent.textContent = hasCategory ? this.currentCategory : '';
-
-        UIDom.catalog.categorySelect.innerHTML = '';
-        const allOption = document.createElement('option');
-        allOption.value = '';
-        allOption.textContent = 'Все категории';
-        UIDom.catalog.categorySelect.appendChild(allOption);
-
-        this.availableCategories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category;
-            UIDom.catalog.categorySelect.appendChild(option);
-        });
-
-        UIDom.catalog.categorySelect.value = this.currentCategory || '';
-    }
-
-    renderCatalogList() {
-        const list = UIDom.panels.catalogList;
-        list.innerHTML = '';
-
-        if (!this.availableArticleEntries.length) {
-            return;
-        }
-
-        const hasQuery = Boolean(this.catalogQuery.trim());
-
-        if (!this.currentCategory) {
-            if (!hasQuery) {
-                this.renderFolderRows(list, this.availableCategories);
-                return;
-            }
-
-            const items = this.availableArticleEntries.filter(item => this.matchesItemQuery(item));
-            this.renderItemRows(list, items, { showCategoryLabel: true });
-            return;
-        }
-
-        const items = this.availableArticleEntries
-            .filter(item => this.getCategoryLabel(item) === this.currentCategory)
-            .filter(item => this.matchesItemQuery(item));
-        this.renderItemRows(list, items);
-    }
-
-    matchesItemQuery(item) {
-        const query = this.catalogQuery.trim().toLowerCase();
-        if (!query) {
-            return true;
-        }
-
-        const variants = Array.isArray(item.variants) ? item.variants : [item];
-        const fields = [
-            item.article,
-            item.name,
-            ...variants.map(variant => variant?.poseLabel),
-            ...variants.map(variant => variant?.poseKey),
-            ...variants.map(variant => variant?.name)
-        ]
-            .filter(Boolean)
-            .map(value => String(value).toLowerCase());
-        return fields.some(value => value.includes(query));
-    }
-
-    renderFolderRows(list, categories) {
-        if (!categories.length) {
-            const empty = document.createElement('div');
-            empty.className = 'catalog-row';
-            empty.textContent = 'Категории не найдены';
-            list.appendChild(empty);
-            return;
-        }
-
-        categories.forEach(category => {
-            const row = document.createElement('div');
-            row.className = 'catalog-row';
-            row.addEventListener('click', () => this.setCurrentCategory(category));
-
-            const icon = document.createElement('span');
-            icon.className = 'catalog-folder-icon';
-            icon.textContent = '📁';
-
-            const name = document.createElement('span');
-            name.className = 'catalog-folder-name';
-            name.textContent = category;
-
-            row.appendChild(icon);
-            row.appendChild(name);
-            list.appendChild(row);
-        });
-    }
-
-    renderItemRows(list, items, options = {}) {
-        const { showCategoryLabel = false } = options;
-
-        if (!items.length) {
-            const empty = document.createElement('div');
-            empty.className = 'catalog-row';
-            empty.textContent = 'Контуры не найдены';
-            list.appendChild(empty);
-            return;
-        }
-
-        items.forEach(entry => {
-            const selectedVariant = entry.variants[0];
-            const row = document.createElement('div');
-            row.className = 'catalog-row';
-
-            const previewWrapper = this.createPreviewElement(selectedVariant);
-
-            const meta = document.createElement('div');
-            meta.className = 'catalog-item-meta';
-
-            const article = document.createElement('div');
-            article.className = 'catalog-item-article';
-            article.textContent = entry.article || '';
-
-            const name = document.createElement('div');
-            name.className = 'catalog-item-name';
-            name.textContent = entry.name || selectedVariant?.name || '';
-
-            meta.appendChild(article);
-            meta.appendChild(name);
-
-            if (entry.variants.length > 1) {
-                const variantSelect = document.createElement('select');
-                variantSelect.className = 'catalog-variant-select';
-                entry.variants.forEach((variant, index) => {
-                    const option = document.createElement('option');
-                    option.value = String(index);
-                    option.textContent = this.getVariantDisplayLabel(variant);
-                    variantSelect.appendChild(option);
-                });
-                variantSelect.addEventListener('click', event => event.stopPropagation());
-                variantSelect.addEventListener('change', event => {
-                    const variant = entry.variants[Number(event.target.value)] || entry.variants[0];
-                    row.dataset.selectedVariantIndex = event.target.value;
-                    name.textContent = variant?.name || entry.name || '';
-                });
-                meta.appendChild(variantSelect);
-            }
-
-            if (showCategoryLabel) {
-                const category = this.getCategoryLabel(entry);
-                if (category) {
-                    const categoryLabel = document.createElement('div');
-                    categoryLabel.className = 'catalog-item-article';
-                    categoryLabel.textContent = category;
-                    meta.appendChild(categoryLabel);
-                }
-            }
-
-            const addButton = document.createElement('button');
-            addButton.type = 'button';
-            addButton.className = 'catalog-add-button';
-            addButton.textContent = '+';
-            addButton.addEventListener('click', event => {
-                event.stopPropagation();
-                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
-                const variant = entry.variants[variantIndex] || entry.variants[0];
-                this.addContour(variant);
-            });
-
-            row.addEventListener('click', () => {
-                const variantIndex = Number(row.dataset.selectedVariantIndex || 0);
-                const variant = entry.variants[variantIndex] || entry.variants[0];
-                this.addContour(variant);
-            });
-
-            row.appendChild(previewWrapper);
-            row.appendChild(meta);
-            row.appendChild(addButton);
-            list.appendChild(row);
-        });
-    }
-
-    createPreviewElement(item) {
-        const previewAsset = item.assets?.preview;
-        if (previewAsset) {
-            const img = document.createElement('img');
-            img.className = 'catalog-item-preview';
-            img.alt = item.name || '';
-            img.loading = 'lazy';
-            img.src = `/contours/${previewAsset}`;
-            img.onerror = () => {
-                const placeholder = this.createPreviewPlaceholder();
-                img.replaceWith(placeholder);
-            };
-            return img;
-        }
-        return this.createPreviewPlaceholder();
-    }
-
-    createPreviewPlaceholder() {
-        const placeholder = document.createElement('div');
-        placeholder.className = 'catalog-preview-placeholder';
-        placeholder.textContent = 'Нет превью';
-        return placeholder;
-    }
-
-    // обновление строки состояния
-    updateStatusBar() {
-        const statusEl = UIDom.status.info;
+    getStatusBarState() {
+        const defaultMessage = 'Выберите контур или выемку';
         const active = this.canvas.getActiveObject();
-        const isOutOfBounds = this.contourManager?.isObjectOutOfLaymentBounds?.(active) === true;
-
         if (!active) {
-            statusEl.textContent = 'Выберите контур или выемку';
-            return;
+            return {
+                mode: 'empty',
+                message: defaultMessage,
+                isWarning: false
+            };
         }
 
         if (active.type === 'activeSelection') {
             const selectedObjects = active.getObjects().filter(Boolean);
             const outOfBoundsObjects = new Set(this.getOutOfBoundsWorkspaceObjects());
             if (selectedObjects.length > 0 && selectedObjects.every(obj => outOfBoundsObjects.has(obj))) {
-                statusEl.textContent = selectedObjects.length === 1
-                    ? 'Элемент вне границ ложемента — исправьте положение перед заказом'
-                    : `Выбрано ${selectedObjects.length} элементов вне границ ложемента — исправьте положение перед заказом`;
-                return;
+                return {
+                    mode: 'selection',
+                    message: selectedObjects.length === 1
+                        ? 'Элемент вне границ ложемента — исправьте положение перед заказом'
+                        : `Выбрано ${selectedObjects.length} элементов вне границ ложемента — исправьте положение перед заказом`,
+                    isWarning: true,
+                    selection: {
+                        count: selectedObjects.length,
+                        allOutOfBounds: true
+                    }
+                };
             }
 
-            statusEl.textContent = 'Выберите контур или выемку';
-            return;
+            return {
+                mode: 'selection',
+                message: defaultMessage,
+                isWarning: false,
+                selection: {
+                    count: selectedObjects.length,
+                    allOutOfBounds: false
+                }
+            };
         }
+
+        const isOutOfBounds = this.contourManager?.isObjectOutOfLaymentBounds?.(active) === true;
 
         if (active.primitiveType === 'rect' || active.primitiveType === 'circle') {
             const dimensions = this.primitiveManager.getPrimitiveDimensions(active);
@@ -2672,16 +1933,33 @@ class ContourApp {
                 const bbox = active.getBoundingRect(true);
                 const realX = (bbox.left - laymentBbox.left).toFixed(1);
                 const realY = (bbox.top - laymentBbox.top).toFixed(1);
-                const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
-                statusEl.innerHTML = `<strong>Выемка · прямоугольная</strong> X ${realX} мм · Y ${realY} мм · W ${dimensions.width} мм · H ${dimensions.height} мм${warning}`;
-                return;
+                return {
+                    mode: 'primitive',
+                    isWarning: isOutOfBounds,
+                    primitive: {
+                        type: 'rect',
+                        x: realX,
+                        y: realY,
+                        width: dimensions.width,
+                        height: dimensions.height,
+                        outOfBounds: isOutOfBounds
+                    }
+                };
             }
 
             const realX = (active.left - laymentBbox.left).toFixed(1);
             const realY = (active.top - laymentBbox.top).toFixed(1);
-            const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
-            statusEl.innerHTML = `<strong>Выемка · круглая</strong> X ${realX} мм · Y ${realY} мм · R ${dimensions.radius} мм${warning}`;
-            return;
+            return {
+                mode: 'primitive',
+                isWarning: isOutOfBounds,
+                primitive: {
+                    type: 'circle',
+                    x: realX,
+                    y: realY,
+                    radius: dimensions.radius,
+                    outOfBounds: isOutOfBounds
+                }
+            };
         }
 
         // Находим оригинальную группу контура в массиве contourManager.contours
@@ -2690,18 +1968,37 @@ class ContourApp {
         );
 
         if (!contour) {
-            statusEl.textContent = 'Контур не найден';
-            return;
+            return {
+                mode: 'message',
+                message: 'Контур не найден',
+                isWarning: false
+            };
         }
 
-        const meta = this.contourManager.metadataMap.get(contour);
+        const meta = this.contourManager.metadataMap.get(contour) || {};
         const tl = contour.aCoords.tl;  //берем координаты левыго верхнего угла контура
         const realX = (tl.x - this.layment.left).toFixed(1);
         const realY = (tl.y - this.layment.top).toFixed(1);
 
-        const article = meta.article || '—';
-        const warning = isOutOfBounds ? ' · вне границ ложемента' : '';
-        statusEl.innerHTML = `<strong>${meta.name}</strong> арт. ${article} · X ${realX} мм · Y ${realY} мм · ${contour.angle}°${warning}`;
+        return {
+            mode: 'contour',
+            isWarning: isOutOfBounds,
+            contour: {
+                name: meta.name || '—',
+                article: meta.article || '—',
+                x: realX,
+                y: realY,
+                angle: contour.angle,
+                poseLabel: meta.poseLabel || null,
+                outOfBounds: isOutOfBounds
+            }
+        };
+    }
+
+    requestStatusBarRefresh() {
+        this.emitEditorCallback('onStatusBarChanged', {
+            statusBar: this.getStatusBarState()
+        });
     }
 
     deleteSelected() {
@@ -2720,6 +2017,10 @@ class ContourApp {
     toggleLockSelected() {
         this.actionExecutor?.executeAction?.('toggleLock', {}, this);
     }
+
+    // =========================
+    // Workspace snapshot / save / restore
+    // =========================
 
     shouldAutosaveForObject(obj) {
         if (!obj || this.isRestoringWorkspace) {
@@ -2742,7 +2043,7 @@ class ContourApp {
         this.cancelAutosave();
         this.autosaveTimer = setTimeout(() => {
             this.autosaveTimer = null;
-            this.saveWorkspace('autosave');
+            this.emitEditorCallback('onAutosaveRequested', { mode: 'autosave' });
         }, AUTOSAVE_DEBOUNCE_MS);
     }
 
@@ -2766,45 +2067,159 @@ class ContourApp {
         };
     }
 
-    async saveWorkspace(mode = 'autosave') {
-        const key = mode === 'manual' ? WORKSPACE_MANUAL_KEY : WORKSPACE_STORAGE_KEY;
-        try {
-            await this.performWithScaleOne(() => {
-                const payload = this.buildWorkspaceSnapshot();
-                localStorage.setItem(key, JSON.stringify(payload));
-            });
-        } catch (err) {
-            console.error('Ошибка сохранения workspace', err);
-        }
+    getDocumentState() {
+        return {
+            width: Math.round(this.layment?.width || 0),
+            height: Math.round(this.layment?.height || 0),
+            baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm,
+            workspaceScale: this.workspaceScale,
+            contourCount: this.contourManager?.contours?.length || 0,
+            primitiveCount: this.primitiveManager?.primitives?.length || 0,
+            textCount: this.textManager?.texts?.length || 0
+        };
     }
 
-    async loadWorkspaceFromStorage(mode = 'autosave') {
-        this.cancelAutosave();
-        const key = mode === 'manual' ? WORKSPACE_MANUAL_KEY : WORKSPACE_STORAGE_KEY;
-        const raw = localStorage.getItem(key);
-        if (!raw) {
-            return false;
+    getLaymentSettingsState() {
+        const width = Math.round(this.layment?.width || Config.LAYMENT_DEFAULT_WIDTH);
+        const height = Math.round(this.layment?.height || Config.LAYMENT_DEFAULT_HEIGHT);
+        return {
+            width,
+            height,
+            preset: this.resolveLaymentPreset(width, height),
+            baseMaterialColor: this.baseMaterialColor,
+            laymentThicknessMm: this.laymentThicknessMm
+        };
+    }
+
+    async getWorkspaceState(options = {}) {
+        return await this.performWithScaleOne(() => this.buildWorkspaceSnapshot(options));
+    }
+
+    getSelectionState() {
+        const active = this.canvas?.getActiveObject?.() || null;
+        const selectedObjects = this.getSelectionObjects(active);
+
+        return {
+            hasSelection: selectedObjects.length > 0,
+            selectionType: active?.type === 'activeSelection' ? 'multi' : (selectedObjects.length ? 'single' : 'empty'),
+            count: selectedObjects.length,
+            objects: selectedObjects.map(obj => this.buildSelectionObjectSnapshot(obj)).filter(Boolean)
+        };
+    }
+
+    buildSelectionObjectSnapshot(obj) {
+        if (!obj) {
+            return null;
         }
 
-        let data;
-        try {
-            data = JSON.parse(raw);
-        } catch (err) {
-            console.error('Ошибка чтения workspace', err);
-            return false;
+        const meta = this.objectMetaApi?.getObjectMeta?.(obj) || {};
+        const base = {
+            objectRole: meta.objectRole || (obj.isTextObject ? 'text' : (obj.primitiveType ? 'primitive' : 'contour')),
+            placementId: Number.isFinite(obj.placementId) ? obj.placementId : (Number.isFinite(meta.placementId) ? meta.placementId : null),
+            groupId: this.objectMetaApi?.getGroupId?.(obj) || null,
+            isLocked: this.interactionPolicy?.isSemanticallyLocked?.(obj) === true,
+            angle: Number.isFinite(obj.angle) ? obj.angle : 0,
+            boundsMm: this.getObjectBoundsRelativeToLayment(obj)
+        };
+
+        if (obj.isTextObject) {
+            return {
+                ...base,
+                type: obj.kind === 'attached' ? 'attached-text' : 'free-text',
+                text: typeof obj.text === 'string' ? obj.text : '',
+                fontSizeMm: Number(obj.fontSize) || null,
+                ownerPlacementId: Number.isFinite(obj.ownerPlacementId) ? obj.ownerPlacementId : null,
+                role: obj.role || 'user-text'
+            };
         }
 
-        if (data.schemaVersion !== 3 && data.schemaVersion !== 4) {
-            console.warn('Неподдерживаемая версия workspace', data.schemaVersion);
-            return false;
+        if (obj.primitiveType) {
+            const dimensions = this.primitiveManager.getPrimitiveDimensions(obj);
+            return {
+                ...base,
+                type: obj.primitiveType,
+                dimensionsMm: dimensions
+            };
         }
 
-        try {
-            await this.loadWorkspace(data);
-            return true;
-        } finally {
-            this.fitToLayment();
+        const contourMeta = this.contourManager?.metadataMap?.get?.(obj) || {};
+        return {
+            ...base,
+            type: 'contour',
+            id: contourMeta.id || obj.contourId || null,
+            article: contourMeta.article || null,
+            name: contourMeta.name || null,
+            poseKey: contourMeta.poseKey || null,
+            poseLabel: contourMeta.poseLabel || null
+        };
+    }
+
+    getObjectBoundsRelativeToLayment(obj) {
+        if (!obj || !this.layment || typeof obj.getBoundingRect !== 'function') {
+            return null;
         }
+
+        const rect = obj.getBoundingRect(true, true);
+        return {
+            x: Math.round(rect.left - this.layment.left),
+            y: Math.round(rect.top - this.layment.top),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height)
+        };
+    }
+
+    // =========================
+    // Export / preview / order flow
+    // =========================
+
+    async validateLayoutCommand() {
+        return await this.performWithScaleOne(() => {
+            const validation = this.contourManager.checkCollisionsAndHighlight();
+            return {
+                ok: validation.ok,
+                issues: validation.issues,
+                message: validation.ok
+                    ? Config.MESSAGES.VALID_LAYOUT
+                    : this.formatLayoutIssuesMessage(validation.issues)
+            };
+        });
+    }
+
+    buildExportPayload(options = {}) {
+        const includePreview = options.includePreview !== false;
+        const includeWorkspaceSnapshot = options.includeWorkspaceSnapshot !== false;
+        const realWidth = Math.round(this.layment.width);
+        const realHeight = Math.round(this.layment.height);
+        const laymentType = (this.contourManager.contours.length > 0 || this.primitiveManager.primitives.length > 0)
+            ? 'with-tools'
+            : 'empty';
+
+        const layoutPng = includePreview ? this.createLaymentPreviewPng(16) : null;
+        const layoutSvg = includePreview ? this.canvas.toSVG() : null;
+
+        return {
+            orderMeta: {
+                width: realWidth,
+                height: realHeight,
+                units: 'mm',
+                coordinateSystem: 'origin-top-left',
+                baseMaterialColor: this.baseMaterialColor,
+                laymentThicknessMm: this.laymentThicknessMm,
+                laymentType,
+                ...(includePreview ? { canvasPng: layoutPng } : {}),
+                ...(includeWorkspaceSnapshot ? { workspaceSnapshot: this.buildWorkspaceSnapshot({ includeEditorState: false }) } : {})
+            },
+            ...(includePreview ? { layoutPng, layoutSvg } : {}),
+            contours: this.buildExportContours(),
+            primitives: this.buildExportPrimitives(),
+            texts: this.buildExportTexts(),
+            customer: options.customer ?? null
+        };
+    }
+
+    async getExportState(options = {}) {
+        return await this.performWithScaleOne(() => this.buildExportPayload(options));
     }
 
     async loadWorkspace(data) {
@@ -2827,19 +2242,9 @@ class ContourApp {
             this.baseMaterialColor = Config.MATERIAL_COLORS[data.baseMaterialColor]
                 ? data.baseMaterialColor
                 : Config.DEFAULT_MATERIAL_COLOR;
-            if (UIDom.inputs.baseMaterialColor) {
-                UIDom.inputs.baseMaterialColor.value = this.baseMaterialColor;
-            }
             this.applyMaterialColorToCutouts();
 
             this.laymentThicknessMm = this.getValidLaymentThickness(data.laymentThicknessMm);
-            if (UIDom.inputs.laymentThicknessMm) {
-                UIDom.inputs.laymentThicknessMm.value = String(this.laymentThicknessMm);
-            }
-
-            UIDom.inputs.laymentWidth.value = width;
-            UIDom.inputs.laymentHeight.value = height;
-            this.syncLaymentPresetBySize(width, height);
             this.updateLaymentSize(width, height);
             this.layment.set({ left: offset, top: offset });
             this.layment.setCoords();
@@ -2847,28 +2252,30 @@ class ContourApp {
 
             await this.batchRender(async () => {
                 for (const contour of data.contours || []) {
-                    const meta = this.manifest?.[contour.id];
-                    if (!meta) {
-                        console.warn('Контур не найден в manifest', contour.id);
+                    const contourAssetSvg = contour?.assets?.svg;
+                    if (!contourAssetSvg) {
+                        console.warn('Не удалось восстановить contour без assets.svg', contour?.id);
                         continue;
                     }
                     const metadata = {
-                        ...meta,
-                        article: contour.article || meta.article,
-                        name: contour.name || meta.name,
-                        poseKey: contour.poseKey || meta.poseKey,
-                        poseLabel: contour.poseLabel || meta.poseLabel,
-                        scaleOverride: contour.scaleOverride ?? meta.scaleOverride,
-                        depthOverrideMm: Number.isFinite(contour.depthOverrideMm)
-                            ? contour.depthOverrideMm
-                            : (Number.isFinite(meta.depthOverrideMm) ? meta.depthOverrideMm : undefined)
+                        id: contour.id || null,
+                        article: contour.article || '',
+                        name: contour.name || '',
+                        poseKey: contour.poseKey || null,
+                        poseLabel: contour.poseLabel || null,
+                        scaleOverride: contour.scaleOverride ?? 1,
+                        cuttingLengthMeters: Number.isFinite(contour.cuttingLengthMeters) ? contour.cuttingLengthMeters : 0,
+                        assets: {
+                            ...(contour.assets || {}),
+                            svg: contourAssetSvg
+                        },
+                        depthOverrideMm: Number.isFinite(contour.depthOverrideMm) ? contour.depthOverrideMm : undefined
                     };
-                    await this.contourManager.addContour(
-                        `/contours/${metadata.assets.svg}`,
+                    const added = await this.contourManager.addContour(
+                        `/contours/${contourAssetSvg}`,
                         { x: this.layment.left, y: this.layment.top },
                         metadata
                     );
-                    const added = this.contourManager.contours[this.contourManager.contours.length - 1];
                     added.placementId = contour.placementId;
                     this.objectMetaApi?.patchObjectMeta?.(added, {
                         placementId: contour.placementId,
@@ -2961,23 +2368,21 @@ class ContourApp {
 
                 this.applyMaterialColorToCutouts();
                 this.canvas.requestRenderAll();
-                this.updateButtons();
-                this.updateStatusBar();
-                this.syncPrimitiveControlsFromSelection();
-                this.syncTextControlsFromSelection();
+                this.requestControlsStateRefresh();
+                this.requestStatusBarRefresh();
             });
         } finally {
             this.isRestoringWorkspace = false;
         }
+        this.fitToLayment();
         this.syncWorkspaceScaleInput();
     }
 
     getTotalCuttingLength() {
-        return this.contourManager.getPlacedContourIds()
-        .reduce((sum, id) => {
-            const item = this.manifest?.[id];
-            return sum + (item?.cuttingLengthMeters || 0);
-      }, 0);
+        return this.contourManager.contours.reduce((sum, contour) => {
+            const meta = this.contourManager.metadataMap.get(contour) || {};
+            return sum + (Number(meta.cuttingLengthMeters) || 0);
+        }, 0);
     }
 
 
@@ -2999,7 +2404,7 @@ class ContourApp {
 
         return lines.join('\n');
     }
-
+// TODO UIDom
     clearOrderResult() {
         const orderResult = UIDom.orderResult;
         if (!orderResult.container) return;
@@ -3017,67 +2422,6 @@ class ContourApp {
         orderResult.paymentLink.href = '#';
         orderResult.meta.hidden = true;
         orderResult.meta.textContent = '';
-        this.lastOrderResult = null;
-    }
-
-    showOrderResultLoading(message = 'Создаём заказ. Это может занять несколько секунд.') {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success', 'order-result-error', 'order-result-info');
-        orderResult.container.classList.add('order-result-loading');
-        orderResult.title.textContent = 'Оформление заказа';
-        orderResult.message.textContent = message;
-        orderResult.details.hidden = true;
-    }
-
-    showOrderResultSuccess({ orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total }) {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-error', 'order-result-info', 'order-result-loading');
-        orderResult.container.classList.add('order-result-success');
-        orderResult.title.textContent = 'Заказ создан';
-        orderResult.message.textContent = 'Мы приняли заказ в обработку. Вы можете отслеживать статус по ссылке ниже.';
-
-        orderResult.details.hidden = false;
-        orderResult.orderNumber.textContent = orderNumber || '—';
-        orderResult.orderId.textContent = orderId;
-        orderResult.paymentLink.href = paymentUrl;
-        orderResult.statusLinkRow.hidden = false;
-        orderResult.meta.hidden = false;
-        orderResult.meta.textContent = `Размер: ${width}×${height}×${laymentThicknessMm ?? 35} мм • Стоимость: ${total} ₽`;
-        this.lastOrderResult = { orderId, orderNumber, paymentUrl, width, height, laymentThicknessMm, total };
-    }
-
-    showOrderResultError(message) {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success', 'order-result-info', 'order-result-loading');
-        orderResult.container.classList.add('order-result-error');
-        orderResult.title.textContent = 'Не удалось создать заказ';
-        orderResult.message.textContent = message;
-        orderResult.details.hidden = true;
-    }
-
-    show3dPreviewError(message) {
-        const orderResult = UIDom.orderResult;
-        if (!orderResult.container) return;
-
-        this.viewportFeedbackActive = false;
-        orderResult.container.hidden = false;
-        orderResult.container.classList.remove('order-result-success', 'order-result-loading');
-        orderResult.container.classList.add('order-result-error');
-        orderResult.title.textContent = '3D предпросмотр недоступен';
-        orderResult.message.textContent = message;
-        orderResult.details.hidden = true;
     }
 
     checkOutOfBoundsOnlyAndHighlight() {
@@ -3139,12 +2483,17 @@ class ContourApp {
         return Config.MESSAGES.OUT_OF_BOUNDS_ERROR;
     }
 
-    open3dPreview() {
-        this.performWithScaleOne(() => {
+    build3dPreviewPayload() {
+        return this.performWithScaleOne(() => {
             const boundsValidation = this.checkOutOfBoundsOnlyAndHighlight();
             if (!boundsValidation.ok) {
-                this.show3dPreviewError(this.formatOutOfBoundsOnlyMessage(boundsValidation.issues));
-                return;
+                return {
+                    ok: false,
+                    error: {
+                        code: 'preview_out_of_bounds',
+                        message: this.formatOutOfBoundsOnlyMessage(boundsValidation.issues)
+                    }
+                };
             }
 
             let svg;
@@ -3152,22 +2501,27 @@ class ContourApp {
                 svg = this.buildPreviewSvg();
             } catch (error) {
                 console.error(error);
-                this.show3dPreviewError('Не удалось собрать SVG для 3D предпросмотра. Попробуйте ещё раз.');
-                return;
+                return {
+                    ok: false,
+                    error: {
+                        code: 'preview_svg_build_failed',
+                        message: 'Не удалось собрать SVG для 3D предпросмотра. Попробуйте ещё раз.'
+                    }
+                };
             }
 
             const texts = this.textManager?.buildExportTexts?.() || [];
 
-            try {
-                console.log('preview texts', texts);
-                const payloadKey = this.storePreviewSvgPayload(svg, texts);
-                const viewerUrl = new URL(Config.VIEWER_3D.URL, window.location.origin);
-                viewerUrl.searchParams.set('payloadKey', payloadKey);
-                window.open(viewerUrl.toString(), '_blank', 'noopener');
-            } catch (error) {
-                console.error(error);
-                this.show3dPreviewError('Не удалось подготовить данные для 3D предпросмотра (localStorage недоступен или переполнен).');
-            }
+            return {
+                ok: true,
+                result: {
+                    version: 3,
+                    svg,
+                    texts: Array.isArray(texts) ? texts : [],
+                    baseMaterialColor: this.baseMaterialColor,
+                    laymentThicknessMm: this.laymentThicknessMm
+                }
+            };
         });
     }
 
@@ -3189,72 +2543,9 @@ class ContourApp {
         }
     }
 
-    generatePreviewPayloadKey() {
-        const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        return `${Config.VIEWER_3D.PAYLOAD_PREFIX}${rand}`;
-    }
-
-    cleanupOldPreviewPayloads() {
-        const prefix = Config.VIEWER_3D.PAYLOAD_PREFIX;
-        const now = Date.now();
-        const maxAgeMs = 1000 * 60 * 30;
-
-        for (let i = localStorage.length - 1; i >= 0; i -= 1) {
-            const key = localStorage.key(i);
-            if (!key || !key.startsWith(prefix)) {
-                continue;
-            }
-
-            try {
-                const raw = localStorage.getItem(key);
-                if (!raw) {
-                    localStorage.removeItem(key);
-                    continue;
-                }
-                const payload = JSON.parse(raw);
-                const createdAt = Number(payload?.createdAt || 0);
-                if (!Number.isFinite(createdAt) || (now - createdAt) > maxAgeMs) {
-                    localStorage.removeItem(key);
-                }
-            } catch (_error) {
-                localStorage.removeItem(key);
-            }
-        }
-    }
-
-    storePreviewSvgPayload(svg, texts = []) {
-        if (!svg || typeof svg !== 'string') {
-            throw new Error('Preview SVG payload is empty');
-        }
-
-        let normalizedTexts = [];
-        if (Array.isArray(texts)) {
-            try {
-                normalizedTexts = JSON.parse(JSON.stringify(texts));
-            } catch (_error) {
-                normalizedTexts = [];
-            }
-        }
-
-        this.cleanupOldPreviewPayloads();
-
-        const key = this.generatePreviewPayloadKey();
-        const payload = {
-            version: 3,
-            svg,
-            texts: Array.isArray(texts) ? texts : [],
-            baseMaterialColor: this.baseMaterialColor,
-            laymentThicknessMm: this.laymentThicknessMm,
-            createdAt: Date.now()
-        };
-
-        localStorage.setItem(key, JSON.stringify(payload));
-        return key;
-    }
-
-
+    // =========================
+    // Low-level helpers
+    // =========================
 
     getColorLabel(colorKey) {
         if (colorKey === 'blue') {
@@ -3289,199 +2580,65 @@ class ContourApp {
         return { width, height, thickness, colorLabel, composition };
     }
 
-    renderCustomerModalSummary() {
-        const modal = UIDom.customerModal;
-        if (!modal?.summaryMeta || !modal.summaryComposition || !modal.summaryEmpty) {
-            return;
-        }
-
-        const summary = this.buildCustomerModalSummaryData();
-        modal.summaryMeta.innerHTML = `
-            <div><strong>Размер:</strong> ${summary.width} × ${summary.height} мм</div>
-            <div><strong>Толщина:</strong> ${summary.thickness} мм</div>
-            <div><strong>Цвет:</strong> ${summary.colorLabel}</div>
-        `;
-
-        modal.summaryComposition.innerHTML = '';
-        if (!summary.composition.length) {
-            modal.summaryEmpty.hidden = false;
-            return;
-        }
-
-        modal.summaryEmpty.hidden = true;
-        for (const item of summary.composition) {
-            const li = document.createElement('li');
-            const suffix = item.name ? ` — ${item.name}` : '';
-            li.textContent = `${item.article}${suffix} × ${item.count}`;
-            modal.summaryComposition.appendChild(li);
-        }
-    }
-
-    openCustomerModal() {
-        const modal = UIDom.customerModal;
-        if (!modal?.overlay) {
-            return;
-        }
-        modal.overlay.hidden = false;
-        this.clearCustomerModalFeedback();
-        this.renderCustomerModalSummary();
-        if (modal.confirmButton) {
-            modal.confirmButton.disabled = !(modal.nameInput?.value.trim() && modal.contactInput?.value.trim());
-        }
-        modal.nameInput?.focus();
-    }
-
-    closeCustomerModal() {
-        const modal = UIDom.customerModal;
-        if (!modal?.overlay) {
-            return;
-        }
-        modal.overlay.hidden = true;
-        this.clearCustomerModalFeedback();
-    }
-
-    setCustomerModalFeedback(message) {
-        const modal = UIDom.customerModal;
-        if (!modal?.feedback) {
-            return;
-        }
-        modal.feedback.hidden = false;
-        modal.feedback.textContent = message;
-    }
-
-    clearCustomerModalFeedback() {
-        const modal = UIDom.customerModal;
-        if (!modal?.feedback) {
-            return;
-        }
-        modal.feedback.hidden = true;
-        modal.feedback.textContent = '';
-    }
-
-    getSanitizedCustomerFromModal() {
-        const modal = UIDom.customerModal;
-        const name = (modal?.nameInput?.value || '').trim().replace(/\s+/g, ' ');
-        const rawContact = (modal?.contactInput?.value || '').trim();
-        const contact = rawContact.replace(/[^0-9A-Za-zА-Яа-яЁё+@.-]/g, '');
-
-        return { name, contact };
-    }
-
-    async handleCustomerModalConfirm() {
-        const customer = this.getSanitizedCustomerFromModal();
-        if (!customer.name || !customer.contact) {
-            this.setCustomerModalFeedback('Заполните имя и контакт, чтобы создать заказ.');
-            return;
-        }
-
-        this.pendingCustomer = customer;
-        this.closeCustomerModal();
-
-        await this.withExportCooldown(() => this.performWithScaleOne(() => this.exportData()));
-    }
-
-    async withExportCooldown(action) {
-        if (this.exportInProgress) {
-            return;
-        }
-
-        const exportButton = UIDom.buttons.export;
-        this.exportInProgress = true;
-        const startedAt = Date.now();
-        exportButton.disabled = true;
-        exportButton.textContent = 'Создаём заказ…';
-        this.showOrderResultLoading();
-
-        try {
-            await action();
-        } finally {
-            const elapsed = Date.now() - startedAt;
-            const waitMs = Math.max(0, this.exportCooldownMs - elapsed);
-            if (waitMs > 0) {
-                await new Promise(resolve => setTimeout(resolve, waitMs));
-            }
-            exportButton.disabled = false;
-            exportButton.textContent = this.exportButtonDefaultText;
-            this.exportInProgress = false;
-        }
-    }
-
-    async exportData() {
-
-        const validation = this.contourManager.checkCollisionsAndHighlight();
+    async validateForOrder() {
+        const validation = await this.validateLayoutCommand();
         if (!validation.ok) {
-            this.showOrderResultError(this.formatLayoutIssuesMessage(validation.issues));
-            return;
+            return {
+                ok: false,
+                message: validation.message
+            };
         }
 
-        const realWidth = Math.round(this.layment.width);
-        const realHeight = Math.round(this.layment.height);
+        return { ok: true };
+    }
 
-        const layoutPng = this.createLaymentPreviewPng(16);
-        const layoutSvg = this.canvas.toSVG();
-        const laymentType = (this.contourManager.contours.length > 0 || this.primitiveManager.primitives.length > 0)
-            ? "with-tools"
-            : "empty";
-
-        const contours = this.buildExportContours();
-        const primitives = this.buildExportPrimitives();
-        const texts = this.buildExportTexts();
-
-        //  КОНТРАКТ
-        const data = {
-            orderMeta: {
-            width: realWidth,
-            height: realHeight,
-            units: "mm",
-            coordinateSystem: "origin-top-left",
-            baseMaterialColor: this.baseMaterialColor,
-            laymentThicknessMm: this.laymentThicknessMm,
-            laymentType,
-            canvasPng: layoutPng,
-            workspaceSnapshot: this.buildWorkspaceSnapshot({ includeEditorState: false })
-            },
-            layoutPng,
-            layoutSvg,
-
-            contours,
-            primitives,
-            texts,
-            customer: this.pendingCustomer
+    async buildOrderRequest(customer) {
+        const normalizedCustomer = {
+            name: (customer?.name || '').trim().replace(/\s+/g, ' '),
+            contact: (customer?.contact || '').trim().replace(/[^0-9A-Za-zА-Яа-яЁё+@.-]/g, '')
         };
 
-        console.log('Заказ:', data);
+        if (!normalizedCustomer.name || !normalizedCustomer.contact) {
+            return {
+                ok: false,
+                error: {
+                    code: 'order_customer_required',
+                    message: 'Заполните имя и контакт, чтобы создать заказ.'
+                }
+            };
+        }
 
         try {
-            const response = await fetch(Config.API.BASE_URL + Config.API.EXPORT_Layment, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(errorText || 'Не удалось создать заказ.');
+            const validation = await this.validateForOrder();
+            if (!validation.ok) {
+                return {
+                    ok: false,
+                    error: {
+                        code: 'order_validation_failed',
+                        message: validation.message
+                    }
+                };
             }
 
-            const result = await response.json();
-            const orderId = result?.orderId || '—';
-            const orderNumber = result?.orderNumber || '—';
-            const statusUrl = `status.html?orderId=${encodeURIComponent(orderId)}`;
-
-            this.showOrderResultSuccess({
-                orderId,
-                orderNumber,
-                paymentUrl: statusUrl,
-                width: realWidth,
-                height: realHeight,
-                laymentThicknessMm: result?.pricePreview?.laymentThicknessMm ?? 35,
-                total: result?.pricePreview?.total ?? '—'
+            const data = this.buildExportPayload({
+                includePreview: true,
+                includeWorkspaceSnapshot: true,
+                customer: normalizedCustomer
             });
+
+            return {
+                ok: true,
+                result: data
+            };
         } catch (err) {
             console.error(err);
-            this.showOrderResultError('Не получилось оформить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || ''));
-        } finally {
-            this.pendingCustomer = null;
+            return {
+                ok: false,
+                error: {
+                    code: 'order_build_failed',
+                    message: 'Не получилось подготовить заказ. Проверьте данные и попробуйте снова. ' + (err?.message || '')
+                }
+            };
         }
     }
 
@@ -3529,5 +2686,8 @@ class ContourApp {
     }
 }
 
-
-document.addEventListener('DOMContentLoaded', () => new ContourApp());
+// =========================
+// Global export / bootstrap at file end
+// =========================
+window.ContourApp = ContourApp;
+window.EditorFacade?.registerEditorFactory?.((options) => new ContourApp(options));
