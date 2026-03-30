@@ -646,7 +646,7 @@ class ContourApp {
 
     addTextCommand(payload = {}) {
         const kind = payload.kind === 'attached' ? 'attached' : 'free';
-        const text = typeof payload.text === 'string' ? payload.text : '';
+        const text = typeof payload.text === 'string' ? payload.text : 'Текст';
         const fontSizeMm = Number.isFinite(payload.fontSizeMm) ? payload.fontSizeMm : undefined;
         const role = typeof payload.role === 'string' && payload.role.trim() ? payload.role.trim() : 'user-text';
 
